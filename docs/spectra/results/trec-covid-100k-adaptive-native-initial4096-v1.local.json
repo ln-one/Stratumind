@@ -1,0 +1,2441 @@
+{
+  "schema_version": 2,
+  "experiment": "spectra-n-channel-executor-repeats-v1",
+  "created_at": "2026-07-21T14:06:47.960520+00:00",
+  "selection_contract": "training-free and qrels-blind; the runner never reads qrels to choose an executor",
+  "machine": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "python": "3.11.15"
+  },
+  "configuration": {
+    "binary": "/tmp/spectra-qdrant-target/release/examples/spectra_n_channel_scifact",
+    "dataset_dir": "/tmp/spectra-trec-covid-100k-snapshot",
+    "strategies": [
+      "adaptive-native"
+    ],
+    "repetitions": 1,
+    "warmup_repetitions": 0,
+    "query_limit": 50,
+    "channel_counts": "1,2,4,8",
+    "batch_size": 4096,
+    "dense_stream": "replay-identical",
+    "counterbalancing": "cyclic rotation with alternating reversal"
+  },
+  "summary": [
+    {
+      "strategy": "adaptive-native",
+      "channels": 1,
+      "measured_repetitions": 1,
+      "ordered_top_k_mismatches": 0,
+      "median_run_p50_ns": 1439000,
+      "median_run_p95_ns": 1764542,
+      "mean_run_p50_ns": 1439000,
+      "mean_run_p95_ns": 1764542,
+      "total_auto_selected_shared_queries": 0,
+      "total_shared_lazy_physical_posting_elements": 0,
+      "total_shared_lazy_logical_posting_elements": 0
+    },
+    {
+      "strategy": "adaptive-native",
+      "channels": 2,
+      "measured_repetitions": 1,
+      "ordered_top_k_mismatches": 0,
+      "median_run_p50_ns": 5498833,
+      "median_run_p95_ns": 27113750,
+      "mean_run_p50_ns": 5498833,
+      "mean_run_p95_ns": 27113750,
+      "total_auto_selected_shared_queries": 0,
+      "total_shared_lazy_physical_posting_elements": 0,
+      "total_shared_lazy_logical_posting_elements": 0
+    },
+    {
+      "strategy": "adaptive-native",
+      "channels": 4,
+      "measured_repetitions": 1,
+      "ordered_top_k_mismatches": 0,
+      "median_run_p50_ns": 10591209,
+      "median_run_p95_ns": 33518167,
+      "mean_run_p50_ns": 10591209,
+      "mean_run_p95_ns": 33518167,
+      "total_auto_selected_shared_queries": 0,
+      "total_shared_lazy_physical_posting_elements": 0,
+      "total_shared_lazy_logical_posting_elements": 0
+    },
+    {
+      "strategy": "adaptive-native",
+      "channels": 8,
+      "measured_repetitions": 1,
+      "ordered_top_k_mismatches": 0,
+      "median_run_p50_ns": 36331834,
+      "median_run_p95_ns": 132126375,
+      "mean_run_p50_ns": 36331834,
+      "mean_run_p95_ns": 132126375,
+      "total_auto_selected_shared_queries": 0,
+      "total_shared_lazy_physical_posting_elements": 0,
+      "total_shared_lazy_logical_posting_elements": 0
+    }
+  ],
+  "paired_analysis": {
+    "bootstrap": "query-cluster bootstrap of mean paired delta",
+    "bootstrap_samples": 10000,
+    "seed": 20260721,
+    "comparisons": []
+  },
+  "runs": [
+    {
+      "repetition": 1,
+      "position": 1,
+      "strategy": "adaptive-native",
+      "result": {
+        "schema_version": 2,
+        "experiment": "spectra-n-channel-scifact-v2",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "dataset_dir": "/tmp/spectra-trec-covid-100k-snapshot",
+        "documents": 100000,
+        "dimension": 384,
+        "top_k": 20,
+        "rrf_k": 2,
+        "warmup_check_interval": null,
+        "exhaustive_after_pulls_per_source": null,
+        "sparse_stream_strategy": "adaptive-native",
+        "dense_stream_strategy": "replay-identical",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "include_router_observations": true,
+        "include_sparse_strategy_observations": false,
+        "include_sparse_lazy_strategy_observations": false,
+        "sparse_lazy_strategy_repetitions": 1,
+        "include_query_latencies": true,
+        "build_ns": 565033167,
+        "matrix": [
+          {
+            "channels": 1,
+            "queries": 50,
+            "ordered_top_k_mismatches": 0,
+            "top_k_fixed_queries": 50,
+            "all_sources_exhausted_queries": 0,
+            "dynamic_source_pulls": [
+              1000
+            ],
+            "exhaustive_source_pulls": [
+              5000000
+            ],
+            "source_pull_ratio": 0.0002,
+            "dynamic_dense_quantized_scores": 5000000,
+            "dynamic_dense_exact_scores": 6796,
+            "dynamic_dense_document_major_passes": 50,
+            "dynamic_dense_document_rows_traversed": 5000000,
+            "dynamic_dense_logical_dot_products": 5000000,
+            "dynamic_dense_physical_channels": 50,
+            "dynamic_dense_physical_dot_products": 5000000,
+            "dynamic_dense_preparation_ns": 70672253,
+            "dynamic_sparse_documents_evaluated": 0,
+            "dynamic_sparse_posting_elements_visited": 0,
+            "dynamic_sparse_batches_expanded": 0,
+            "dynamic_sparse_adaptive_refills": 0,
+            "dynamic_sparse_results_materialized": 0,
+            "dynamic_sparse_shared_unique_terms": 0,
+            "dynamic_sparse_shared_logical_term_accesses": 0,
+            "dynamic_sparse_shared_physical_posting_elements": 0,
+            "dynamic_sparse_shared_logical_posting_elements": 0,
+            "dynamic_sparse_shared_preparation_ns": 0,
+            "dynamic_sparse_auto_selected_shared_queries": 0,
+            "dynamic_sparse_estimated_unique_posting_elements": 0,
+            "dynamic_sparse_estimated_logical_posting_elements": 0,
+            "dynamic_sparse_estimated_deduplicated_posting_elements": 0,
+            "dynamic_sparse_probe_selected_shared_queries": 0,
+            "dynamic_sparse_prefix_identities_replayed": 0,
+            "dynamic_sparse_shared_lazy_unique_batches": 0,
+            "dynamic_sparse_shared_lazy_reused_batches": 0,
+            "dynamic_sparse_shared_lazy_physical_posting_elements": 0,
+            "dynamic_sparse_shared_lazy_logical_posting_elements": 0,
+            "dynamic_sparse_shared_lazy_physical_score_multiplications": 0,
+            "dynamic_sparse_shared_lazy_logical_score_multiplications": 0,
+            "dynamic_sparse_shared_lazy_cached_channel_points": 0,
+            "router_dynamic_queries": 50,
+            "router_exhaustive_queries": 0,
+            "router_oracle_matches": 50,
+            "dynamic_oracle_queries": 50,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_total_regret_ns": 0,
+            "quality_metric_queries": 50,
+            "recall_at_k": 0.03916123473301596,
+            "ndcg_at_k": 0.6745684298964167,
+            "dynamic_latency": {
+              "p50_ns": 1439000,
+              "p95_ns": 1764542,
+              "p99_ns": 2095083,
+              "mean_ns": 1512163
+            },
+            "exhaustive_latency": {
+              "p50_ns": 75153625,
+              "p95_ns": 83277250,
+              "p99_ns": 88572833,
+              "mean_ns": 76597705
+            },
+            "router_simulated_latency": {
+              "p50_ns": 3066334,
+              "p95_ns": 3689668,
+              "p99_ns": 5304041,
+              "mean_ns": 3240783
+            },
+            "dynamic_latency_ns_by_query": [
+              2095083,
+              1431583,
+              1422500,
+              1535542,
+              1368042,
+              1358542,
+              1261083,
+              3768291,
+              1515375,
+              1510625,
+              1249958,
+              1426208,
+              1611209,
+              1581542,
+              1546375,
+              1529625,
+              1520875,
+              1366250,
+              1231084,
+              1678542,
+              1342542,
+              1648500,
+              1439000,
+              1456584,
+              1355042,
+              1404167,
+              1526875,
+              1417459,
+              1225125,
+              1385083,
+              1222292,
+              1338083,
+              1202416,
+              1803750,
+              1446500,
+              1441083,
+              1363333,
+              1534250,
+              1288375,
+              1464875,
+              1365958,
+              1713333,
+              1428834,
+              1637167,
+              1477792,
+              1514250,
+              1764542,
+              1608459,
+              1369959,
+              1414208
+            ]
+          },
+          {
+            "channels": 2,
+            "queries": 50,
+            "ordered_top_k_mismatches": 0,
+            "top_k_fixed_queries": 50,
+            "all_sources_exhausted_queries": 0,
+            "dynamic_source_pulls": [
+              142109,
+              142089
+            ],
+            "exhaustive_source_pulls": [
+              5000000,
+              2558141
+            ],
+            "source_pull_ratio": 0.03760157424954099,
+            "dynamic_dense_quantized_scores": 5000000,
+            "dynamic_dense_exact_scores": 397075,
+            "dynamic_dense_document_major_passes": 50,
+            "dynamic_dense_document_rows_traversed": 5000000,
+            "dynamic_dense_logical_dot_products": 5000000,
+            "dynamic_dense_physical_channels": 50,
+            "dynamic_dense_physical_dot_products": 5000000,
+            "dynamic_dense_preparation_ns": 74405795,
+            "dynamic_sparse_documents_evaluated": 0,
+            "dynamic_sparse_posting_elements_visited": 6217295,
+            "dynamic_sparse_batches_expanded": 0,
+            "dynamic_sparse_adaptive_refills": 64,
+            "dynamic_sparse_results_materialized": 424938,
+            "dynamic_sparse_shared_unique_terms": 0,
+            "dynamic_sparse_shared_logical_term_accesses": 0,
+            "dynamic_sparse_shared_physical_posting_elements": 0,
+            "dynamic_sparse_shared_logical_posting_elements": 0,
+            "dynamic_sparse_shared_preparation_ns": 0,
+            "dynamic_sparse_auto_selected_shared_queries": 0,
+            "dynamic_sparse_estimated_unique_posting_elements": 0,
+            "dynamic_sparse_estimated_logical_posting_elements": 0,
+            "dynamic_sparse_estimated_deduplicated_posting_elements": 0,
+            "dynamic_sparse_probe_selected_shared_queries": 0,
+            "dynamic_sparse_prefix_identities_replayed": 0,
+            "dynamic_sparse_shared_lazy_unique_batches": 0,
+            "dynamic_sparse_shared_lazy_reused_batches": 0,
+            "dynamic_sparse_shared_lazy_physical_posting_elements": 0,
+            "dynamic_sparse_shared_lazy_logical_posting_elements": 0,
+            "dynamic_sparse_shared_lazy_physical_score_multiplications": 0,
+            "dynamic_sparse_shared_lazy_logical_score_multiplications": 0,
+            "dynamic_sparse_shared_lazy_cached_channel_points": 0,
+            "router_dynamic_queries": 21,
+            "router_exhaustive_queries": 29,
+            "router_oracle_matches": 21,
+            "dynamic_oracle_queries": 50,
+            "router_average_prefix_overlap": 0.231875,
+            "router_minimum_prefix_overlap": 0.231875,
+            "router_total_regret_ns": 2546117123,
+            "quality_metric_queries": 50,
+            "recall_at_k": 0.039021236770375646,
+            "ndcg_at_k": 0.6808197930484053,
+            "dynamic_latency": {
+              "p50_ns": 5498833,
+              "p95_ns": 27113750,
+              "p99_ns": 45185083,
+              "mean_ns": 9295058
+            },
+            "exhaustive_latency": {
+              "p50_ns": 97295667,
+              "p95_ns": 107144500,
+              "p99_ns": 160776375,
+              "mean_ns": 101241499
+            },
+            "router_simulated_latency": {
+              "p50_ns": 96049833,
+              "p95_ns": 106761417,
+              "p99_ns": 116896583,
+              "mean_ns": 62585458
+            },
+            "dynamic_latency_ns_by_query": [
+              10142541,
+              2542583,
+              6196333,
+              18480000,
+              3108416,
+              4025083,
+              40459125,
+              4711416,
+              2665250,
+              4720292,
+              4808666,
+              45185083,
+              2974542,
+              7240583,
+              5498833,
+              5210416,
+              3622750,
+              5793709,
+              5644083,
+              3728834,
+              2704708,
+              3020208,
+              9623291,
+              3179542,
+              6236667,
+              15915000,
+              13504292,
+              27113750,
+              17097167,
+              2647708,
+              3417709,
+              4283167,
+              2227583,
+              12003750,
+              2334042,
+              3021667,
+              3044417,
+              6056459,
+              4731375,
+              8276083,
+              15893083,
+              10250208,
+              5963917,
+              49844625,
+              7587125,
+              4472500,
+              11215750,
+              4539583,
+              8055042,
+              9733958
+            ]
+          },
+          {
+            "channels": 4,
+            "queries": 50,
+            "ordered_top_k_mismatches": 0,
+            "top_k_fixed_queries": 50,
+            "all_sources_exhausted_queries": 0,
+            "dynamic_source_pulls": [
+              93445,
+              93444,
+              93415,
+              90327
+            ],
+            "exhaustive_source_pulls": [
+              5000000,
+              2558141,
+              5000000,
+              1993825
+            ],
+            "source_pull_ratio": 0.02546947951912477,
+            "dynamic_dense_quantized_scores": 10000000,
+            "dynamic_dense_exact_scores": 600829,
+            "dynamic_dense_document_major_passes": 100,
+            "dynamic_dense_document_rows_traversed": 10000000,
+            "dynamic_dense_logical_dot_products": 10000000,
+            "dynamic_dense_physical_channels": 100,
+            "dynamic_dense_physical_dot_products": 10000000,
+            "dynamic_dense_preparation_ns": 138895965,
+            "dynamic_sparse_documents_evaluated": 0,
+            "dynamic_sparse_posting_elements_visited": 8714797,
+            "dynamic_sparse_batches_expanded": 0,
+            "dynamic_sparse_adaptive_refills": 113,
+            "dynamic_sparse_results_materialized": 530397,
+            "dynamic_sparse_shared_unique_terms": 0,
+            "dynamic_sparse_shared_logical_term_accesses": 0,
+            "dynamic_sparse_shared_physical_posting_elements": 0,
+            "dynamic_sparse_shared_logical_posting_elements": 0,
+            "dynamic_sparse_shared_preparation_ns": 0,
+            "dynamic_sparse_auto_selected_shared_queries": 0,
+            "dynamic_sparse_estimated_unique_posting_elements": 0,
+            "dynamic_sparse_estimated_logical_posting_elements": 0,
+            "dynamic_sparse_estimated_deduplicated_posting_elements": 0,
+            "dynamic_sparse_probe_selected_shared_queries": 0,
+            "dynamic_sparse_prefix_identities_replayed": 0,
+            "dynamic_sparse_shared_lazy_unique_batches": 0,
+            "dynamic_sparse_shared_lazy_reused_batches": 0,
+            "dynamic_sparse_shared_lazy_physical_posting_elements": 0,
+            "dynamic_sparse_shared_lazy_logical_posting_elements": 0,
+            "dynamic_sparse_shared_lazy_physical_score_multiplications": 0,
+            "dynamic_sparse_shared_lazy_logical_score_multiplications": 0,
+            "dynamic_sparse_shared_lazy_cached_channel_points": 0,
+            "router_dynamic_queries": 0,
+            "router_exhaustive_queries": 50,
+            "router_oracle_matches": 0,
+            "dynamic_oracle_queries": 50,
+            "router_average_prefix_overlap": 0.24234375,
+            "router_minimum_prefix_overlap": 0.0790625,
+            "router_total_regret_ns": 8280988626,
+            "quality_metric_queries": 50,
+            "recall_at_k": 0.035951761923516755,
+            "ndcg_at_k": 0.6363328733100344,
+            "dynamic_latency": {
+              "p50_ns": 10591209,
+              "p95_ns": 33518167,
+              "p99_ns": 41563125,
+              "mean_ns": 13992299
+            },
+            "exhaustive_latency": {
+              "p50_ns": 175256042,
+              "p95_ns": 192741625,
+              "p99_ns": 203428708,
+              "mean_ns": 179612072
+            },
+            "router_simulated_latency": {
+              "p50_ns": 179290667,
+              "p95_ns": 197734125,
+              "p99_ns": 208092791,
+              "mean_ns": 183653292
+            },
+            "dynamic_latency_ns_by_query": [
+              21951750,
+              5664375,
+              18571250,
+              12160708,
+              12131625,
+              7698333,
+              21693166,
+              12716916,
+              7708500,
+              7351958,
+              6106084,
+              12040375,
+              7361708,
+              9242625,
+              7316666,
+              15784833,
+              8161292,
+              16685458,
+              14214209,
+              10545334,
+              7945417,
+              7915333,
+              42443167,
+              9070250,
+              25131416,
+              33518167,
+              10172125,
+              19947167,
+              11184667,
+              5965208,
+              10343875,
+              16526125,
+              10591209,
+              12354958,
+              30135666,
+              11663416,
+              9217709,
+              14305375,
+              5689000,
+              7599333,
+              12248792,
+              41563125,
+              12621417,
+              38051709,
+              6578166,
+              7659500,
+              5528125,
+              8530375,
+              19935084,
+              10071958
+            ]
+          },
+          {
+            "channels": 8,
+            "queries": 50,
+            "ordered_top_k_mismatches": 0,
+            "top_k_fixed_queries": 50,
+            "all_sources_exhausted_queries": 0,
+            "dynamic_source_pulls": [
+              172266,
+              172263,
+              172263,
+              171970,
+              172262,
+              169770,
+              172250,
+              172217
+            ],
+            "exhaustive_source_pulls": [
+              5000000,
+              2558141,
+              5000000,
+              1993825,
+              5000000,
+              1698368,
+              5000000,
+              2558141
+            ],
+            "source_pull_ratio": 0.047738070133875536,
+            "dynamic_dense_quantized_scores": 20000000,
+            "dynamic_dense_exact_scores": 2150792,
+            "dynamic_dense_document_major_passes": 200,
+            "dynamic_dense_document_rows_traversed": 20000000,
+            "dynamic_dense_logical_dot_products": 20000000,
+            "dynamic_dense_physical_channels": 200,
+            "dynamic_dense_physical_dot_products": 20000000,
+            "dynamic_dense_preparation_ns": 321077963,
+            "dynamic_sparse_documents_evaluated": 0,
+            "dynamic_sparse_posting_elements_visited": 20708841,
+            "dynamic_sparse_batches_expanded": 0,
+            "dynamic_sparse_adaptive_refills": 276,
+            "dynamic_sparse_results_materialized": 1919918,
+            "dynamic_sparse_shared_unique_terms": 0,
+            "dynamic_sparse_shared_logical_term_accesses": 0,
+            "dynamic_sparse_shared_physical_posting_elements": 0,
+            "dynamic_sparse_shared_logical_posting_elements": 0,
+            "dynamic_sparse_shared_preparation_ns": 0,
+            "dynamic_sparse_auto_selected_shared_queries": 0,
+            "dynamic_sparse_estimated_unique_posting_elements": 0,
+            "dynamic_sparse_estimated_logical_posting_elements": 0,
+            "dynamic_sparse_estimated_deduplicated_posting_elements": 0,
+            "dynamic_sparse_probe_selected_shared_queries": 0,
+            "dynamic_sparse_prefix_identities_replayed": 0,
+            "dynamic_sparse_shared_lazy_unique_batches": 0,
+            "dynamic_sparse_shared_lazy_reused_batches": 0,
+            "dynamic_sparse_shared_lazy_physical_posting_elements": 0,
+            "dynamic_sparse_shared_lazy_logical_posting_elements": 0,
+            "dynamic_sparse_shared_lazy_physical_score_multiplications": 0,
+            "dynamic_sparse_shared_lazy_logical_score_multiplications": 0,
+            "dynamic_sparse_shared_lazy_cached_channel_points": 0,
+            "router_dynamic_queries": 0,
+            "router_exhaustive_queries": 50,
+            "router_oracle_matches": 1,
+            "dynamic_oracle_queries": 49,
+            "router_average_prefix_overlap": 0.2644419642857143,
+            "router_minimum_prefix_overlap": 0.01625,
+            "router_total_regret_ns": 14270524542,
+            "quality_metric_queries": 50,
+            "recall_at_k": 0.03642535223243087,
+            "ndcg_at_k": 0.6488844530882893,
+            "dynamic_latency": {
+              "p50_ns": 36331834,
+              "p95_ns": 132126375,
+              "p99_ns": 156996292,
+              "mean_ns": 59994894
+            },
+            "exhaustive_latency": {
+              "p50_ns": 338823625,
+              "p95_ns": 368339791,
+              "p99_ns": 378286625,
+              "mean_ns": 339783067
+            },
+            "router_simulated_latency": {
+              "p50_ns": 346822375,
+              "p95_ns": 378021583,
+              "p99_ns": 386765958,
+              "mean_ns": 347961579
+            },
+            "dynamic_latency_ns_by_query": [
+              36331834,
+              41328708,
+              147843583,
+              38393333,
+              16437167,
+              34918958,
+              101916667,
+              66782125,
+              29144417,
+              632501666,
+              20554709,
+              59720708,
+              22525375,
+              31309833,
+              26285083,
+              17986334,
+              37870416,
+              38519583,
+              131926958,
+              132126375,
+              13001000,
+              20977750,
+              29398166,
+              76603208,
+              68959000,
+              28820292,
+              73927042,
+              50500958,
+              127027084,
+              11761583,
+              20340167,
+              17463584,
+              26270959,
+              22518750,
+              18591333,
+              32947875,
+              105946459,
+              48166000,
+              20375375,
+              14069000,
+              15679625,
+              49739333,
+              156996292,
+              51508708,
+              58656666,
+              22735417,
+              40506542,
+              16294958,
+              48660500,
+              46877250
+            ]
+          }
+        ],
+        "router_observations": [
+          {
+            "channels": 1,
+            "query_index": 0,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 5403375,
+            "dynamic_ns": 2095083,
+            "exhaustive_ns": 88572833
+          },
+          {
+            "channels": 1,
+            "query_index": 1,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1839208,
+            "dynamic_ns": 1431583,
+            "exhaustive_ns": 74741375
+          },
+          {
+            "channels": 1,
+            "query_index": 2,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1759750,
+            "dynamic_ns": 1422500,
+            "exhaustive_ns": 78716542
+          },
+          {
+            "channels": 1,
+            "query_index": 3,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1480084,
+            "dynamic_ns": 1535542,
+            "exhaustive_ns": 74058500
+          },
+          {
+            "channels": 1,
+            "query_index": 4,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1680333,
+            "dynamic_ns": 1368042,
+            "exhaustive_ns": 79215625
+          },
+          {
+            "channels": 1,
+            "query_index": 5,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1958416,
+            "dynamic_ns": 1358542,
+            "exhaustive_ns": 76950542
+          },
+          {
+            "channels": 1,
+            "query_index": 6,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1554375,
+            "dynamic_ns": 1261083,
+            "exhaustive_ns": 73325875
+          },
+          {
+            "channels": 1,
+            "query_index": 7,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1535750,
+            "dynamic_ns": 3768291,
+            "exhaustive_ns": 76042709
+          },
+          {
+            "channels": 1,
+            "query_index": 8,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1825709,
+            "dynamic_ns": 1515375,
+            "exhaustive_ns": 79282167
+          },
+          {
+            "channels": 1,
+            "query_index": 9,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1741083,
+            "dynamic_ns": 1510625,
+            "exhaustive_ns": 74396583
+          },
+          {
+            "channels": 1,
+            "query_index": 10,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1547500,
+            "dynamic_ns": 1249958,
+            "exhaustive_ns": 74321292
+          },
+          {
+            "channels": 1,
+            "query_index": 11,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1593250,
+            "dynamic_ns": 1426208,
+            "exhaustive_ns": 76266000
+          },
+          {
+            "channels": 1,
+            "query_index": 12,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 2078459,
+            "dynamic_ns": 1611209,
+            "exhaustive_ns": 74166792
+          },
+          {
+            "channels": 1,
+            "query_index": 13,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1720875,
+            "dynamic_ns": 1581542,
+            "exhaustive_ns": 75153625
+          },
+          {
+            "channels": 1,
+            "query_index": 14,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1673083,
+            "dynamic_ns": 1546375,
+            "exhaustive_ns": 76657250
+          },
+          {
+            "channels": 1,
+            "query_index": 15,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1386625,
+            "dynamic_ns": 1529625,
+            "exhaustive_ns": 73681084
+          },
+          {
+            "channels": 1,
+            "query_index": 16,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1686375,
+            "dynamic_ns": 1520875,
+            "exhaustive_ns": 76111375
+          },
+          {
+            "channels": 1,
+            "query_index": 17,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1645125,
+            "dynamic_ns": 1366250,
+            "exhaustive_ns": 73814958
+          },
+          {
+            "channels": 1,
+            "query_index": 18,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1532125,
+            "dynamic_ns": 1231084,
+            "exhaustive_ns": 75778959
+          },
+          {
+            "channels": 1,
+            "query_index": 19,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1387792,
+            "dynamic_ns": 1678542,
+            "exhaustive_ns": 77919708
+          },
+          {
+            "channels": 1,
+            "query_index": 20,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1828959,
+            "dynamic_ns": 1342542,
+            "exhaustive_ns": 74955500
+          },
+          {
+            "channels": 1,
+            "query_index": 21,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1659375,
+            "dynamic_ns": 1648500,
+            "exhaustive_ns": 77544250
+          },
+          {
+            "channels": 1,
+            "query_index": 22,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1770875,
+            "dynamic_ns": 1439000,
+            "exhaustive_ns": 73570042
+          },
+          {
+            "channels": 1,
+            "query_index": 23,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1475666,
+            "dynamic_ns": 1456584,
+            "exhaustive_ns": 80031042
+          },
+          {
+            "channels": 1,
+            "query_index": 24,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1849625,
+            "dynamic_ns": 1355042,
+            "exhaustive_ns": 78585791
+          },
+          {
+            "channels": 1,
+            "query_index": 25,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1586041,
+            "dynamic_ns": 1404167,
+            "exhaustive_ns": 75760084
+          },
+          {
+            "channels": 1,
+            "query_index": 26,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1744208,
+            "dynamic_ns": 1526875,
+            "exhaustive_ns": 74013292
+          },
+          {
+            "channels": 1,
+            "query_index": 27,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1689875,
+            "dynamic_ns": 1417459,
+            "exhaustive_ns": 74728041
+          },
+          {
+            "channels": 1,
+            "query_index": 28,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1523834,
+            "dynamic_ns": 1225125,
+            "exhaustive_ns": 74770166
+          },
+          {
+            "channels": 1,
+            "query_index": 29,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1658083,
+            "dynamic_ns": 1385083,
+            "exhaustive_ns": 73182917
+          },
+          {
+            "channels": 1,
+            "query_index": 30,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1454083,
+            "dynamic_ns": 1222292,
+            "exhaustive_ns": 74456791
+          },
+          {
+            "channels": 1,
+            "query_index": 31,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1570958,
+            "dynamic_ns": 1338083,
+            "exhaustive_ns": 73693125
+          },
+          {
+            "channels": 1,
+            "query_index": 32,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1317041,
+            "dynamic_ns": 1202416,
+            "exhaustive_ns": 77852417
+          },
+          {
+            "channels": 1,
+            "query_index": 33,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1609792,
+            "dynamic_ns": 1803750,
+            "exhaustive_ns": 73227708
+          },
+          {
+            "channels": 1,
+            "query_index": 34,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1575334,
+            "dynamic_ns": 1446500,
+            "exhaustive_ns": 72453625
+          },
+          {
+            "channels": 1,
+            "query_index": 35,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1554833,
+            "dynamic_ns": 1441083,
+            "exhaustive_ns": 77613125
+          },
+          {
+            "channels": 1,
+            "query_index": 36,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1437125,
+            "dynamic_ns": 1363333,
+            "exhaustive_ns": 71736458
+          },
+          {
+            "channels": 1,
+            "query_index": 37,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1653166,
+            "dynamic_ns": 1534250,
+            "exhaustive_ns": 73024042
+          },
+          {
+            "channels": 1,
+            "query_index": 38,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1397917,
+            "dynamic_ns": 1288375,
+            "exhaustive_ns": 72071209
+          },
+          {
+            "channels": 1,
+            "query_index": 39,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1477542,
+            "dynamic_ns": 1464875,
+            "exhaustive_ns": 75437041
+          },
+          {
+            "channels": 1,
+            "query_index": 40,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1552458,
+            "dynamic_ns": 1365958,
+            "exhaustive_ns": 74014291
+          },
+          {
+            "channels": 1,
+            "query_index": 41,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1804667,
+            "dynamic_ns": 1713333,
+            "exhaustive_ns": 76680875
+          },
+          {
+            "channels": 1,
+            "query_index": 42,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1620875,
+            "dynamic_ns": 1428834,
+            "exhaustive_ns": 74941667
+          },
+          {
+            "channels": 1,
+            "query_index": 43,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1582792,
+            "dynamic_ns": 1637167,
+            "exhaustive_ns": 74738459
+          },
+          {
+            "channels": 1,
+            "query_index": 44,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1551584,
+            "dynamic_ns": 1477792,
+            "exhaustive_ns": 83277250
+          },
+          {
+            "channels": 1,
+            "query_index": 45,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1809042,
+            "dynamic_ns": 1514250,
+            "exhaustive_ns": 100631625
+          },
+          {
+            "channels": 1,
+            "query_index": 46,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 2395292,
+            "dynamic_ns": 1764542,
+            "exhaustive_ns": 86582334
+          },
+          {
+            "channels": 1,
+            "query_index": 47,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1901834,
+            "dynamic_ns": 1608459,
+            "exhaustive_ns": 77667250
+          },
+          {
+            "channels": 1,
+            "query_index": 48,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1680833,
+            "dynamic_ns": 1369959,
+            "exhaustive_ns": 76321750
+          },
+          {
+            "channels": 1,
+            "query_index": 49,
+            "average_prefix_overlap": 1.0,
+            "minimum_prefix_overlap": 1.0,
+            "probe_ns": 1668000,
+            "dynamic_ns": 1414208,
+            "exhaustive_ns": 77149291
+          },
+          {
+            "channels": 2,
+            "query_index": 0,
+            "average_prefix_overlap": 0.125,
+            "minimum_prefix_overlap": 0.125,
+            "probe_ns": 4026959,
+            "dynamic_ns": 10142541,
+            "exhaustive_ns": 102736291
+          },
+          {
+            "channels": 2,
+            "query_index": 1,
+            "average_prefix_overlap": 0.265625,
+            "minimum_prefix_overlap": 0.265625,
+            "probe_ns": 2269291,
+            "dynamic_ns": 2542583,
+            "exhaustive_ns": 94661583
+          },
+          {
+            "channels": 2,
+            "query_index": 2,
+            "average_prefix_overlap": 0.328125,
+            "minimum_prefix_overlap": 0.328125,
+            "probe_ns": 2359375,
+            "dynamic_ns": 6196333,
+            "exhaustive_ns": 97977250
+          },
+          {
+            "channels": 2,
+            "query_index": 3,
+            "average_prefix_overlap": 0.09375,
+            "minimum_prefix_overlap": 0.09375,
+            "probe_ns": 2002416,
+            "dynamic_ns": 18480000,
+            "exhaustive_ns": 96532875
+          },
+          {
+            "channels": 2,
+            "query_index": 4,
+            "average_prefix_overlap": 0.390625,
+            "minimum_prefix_overlap": 0.390625,
+            "probe_ns": 2135167,
+            "dynamic_ns": 3108416,
+            "exhaustive_ns": 92919334
+          },
+          {
+            "channels": 2,
+            "query_index": 5,
+            "average_prefix_overlap": 0.3125,
+            "minimum_prefix_overlap": 0.3125,
+            "probe_ns": 2373958,
+            "dynamic_ns": 4025083,
+            "exhaustive_ns": 98034666
+          },
+          {
+            "channels": 2,
+            "query_index": 6,
+            "average_prefix_overlap": 0.03125,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 2102292,
+            "dynamic_ns": 40459125,
+            "exhaustive_ns": 91436625
+          },
+          {
+            "channels": 2,
+            "query_index": 7,
+            "average_prefix_overlap": 0.234375,
+            "minimum_prefix_overlap": 0.234375,
+            "probe_ns": 1837000,
+            "dynamic_ns": 4711416,
+            "exhaustive_ns": 94212833
+          },
+          {
+            "channels": 2,
+            "query_index": 8,
+            "average_prefix_overlap": 0.125,
+            "minimum_prefix_overlap": 0.125,
+            "probe_ns": 1934375,
+            "dynamic_ns": 2665250,
+            "exhaustive_ns": 92235792
+          },
+          {
+            "channels": 2,
+            "query_index": 9,
+            "average_prefix_overlap": 0.0625,
+            "minimum_prefix_overlap": 0.0625,
+            "probe_ns": 2058875,
+            "dynamic_ns": 4720292,
+            "exhaustive_ns": 101072667
+          },
+          {
+            "channels": 2,
+            "query_index": 10,
+            "average_prefix_overlap": 0.328125,
+            "minimum_prefix_overlap": 0.328125,
+            "probe_ns": 2164541,
+            "dynamic_ns": 4808666,
+            "exhaustive_ns": 96871334
+          },
+          {
+            "channels": 2,
+            "query_index": 11,
+            "average_prefix_overlap": 0.234375,
+            "minimum_prefix_overlap": 0.234375,
+            "probe_ns": 1924125,
+            "dynamic_ns": 45185083,
+            "exhaustive_ns": 90947833
+          },
+          {
+            "channels": 2,
+            "query_index": 12,
+            "average_prefix_overlap": 0.21875,
+            "minimum_prefix_overlap": 0.21875,
+            "probe_ns": 2250875,
+            "dynamic_ns": 2974542,
+            "exhaustive_ns": 102503875
+          },
+          {
+            "channels": 2,
+            "query_index": 13,
+            "average_prefix_overlap": 0.296875,
+            "minimum_prefix_overlap": 0.296875,
+            "probe_ns": 2137333,
+            "dynamic_ns": 7240583,
+            "exhaustive_ns": 93301833
+          },
+          {
+            "channels": 2,
+            "query_index": 14,
+            "average_prefix_overlap": 0.359375,
+            "minimum_prefix_overlap": 0.359375,
+            "probe_ns": 2029000,
+            "dynamic_ns": 5498833,
+            "exhaustive_ns": 100927125
+          },
+          {
+            "channels": 2,
+            "query_index": 15,
+            "average_prefix_overlap": 0.265625,
+            "minimum_prefix_overlap": 0.265625,
+            "probe_ns": 2022458,
+            "dynamic_ns": 5210416,
+            "exhaustive_ns": 96571000
+          },
+          {
+            "channels": 2,
+            "query_index": 16,
+            "average_prefix_overlap": 0.21875,
+            "minimum_prefix_overlap": 0.21875,
+            "probe_ns": 1833958,
+            "dynamic_ns": 3622750,
+            "exhaustive_ns": 99768875
+          },
+          {
+            "channels": 2,
+            "query_index": 17,
+            "average_prefix_overlap": 0.265625,
+            "minimum_prefix_overlap": 0.265625,
+            "probe_ns": 2293750,
+            "dynamic_ns": 5793709,
+            "exhaustive_ns": 98128417
+          },
+          {
+            "channels": 2,
+            "query_index": 18,
+            "average_prefix_overlap": 0.109375,
+            "minimum_prefix_overlap": 0.109375,
+            "probe_ns": 2201916,
+            "dynamic_ns": 5644083,
+            "exhaustive_ns": 96829542
+          },
+          {
+            "channels": 2,
+            "query_index": 19,
+            "average_prefix_overlap": 0.109375,
+            "minimum_prefix_overlap": 0.109375,
+            "probe_ns": 2089917,
+            "dynamic_ns": 3728834,
+            "exhaustive_ns": 98394250
+          },
+          {
+            "channels": 2,
+            "query_index": 20,
+            "average_prefix_overlap": 0.171875,
+            "minimum_prefix_overlap": 0.171875,
+            "probe_ns": 1912666,
+            "dynamic_ns": 2704708,
+            "exhaustive_ns": 96194250
+          },
+          {
+            "channels": 2,
+            "query_index": 21,
+            "average_prefix_overlap": 0.328125,
+            "minimum_prefix_overlap": 0.328125,
+            "probe_ns": 2264166,
+            "dynamic_ns": 3020208,
+            "exhaustive_ns": 107144500
+          },
+          {
+            "channels": 2,
+            "query_index": 22,
+            "average_prefix_overlap": 0.171875,
+            "minimum_prefix_overlap": 0.171875,
+            "probe_ns": 2316167,
+            "dynamic_ns": 9623291,
+            "exhaustive_ns": 101379709
+          },
+          {
+            "channels": 2,
+            "query_index": 23,
+            "average_prefix_overlap": 0.390625,
+            "minimum_prefix_overlap": 0.390625,
+            "probe_ns": 2062292,
+            "dynamic_ns": 3179542,
+            "exhaustive_ns": 100287667
+          },
+          {
+            "channels": 2,
+            "query_index": 24,
+            "average_prefix_overlap": 0.109375,
+            "minimum_prefix_overlap": 0.109375,
+            "probe_ns": 2435417,
+            "dynamic_ns": 6236667,
+            "exhaustive_ns": 94115792
+          },
+          {
+            "channels": 2,
+            "query_index": 25,
+            "average_prefix_overlap": 0.09375,
+            "minimum_prefix_overlap": 0.09375,
+            "probe_ns": 1990000,
+            "dynamic_ns": 15915000,
+            "exhaustive_ns": 94456541
+          },
+          {
+            "channels": 2,
+            "query_index": 26,
+            "average_prefix_overlap": 0.1875,
+            "minimum_prefix_overlap": 0.1875,
+            "probe_ns": 2251167,
+            "dynamic_ns": 13504292,
+            "exhaustive_ns": 95738541
+          },
+          {
+            "channels": 2,
+            "query_index": 27,
+            "average_prefix_overlap": 0.09375,
+            "minimum_prefix_overlap": 0.09375,
+            "probe_ns": 2345417,
+            "dynamic_ns": 27113750,
+            "exhaustive_ns": 95377208
+          },
+          {
+            "channels": 2,
+            "query_index": 28,
+            "average_prefix_overlap": 0.15625,
+            "minimum_prefix_overlap": 0.15625,
+            "probe_ns": 2224292,
+            "dynamic_ns": 17097167,
+            "exhaustive_ns": 100033000
+          },
+          {
+            "channels": 2,
+            "query_index": 29,
+            "average_prefix_overlap": 0.453125,
+            "minimum_prefix_overlap": 0.453125,
+            "probe_ns": 1924292,
+            "dynamic_ns": 2647708,
+            "exhaustive_ns": 95727666
+          },
+          {
+            "channels": 2,
+            "query_index": 30,
+            "average_prefix_overlap": 0.4375,
+            "minimum_prefix_overlap": 0.4375,
+            "probe_ns": 2185750,
+            "dynamic_ns": 3417709,
+            "exhaustive_ns": 100150541
+          },
+          {
+            "channels": 2,
+            "query_index": 31,
+            "average_prefix_overlap": 0.21875,
+            "minimum_prefix_overlap": 0.21875,
+            "probe_ns": 2101208,
+            "dynamic_ns": 4283167,
+            "exhaustive_ns": 103589833
+          },
+          {
+            "channels": 2,
+            "query_index": 32,
+            "average_prefix_overlap": 0.390625,
+            "minimum_prefix_overlap": 0.390625,
+            "probe_ns": 1847625,
+            "dynamic_ns": 2227583,
+            "exhaustive_ns": 97295667
+          },
+          {
+            "channels": 2,
+            "query_index": 33,
+            "average_prefix_overlap": 0.1875,
+            "minimum_prefix_overlap": 0.1875,
+            "probe_ns": 2207042,
+            "dynamic_ns": 12003750,
+            "exhaustive_ns": 94788791
+          },
+          {
+            "channels": 2,
+            "query_index": 34,
+            "average_prefix_overlap": 0.5,
+            "minimum_prefix_overlap": 0.5,
+            "probe_ns": 2301916,
+            "dynamic_ns": 2334042,
+            "exhaustive_ns": 97893667
+          },
+          {
+            "channels": 2,
+            "query_index": 35,
+            "average_prefix_overlap": 0.375,
+            "minimum_prefix_overlap": 0.375,
+            "probe_ns": 2127167,
+            "dynamic_ns": 3021667,
+            "exhaustive_ns": 100482750
+          },
+          {
+            "channels": 2,
+            "query_index": 36,
+            "average_prefix_overlap": 0.265625,
+            "minimum_prefix_overlap": 0.265625,
+            "probe_ns": 2059916,
+            "dynamic_ns": 3044417,
+            "exhaustive_ns": 100671541
+          },
+          {
+            "channels": 2,
+            "query_index": 37,
+            "average_prefix_overlap": 0.171875,
+            "minimum_prefix_overlap": 0.171875,
+            "probe_ns": 2245375,
+            "dynamic_ns": 6056459,
+            "exhaustive_ns": 99960459
+          },
+          {
+            "channels": 2,
+            "query_index": 38,
+            "average_prefix_overlap": 0.234375,
+            "minimum_prefix_overlap": 0.234375,
+            "probe_ns": 2267292,
+            "dynamic_ns": 4731375,
+            "exhaustive_ns": 96064250
+          },
+          {
+            "channels": 2,
+            "query_index": 39,
+            "average_prefix_overlap": 0.203125,
+            "minimum_prefix_overlap": 0.203125,
+            "probe_ns": 2295833,
+            "dynamic_ns": 8276083,
+            "exhaustive_ns": 160776375
+          },
+          {
+            "channels": 2,
+            "query_index": 40,
+            "average_prefix_overlap": 0.3125,
+            "minimum_prefix_overlap": 0.3125,
+            "probe_ns": 10152541,
+            "dynamic_ns": 15893083,
+            "exhaustive_ns": 202299000
+          },
+          {
+            "channels": 2,
+            "query_index": 41,
+            "average_prefix_overlap": 0.0625,
+            "minimum_prefix_overlap": 0.0625,
+            "probe_ns": 4068791,
+            "dynamic_ns": 10250208,
+            "exhaustive_ns": 112827792
+          },
+          {
+            "channels": 2,
+            "query_index": 42,
+            "average_prefix_overlap": 0.234375,
+            "minimum_prefix_overlap": 0.234375,
+            "probe_ns": 2029375,
+            "dynamic_ns": 5963917,
+            "exhaustive_ns": 95390666
+          },
+          {
+            "channels": 2,
+            "query_index": 43,
+            "average_prefix_overlap": 0.078125,
+            "minimum_prefix_overlap": 0.078125,
+            "probe_ns": 2101334,
+            "dynamic_ns": 49844625,
+            "exhaustive_ns": 104660083
+          },
+          {
+            "channels": 2,
+            "query_index": 44,
+            "average_prefix_overlap": 0.1875,
+            "minimum_prefix_overlap": 0.1875,
+            "probe_ns": 2144875,
+            "dynamic_ns": 7587125,
+            "exhaustive_ns": 97324375
+          },
+          {
+            "channels": 2,
+            "query_index": 45,
+            "average_prefix_overlap": 0.203125,
+            "minimum_prefix_overlap": 0.203125,
+            "probe_ns": 2158125,
+            "dynamic_ns": 4472500,
+            "exhaustive_ns": 96341750
+          },
+          {
+            "channels": 2,
+            "query_index": 46,
+            "average_prefix_overlap": 0.265625,
+            "minimum_prefix_overlap": 0.265625,
+            "probe_ns": 1956459,
+            "dynamic_ns": 11215750,
+            "exhaustive_ns": 100905000
+          },
+          {
+            "channels": 2,
+            "query_index": 47,
+            "average_prefix_overlap": 0.265625,
+            "minimum_prefix_overlap": 0.265625,
+            "probe_ns": 1922667,
+            "dynamic_ns": 4539583,
+            "exhaustive_ns": 96457750
+          },
+          {
+            "channels": 2,
+            "query_index": 48,
+            "average_prefix_overlap": 0.15625,
+            "minimum_prefix_overlap": 0.15625,
+            "probe_ns": 2226250,
+            "dynamic_ns": 8055042,
+            "exhaustive_ns": 96479292
+          },
+          {
+            "channels": 2,
+            "query_index": 49,
+            "average_prefix_overlap": 0.3125,
+            "minimum_prefix_overlap": 0.3125,
+            "probe_ns": 2229875,
+            "dynamic_ns": 9733958,
+            "exhaustive_ns": 91196500
+          },
+          {
+            "channels": 4,
+            "query_index": 0,
+            "average_prefix_overlap": 0.23177083333333334,
+            "minimum_prefix_overlap": 0.09375,
+            "probe_ns": 4220750,
+            "dynamic_ns": 21951750,
+            "exhaustive_ns": 169468000
+          },
+          {
+            "channels": 4,
+            "query_index": 1,
+            "average_prefix_overlap": 0.3776041666666667,
+            "minimum_prefix_overlap": 0.203125,
+            "probe_ns": 4172583,
+            "dynamic_ns": 5664375,
+            "exhaustive_ns": 174007084
+          },
+          {
+            "channels": 4,
+            "query_index": 2,
+            "average_prefix_overlap": 0.14583333333333334,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 4028208,
+            "dynamic_ns": 18571250,
+            "exhaustive_ns": 178862125
+          },
+          {
+            "channels": 4,
+            "query_index": 3,
+            "average_prefix_overlap": 0.16666666666666666,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 3397958,
+            "dynamic_ns": 12160708,
+            "exhaustive_ns": 160697833
+          },
+          {
+            "channels": 4,
+            "query_index": 4,
+            "average_prefix_overlap": 0.2916666666666667,
+            "minimum_prefix_overlap": 0.140625,
+            "probe_ns": 3693667,
+            "dynamic_ns": 12131625,
+            "exhaustive_ns": 167244667
+          },
+          {
+            "channels": 4,
+            "query_index": 5,
+            "average_prefix_overlap": 0.3411458333333333,
+            "minimum_prefix_overlap": 0.171875,
+            "probe_ns": 4983042,
+            "dynamic_ns": 7698333,
+            "exhaustive_ns": 175654792
+          },
+          {
+            "channels": 4,
+            "query_index": 6,
+            "average_prefix_overlap": 0.14322916666666666,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 4151708,
+            "dynamic_ns": 21693166,
+            "exhaustive_ns": 172373167
+          },
+          {
+            "channels": 4,
+            "query_index": 7,
+            "average_prefix_overlap": 0.3359375,
+            "minimum_prefix_overlap": 0.15625,
+            "probe_ns": 3275583,
+            "dynamic_ns": 12716916,
+            "exhaustive_ns": 165889000
+          },
+          {
+            "channels": 4,
+            "query_index": 8,
+            "average_prefix_overlap": 0.22395833333333334,
+            "minimum_prefix_overlap": 0.078125,
+            "probe_ns": 3816334,
+            "dynamic_ns": 7708500,
+            "exhaustive_ns": 170734625
+          },
+          {
+            "channels": 4,
+            "query_index": 9,
+            "average_prefix_overlap": 0.14322916666666666,
+            "minimum_prefix_overlap": 0.015625,
+            "probe_ns": 3700333,
+            "dynamic_ns": 7351958,
+            "exhaustive_ns": 178067750
+          },
+          {
+            "channels": 4,
+            "query_index": 10,
+            "average_prefix_overlap": 0.2526041666666667,
+            "minimum_prefix_overlap": 0.0625,
+            "probe_ns": 3683625,
+            "dynamic_ns": 6106084,
+            "exhaustive_ns": 169897750
+          },
+          {
+            "channels": 4,
+            "query_index": 11,
+            "average_prefix_overlap": 0.2864583333333333,
+            "minimum_prefix_overlap": 0.125,
+            "probe_ns": 3700541,
+            "dynamic_ns": 12040375,
+            "exhaustive_ns": 166557041
+          },
+          {
+            "channels": 4,
+            "query_index": 12,
+            "average_prefix_overlap": 0.203125,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 3659625,
+            "dynamic_ns": 7361708,
+            "exhaustive_ns": 184891042
+          },
+          {
+            "channels": 4,
+            "query_index": 13,
+            "average_prefix_overlap": 0.25,
+            "minimum_prefix_overlap": 0.078125,
+            "probe_ns": 4113334,
+            "dynamic_ns": 9242625,
+            "exhaustive_ns": 173514125
+          },
+          {
+            "channels": 4,
+            "query_index": 14,
+            "average_prefix_overlap": 0.2526041666666667,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 3716833,
+            "dynamic_ns": 7316666,
+            "exhaustive_ns": 175889375
+          },
+          {
+            "channels": 4,
+            "query_index": 15,
+            "average_prefix_overlap": 0.3567708333333333,
+            "minimum_prefix_overlap": 0.171875,
+            "probe_ns": 3951375,
+            "dynamic_ns": 15784833,
+            "exhaustive_ns": 180195250
+          },
+          {
+            "channels": 4,
+            "query_index": 16,
+            "average_prefix_overlap": 0.3020833333333333,
+            "minimum_prefix_overlap": 0.109375,
+            "probe_ns": 3913708,
+            "dynamic_ns": 8161292,
+            "exhaustive_ns": 179911000
+          },
+          {
+            "channels": 4,
+            "query_index": 17,
+            "average_prefix_overlap": 0.14322916666666666,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 3748667,
+            "dynamic_ns": 16685458,
+            "exhaustive_ns": 178462375
+          },
+          {
+            "channels": 4,
+            "query_index": 18,
+            "average_prefix_overlap": 0.13541666666666666,
+            "minimum_prefix_overlap": 0.015625,
+            "probe_ns": 3967083,
+            "dynamic_ns": 14214209,
+            "exhaustive_ns": 169705625
+          },
+          {
+            "channels": 4,
+            "query_index": 19,
+            "average_prefix_overlap": 0.11458333333333333,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 4026583,
+            "dynamic_ns": 10545334,
+            "exhaustive_ns": 179418000
+          },
+          {
+            "channels": 4,
+            "query_index": 20,
+            "average_prefix_overlap": 0.1640625,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 3841250,
+            "dynamic_ns": 7945417,
+            "exhaustive_ns": 175850750
+          },
+          {
+            "channels": 4,
+            "query_index": 21,
+            "average_prefix_overlap": 0.3177083333333333,
+            "minimum_prefix_overlap": 0.140625,
+            "probe_ns": 3740250,
+            "dynamic_ns": 7915333,
+            "exhaustive_ns": 182304875
+          },
+          {
+            "channels": 4,
+            "query_index": 22,
+            "average_prefix_overlap": 0.14583333333333334,
+            "minimum_prefix_overlap": 0.015625,
+            "probe_ns": 4196458,
+            "dynamic_ns": 42443167,
+            "exhaustive_ns": 182770542
+          },
+          {
+            "channels": 4,
+            "query_index": 23,
+            "average_prefix_overlap": 0.296875,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 3638584,
+            "dynamic_ns": 9070250,
+            "exhaustive_ns": 178300041
+          },
+          {
+            "channels": 4,
+            "query_index": 24,
+            "average_prefix_overlap": 0.2265625,
+            "minimum_prefix_overlap": 0.015625,
+            "probe_ns": 3586625,
+            "dynamic_ns": 25131416,
+            "exhaustive_ns": 163463250
+          },
+          {
+            "channels": 4,
+            "query_index": 25,
+            "average_prefix_overlap": 0.125,
+            "minimum_prefix_overlap": 0.046875,
+            "probe_ns": 3667167,
+            "dynamic_ns": 33518167,
+            "exhaustive_ns": 168099292
+          },
+          {
+            "channels": 4,
+            "query_index": 26,
+            "average_prefix_overlap": 0.3385416666666667,
+            "minimum_prefix_overlap": 0.140625,
+            "probe_ns": 4049042,
+            "dynamic_ns": 10172125,
+            "exhaustive_ns": 173083125
+          },
+          {
+            "channels": 4,
+            "query_index": 27,
+            "average_prefix_overlap": 0.10416666666666667,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 4376542,
+            "dynamic_ns": 19947167,
+            "exhaustive_ns": 172494750
+          },
+          {
+            "channels": 4,
+            "query_index": 28,
+            "average_prefix_overlap": 0.2630208333333333,
+            "minimum_prefix_overlap": 0.125,
+            "probe_ns": 3884375,
+            "dynamic_ns": 11184667,
+            "exhaustive_ns": 178488833
+          },
+          {
+            "channels": 4,
+            "query_index": 29,
+            "average_prefix_overlap": 0.3697916666666667,
+            "minimum_prefix_overlap": 0.171875,
+            "probe_ns": 3959291,
+            "dynamic_ns": 5965208,
+            "exhaustive_ns": 170413625
+          },
+          {
+            "channels": 4,
+            "query_index": 30,
+            "average_prefix_overlap": 0.3046875,
+            "minimum_prefix_overlap": 0.140625,
+            "probe_ns": 3597292,
+            "dynamic_ns": 10343875,
+            "exhaustive_ns": 173419834
+          },
+          {
+            "channels": 4,
+            "query_index": 31,
+            "average_prefix_overlap": 0.2630208333333333,
+            "minimum_prefix_overlap": 0.15625,
+            "probe_ns": 4174583,
+            "dynamic_ns": 16526125,
+            "exhaustive_ns": 178628541
+          },
+          {
+            "channels": 4,
+            "query_index": 32,
+            "average_prefix_overlap": 0.265625,
+            "minimum_prefix_overlap": 0.046875,
+            "probe_ns": 3796334,
+            "dynamic_ns": 10591209,
+            "exhaustive_ns": 177023709
+          },
+          {
+            "channels": 4,
+            "query_index": 33,
+            "average_prefix_overlap": 0.15625,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 4190125,
+            "dynamic_ns": 12354958,
+            "exhaustive_ns": 193784791
+          },
+          {
+            "channels": 4,
+            "query_index": 34,
+            "average_prefix_overlap": 0.2942708333333333,
+            "minimum_prefix_overlap": 0.015625,
+            "probe_ns": 4664083,
+            "dynamic_ns": 30135666,
+            "exhaustive_ns": 203428708
+          },
+          {
+            "channels": 4,
+            "query_index": 35,
+            "average_prefix_overlap": 0.3098958333333333,
+            "minimum_prefix_overlap": 0.125,
+            "probe_ns": 4229875,
+            "dynamic_ns": 11663416,
+            "exhaustive_ns": 375150333
+          },
+          {
+            "channels": 4,
+            "query_index": 36,
+            "average_prefix_overlap": 0.22916666666666666,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 4992500,
+            "dynamic_ns": 9217709,
+            "exhaustive_ns": 192741625
+          },
+          {
+            "channels": 4,
+            "query_index": 37,
+            "average_prefix_overlap": 0.265625,
+            "minimum_prefix_overlap": 0.046875,
+            "probe_ns": 4046250,
+            "dynamic_ns": 14305375,
+            "exhaustive_ns": 173422125
+          },
+          {
+            "channels": 4,
+            "query_index": 38,
+            "average_prefix_overlap": 0.3463541666666667,
+            "minimum_prefix_overlap": 0.1875,
+            "probe_ns": 3984416,
+            "dynamic_ns": 5689000,
+            "exhaustive_ns": 175000208
+          },
+          {
+            "channels": 4,
+            "query_index": 39,
+            "average_prefix_overlap": 0.2734375,
+            "minimum_prefix_overlap": 0.140625,
+            "probe_ns": 4727708,
+            "dynamic_ns": 7599333,
+            "exhaustive_ns": 170436292
+          },
+          {
+            "channels": 4,
+            "query_index": 40,
+            "average_prefix_overlap": 0.234375,
+            "minimum_prefix_overlap": 0.078125,
+            "probe_ns": 3696750,
+            "dynamic_ns": 12248792,
+            "exhaustive_ns": 175593917
+          },
+          {
+            "channels": 4,
+            "query_index": 41,
+            "average_prefix_overlap": 0.09375,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 5025000,
+            "dynamic_ns": 41563125,
+            "exhaustive_ns": 171358917
+          },
+          {
+            "channels": 4,
+            "query_index": 42,
+            "average_prefix_overlap": 0.20572916666666666,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 4744208,
+            "dynamic_ns": 12621417,
+            "exhaustive_ns": 175256042
+          },
+          {
+            "channels": 4,
+            "query_index": 43,
+            "average_prefix_overlap": 0.1796875,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 3994250,
+            "dynamic_ns": 38051709,
+            "exhaustive_ns": 187955667
+          },
+          {
+            "channels": 4,
+            "query_index": 44,
+            "average_prefix_overlap": 0.2265625,
+            "minimum_prefix_overlap": 0.0625,
+            "probe_ns": 3839750,
+            "dynamic_ns": 6578166,
+            "exhaustive_ns": 175127708
+          },
+          {
+            "channels": 4,
+            "query_index": 45,
+            "average_prefix_overlap": 0.2760416666666667,
+            "minimum_prefix_overlap": 0.140625,
+            "probe_ns": 4620125,
+            "dynamic_ns": 7659500,
+            "exhaustive_ns": 176706375
+          },
+          {
+            "channels": 4,
+            "query_index": 46,
+            "average_prefix_overlap": 0.3046875,
+            "minimum_prefix_overlap": 0.21875,
+            "probe_ns": 4025000,
+            "dynamic_ns": 5528125,
+            "exhaustive_ns": 177938125
+          },
+          {
+            "channels": 4,
+            "query_index": 47,
+            "average_prefix_overlap": 0.3411458333333333,
+            "minimum_prefix_overlap": 0.1875,
+            "probe_ns": 4014375,
+            "dynamic_ns": 8530375,
+            "exhaustive_ns": 171473667
+          },
+          {
+            "channels": 4,
+            "query_index": 48,
+            "average_prefix_overlap": 0.1328125,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 4806709,
+            "dynamic_ns": 19935084,
+            "exhaustive_ns": 179027291
+          },
+          {
+            "channels": 4,
+            "query_index": 49,
+            "average_prefix_overlap": 0.3645833333333333,
+            "minimum_prefix_overlap": 0.140625,
+            "probe_ns": 4030542,
+            "dynamic_ns": 10071958,
+            "exhaustive_ns": 160420041
+          },
+          {
+            "channels": 8,
+            "query_index": 0,
+            "average_prefix_overlap": 0.19419642857142858,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8909667,
+            "dynamic_ns": 36331834,
+            "exhaustive_ns": 396005625
+          },
+          {
+            "channels": 8,
+            "query_index": 1,
+            "average_prefix_overlap": 0.3470982142857143,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 9174416,
+            "dynamic_ns": 41328708,
+            "exhaustive_ns": 315366000
+          },
+          {
+            "channels": 8,
+            "query_index": 2,
+            "average_prefix_overlap": 0.23716517857142858,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 9013542,
+            "dynamic_ns": 147843583,
+            "exhaustive_ns": 341386500
+          },
+          {
+            "channels": 8,
+            "query_index": 3,
+            "average_prefix_overlap": 0.19921875,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8422583,
+            "dynamic_ns": 38393333,
+            "exhaustive_ns": 315685250
+          },
+          {
+            "channels": 8,
+            "query_index": 4,
+            "average_prefix_overlap": 0.3046875,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 7351041,
+            "dynamic_ns": 16437167,
+            "exhaustive_ns": 306151041
+          },
+          {
+            "channels": 8,
+            "query_index": 5,
+            "average_prefix_overlap": 0.375,
+            "minimum_prefix_overlap": 0.09375,
+            "probe_ns": 9186000,
+            "dynamic_ns": 34918958,
+            "exhaustive_ns": 340145250
+          },
+          {
+            "channels": 8,
+            "query_index": 6,
+            "average_prefix_overlap": 0.17131696428571427,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 9218833,
+            "dynamic_ns": 101916667,
+            "exhaustive_ns": 315814042
+          },
+          {
+            "channels": 8,
+            "query_index": 7,
+            "average_prefix_overlap": 0.28013392857142855,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 6990417,
+            "dynamic_ns": 66782125,
+            "exhaustive_ns": 321477625
+          },
+          {
+            "channels": 8,
+            "query_index": 8,
+            "average_prefix_overlap": 0.23102678571428573,
+            "minimum_prefix_overlap": 0.015625,
+            "probe_ns": 7478875,
+            "dynamic_ns": 29144417,
+            "exhaustive_ns": 333138583
+          },
+          {
+            "channels": 8,
+            "query_index": 9,
+            "average_prefix_overlap": 0.21707589285714285,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7330042,
+            "dynamic_ns": 632501666,
+            "exhaustive_ns": 351385791
+          },
+          {
+            "channels": 8,
+            "query_index": 10,
+            "average_prefix_overlap": 0.31361607142857145,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 8416500,
+            "dynamic_ns": 20554709,
+            "exhaustive_ns": 335639791
+          },
+          {
+            "channels": 8,
+            "query_index": 11,
+            "average_prefix_overlap": 0.23716517857142858,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8621833,
+            "dynamic_ns": 59720708,
+            "exhaustive_ns": 316833916
+          },
+          {
+            "channels": 8,
+            "query_index": 12,
+            "average_prefix_overlap": 0.28125,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7097917,
+            "dynamic_ns": 22525375,
+            "exhaustive_ns": 344993959
+          },
+          {
+            "channels": 8,
+            "query_index": 13,
+            "average_prefix_overlap": 0.23046875,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7654958,
+            "dynamic_ns": 31309833,
+            "exhaustive_ns": 317429667
+          },
+          {
+            "channels": 8,
+            "query_index": 14,
+            "average_prefix_overlap": 0.27734375,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7516583,
+            "dynamic_ns": 26285083,
+            "exhaustive_ns": 335575959
+          },
+          {
+            "channels": 8,
+            "query_index": 15,
+            "average_prefix_overlap": 0.25558035714285715,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7888917,
+            "dynamic_ns": 17986334,
+            "exhaustive_ns": 338562208
+          },
+          {
+            "channels": 8,
+            "query_index": 16,
+            "average_prefix_overlap": 0.22600446428571427,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7489375,
+            "dynamic_ns": 37870416,
+            "exhaustive_ns": 332949083
+          },
+          {
+            "channels": 8,
+            "query_index": 17,
+            "average_prefix_overlap": 0.23158482142857142,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8068000,
+            "dynamic_ns": 38519583,
+            "exhaustive_ns": 339635209
+          },
+          {
+            "channels": 8,
+            "query_index": 18,
+            "average_prefix_overlap": 0.18694196428571427,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7476416,
+            "dynamic_ns": 131926958,
+            "exhaustive_ns": 324100417
+          },
+          {
+            "channels": 8,
+            "query_index": 19,
+            "average_prefix_overlap": 0.23716517857142858,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7043167,
+            "dynamic_ns": 132126375,
+            "exhaustive_ns": 319922917
+          },
+          {
+            "channels": 8,
+            "query_index": 20,
+            "average_prefix_overlap": 0.23158482142857142,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8152125,
+            "dynamic_ns": 13001000,
+            "exhaustive_ns": 326288959
+          },
+          {
+            "channels": 8,
+            "query_index": 21,
+            "average_prefix_overlap": 0.3627232142857143,
+            "minimum_prefix_overlap": 0.140625,
+            "probe_ns": 8354083,
+            "dynamic_ns": 20977750,
+            "exhaustive_ns": 357836250
+          },
+          {
+            "channels": 8,
+            "query_index": 22,
+            "average_prefix_overlap": 0.17745535714285715,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 9532459,
+            "dynamic_ns": 29398166,
+            "exhaustive_ns": 349914375
+          },
+          {
+            "channels": 8,
+            "query_index": 23,
+            "average_prefix_overlap": 0.39564732142857145,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8833416,
+            "dynamic_ns": 76603208,
+            "exhaustive_ns": 369453208
+          },
+          {
+            "channels": 8,
+            "query_index": 24,
+            "average_prefix_overlap": 0.22154017857142858,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 9681792,
+            "dynamic_ns": 68959000,
+            "exhaustive_ns": 368339791
+          },
+          {
+            "channels": 8,
+            "query_index": 25,
+            "average_prefix_overlap": 0.17745535714285715,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8487875,
+            "dynamic_ns": 28820292,
+            "exhaustive_ns": 339716500
+          },
+          {
+            "channels": 8,
+            "query_index": 26,
+            "average_prefix_overlap": 0.26004464285714285,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8072292,
+            "dynamic_ns": 73927042,
+            "exhaustive_ns": 334622125
+          },
+          {
+            "channels": 8,
+            "query_index": 27,
+            "average_prefix_overlap": 0.14787946428571427,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8993416,
+            "dynamic_ns": 50500958,
+            "exhaustive_ns": 341582042
+          },
+          {
+            "channels": 8,
+            "query_index": 28,
+            "average_prefix_overlap": 0.21261160714285715,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8612833,
+            "dynamic_ns": 127027084,
+            "exhaustive_ns": 341324709
+          },
+          {
+            "channels": 8,
+            "query_index": 29,
+            "average_prefix_overlap": 0.34765625,
+            "minimum_prefix_overlap": 0.046875,
+            "probe_ns": 7998750,
+            "dynamic_ns": 11761583,
+            "exhaustive_ns": 338823625
+          },
+          {
+            "channels": 8,
+            "query_index": 30,
+            "average_prefix_overlap": 0.3828125,
+            "minimum_prefix_overlap": 0.09375,
+            "probe_ns": 7395416,
+            "dynamic_ns": 20340167,
+            "exhaustive_ns": 338081500
+          },
+          {
+            "channels": 8,
+            "query_index": 31,
+            "average_prefix_overlap": 0.22544642857142858,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8645292,
+            "dynamic_ns": 17463584,
+            "exhaustive_ns": 345889542
+          },
+          {
+            "channels": 8,
+            "query_index": 32,
+            "average_prefix_overlap": 0.37890625,
+            "minimum_prefix_overlap": 0.046875,
+            "probe_ns": 7675542,
+            "dynamic_ns": 26270959,
+            "exhaustive_ns": 346332917
+          },
+          {
+            "channels": 8,
+            "query_index": 33,
+            "average_prefix_overlap": 0.21763392857142858,
+            "minimum_prefix_overlap": 0.015625,
+            "probe_ns": 9215792,
+            "dynamic_ns": 22518750,
+            "exhaustive_ns": 337479208
+          },
+          {
+            "channels": 8,
+            "query_index": 34,
+            "average_prefix_overlap": 0.3984375,
+            "minimum_prefix_overlap": 0.015625,
+            "probe_ns": 7807541,
+            "dynamic_ns": 18591333,
+            "exhaustive_ns": 357657000
+          },
+          {
+            "channels": 8,
+            "query_index": 35,
+            "average_prefix_overlap": 0.35435267857142855,
+            "minimum_prefix_overlap": 0.09375,
+            "probe_ns": 8405209,
+            "dynamic_ns": 32947875,
+            "exhaustive_ns": 360605333
+          },
+          {
+            "channels": 8,
+            "query_index": 36,
+            "average_prefix_overlap": 0.32589285714285715,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7119792,
+            "dynamic_ns": 105946459,
+            "exhaustive_ns": 342550083
+          },
+          {
+            "channels": 8,
+            "query_index": 37,
+            "average_prefix_overlap": 0.26785714285714285,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 8192917,
+            "dynamic_ns": 48166000,
+            "exhaustive_ns": 341909292
+          },
+          {
+            "channels": 8,
+            "query_index": 38,
+            "average_prefix_overlap": 0.26785714285714285,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 9154417,
+            "dynamic_ns": 20375375,
+            "exhaustive_ns": 337323875
+          },
+          {
+            "channels": 8,
+            "query_index": 39,
+            "average_prefix_overlap": 0.31529017857142855,
+            "minimum_prefix_overlap": 0.0625,
+            "probe_ns": 7956042,
+            "dynamic_ns": 14069000,
+            "exhaustive_ns": 337883875
+          },
+          {
+            "channels": 8,
+            "query_index": 40,
+            "average_prefix_overlap": 0.32198660714285715,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7618166,
+            "dynamic_ns": 15679625,
+            "exhaustive_ns": 340397959
+          },
+          {
+            "channels": 8,
+            "query_index": 41,
+            "average_prefix_overlap": 0.19698660714285715,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7775875,
+            "dynamic_ns": 49739333,
+            "exhaustive_ns": 334994333
+          },
+          {
+            "channels": 8,
+            "query_index": 42,
+            "average_prefix_overlap": 0.3203125,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7765667,
+            "dynamic_ns": 156996292,
+            "exhaustive_ns": 346856083
+          },
+          {
+            "channels": 8,
+            "query_index": 43,
+            "average_prefix_overlap": 0.19587053571428573,
+            "minimum_prefix_overlap": 0.015625,
+            "probe_ns": 8479333,
+            "dynamic_ns": 51508708,
+            "exhaustive_ns": 378286625
+          },
+          {
+            "channels": 8,
+            "query_index": 44,
+            "average_prefix_overlap": 0.24051339285714285,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 7476875,
+            "dynamic_ns": 58656666,
+            "exhaustive_ns": 337355500
+          },
+          {
+            "channels": 8,
+            "query_index": 45,
+            "average_prefix_overlap": 0.24497767857142858,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8635417,
+            "dynamic_ns": 22735417,
+            "exhaustive_ns": 342827000
+          },
+          {
+            "channels": 8,
+            "query_index": 46,
+            "average_prefix_overlap": 0.25558035714285715,
+            "minimum_prefix_overlap": 0.015625,
+            "probe_ns": 8181875,
+            "dynamic_ns": 40506542,
+            "exhaustive_ns": 346986250
+          },
+          {
+            "channels": 8,
+            "query_index": 47,
+            "average_prefix_overlap": 0.29017857142857145,
+            "minimum_prefix_overlap": 0.03125,
+            "probe_ns": 7225292,
+            "dynamic_ns": 16294958,
+            "exhaustive_ns": 332067416
+          },
+          {
+            "channels": 8,
+            "query_index": 48,
+            "average_prefix_overlap": 0.18359375,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8176708,
+            "dynamic_ns": 48660500,
+            "exhaustive_ns": 339141042
+          },
+          {
+            "channels": 8,
+            "query_index": 49,
+            "average_prefix_overlap": 0.2689732142857143,
+            "minimum_prefix_overlap": 0.0,
+            "probe_ns": 8954292,
+            "dynamic_ns": 46877250,
+            "exhaustive_ns": 334428125
+          }
+        ],
+        "sparse_strategy_observations": [],
+        "sparse_lazy_strategy_observations": []
+      }
+    }
+  ]
+}

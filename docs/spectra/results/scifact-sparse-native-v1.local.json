@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-sparse-native-snapshot-v1",
+  "status": "local-research-only",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "dataset": {
+    "name": "BEIR SciFact",
+    "license": "CC BY-NC 2.0; research-only, not bundled with Spectra",
+    "documents": 5183,
+    "queries": 1109,
+    "sparse_dimensions": 26542,
+    "raw_vocabulary_checksum": "e36471432feaef1723945dd4a782c045e01f7363b4e691985868a445e40757f1"
+  },
+  "configuration": {
+    "build_profile": "release",
+    "top_k": 100,
+    "block_size": 128
+  },
+  "correctness": {
+    "native_parity_mismatches": 0,
+    "block_max_parity_mismatches": 0
+  },
+  "build_ns": {
+    "native_inverted": 4725667,
+    "block_max": 19266334
+  },
+  "searchable_bytes": {
+    "native_postings": 5634036,
+    "block_max_estimate": 4962128
+  },
+  "native": {
+    "latency_ns": { "p50": 27125, "p95": 33625, "p99": 43625, "mean": 25937 },
+    "throughput_queries_per_second": 38554.65985212185,
+    "posting_lists": 9668,
+    "posting_elements_visited": 4141768
+  },
+  "block_max": {
+    "latency_ns": { "p50": 699458, "p95": 965416, "p99": 1103167, "mean": 711086 },
+    "throughput_queries_per_second": 1406.2983242669636,
+    "bound_evaluations": 45469,
+    "documents_evaluated": 5732668
+  },
+  "exhaustive": {
+    "latency_ns": { "p50": 323166, "p95": 637417, "p99": 799792, "mean": 356466 },
+    "throughput_queries_per_second": 2805.3130737484985
+  },
+  "interpretation": "All executors are ordered-identical to the exhaustive oracle. Qdrant native inverted search is about 25.8 times faster than the standalone Block Max stream at p50. Production Sparse Node Value must augment the inverted/WAND path rather than replace it with a parallel block scanner."
+}

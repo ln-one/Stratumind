@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "experiment": "spectra-dense-quantized-certificate-v2-stability",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "dataset_dir": "/tmp/spectra-scifact-snapshot",
+  "documents": 5183,
+  "queries": 1109,
+  "dimension": 384,
+  "top_k": 20,
+  "custom_certificate": {
+    "runs": 5,
+    "ordered_top_k_mismatches_each_run": [0, 0, 0, 0, 0],
+    "quantized_scores_each_run": 5747947,
+    "exact_scores_each_run": 130911,
+    "exact_score_ratio": 0.02277526219361452,
+    "auxiliary_encoded_bytes": 2156128,
+    "original_vector_bytes_retained_for_fallback": 7961088,
+    "p50_ns": [99500, 99791, 99792, 99250, 98209],
+    "p95_ns": [145709, 146292, 146250, 144500, 143083],
+    "p99_ns": [176417, 170667, 177625, 172292, 171792],
+    "mean_ns": [104428, 104889, 105130, 103123, 103015]
+  },
+  "matched_qdrant_segment_baselines": {
+    "runs": 3,
+    "exact_scan_p50_ns": [159083, 161167, 162125],
+    "exact_scan_p95_ns": [184125, 191625, 198834],
+    "hnsw_ef": 256,
+    "hnsw_ordered_top_k_mismatches_each_run": [3, 3, 3],
+    "hnsw_mean_recall_at_20_each_run": [
+      0.9998647430117222,
+      0.9998647430117222,
+      0.9998647430117222
+    ],
+    "hnsw_p50_ns": [132625, 134916, 141500],
+    "hnsw_p95_ns": [242416, 244917, 258167],
+    "native_scalar_certificate_ordered_mismatches_each_run": [0, 0, 0],
+    "native_scalar_certificate_p50_ns": [311666, 322875, 323292]
+  },
+  "interpretation": "The custom per-vector certificate is stable, exact, and faster at this single-channel kernel boundary on small SciFact. It is not yet an end-to-end or large-scale claim because its compact standalone array bypasses Qdrant Segment dispatch and retains original vectors for exact fallback."
+}

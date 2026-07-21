@@ -1,5 +1,6 @@
 //! Reciprocal Rank Fusion (RRF) is a method for combining rankings from multiple sources.
 //! See <https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf>
+// Stratumind extension: deterministic exact ranked-stream composition.
 
 use std::collections::hash_map::Entry;
 
@@ -12,6 +13,8 @@ use crate::types::{ExtendedPointId, ScoredPoint};
 
 /// Mitigates the impact of high rankings by outlier systems
 pub const DEFAULT_RRF_K: usize = 2;
+const MIN_CERTIFICATION_INTERVAL: usize = 64;
+const MAX_CERTIFICATION_INTERVAL: usize = 1_024;
 
 /// Compute the RRF score for a given position with optional weight.
 ///
@@ -36,6 +39,545 @@ fn position_score(position: usize, k: usize, weight: f32) -> f32 {
     }
 
     1.0 / ((position + 1) as f32 / weight + k as f32 - 1.0)
+}
+
+#[derive(Debug)]
+struct PartialRrfPoint {
+    contributions: Vec<Option<f32>>,
+}
+
+/// Incremental RRF state over exact, rank-ordered input streams.
+///
+/// The state fixes a result only when no observed or still-unseen point can
+/// change its position under the configured identity tie-break. Input scores
+/// are intentionally absent: RRF depends only on each source rank.
+#[derive(Debug)]
+pub struct DynamicRrfState {
+    rrf_k: usize,
+    top_k: usize,
+    weights: Vec<f32>,
+    next_positions: Vec<usize>,
+    exhausted: Vec<bool>,
+    points: AHashMap<ExtendedPointId, PartialRrfPoint>,
+}
+
+pub type ExactRrfStream<'a> = Box<dyn Iterator<Item = ExtendedPointId> + 'a>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DynamicRrfStopReason {
+    TopKFixed,
+    AllSourcesExhausted,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DynamicRrfExecution {
+    pub point_ids: Vec<ExtendedPointId>,
+    pub source_pulls: Vec<usize>,
+    pub source_exhausted: Vec<bool>,
+    pub certification_checks: usize,
+    pub stop_reason: DynamicRrfStopReason,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DynamicRrfAdvance {
+    Fixed(DynamicRrfExecution),
+    Paused,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DynamicRrfPolicy {
+    /// `None` preserves the original one-check-per-source-round schedule.
+    pub warmup_check_interval: Option<usize>,
+    /// Drain already-open streams after the aggregate pull count reaches this
+    /// value multiplied by the source count (a normalized per-source budget).
+    pub exhaustive_after_pulls_per_source: Option<usize>,
+}
+
+/// Recoverable exact fusion session. Streams may be paused, replaced by an
+/// equivalent implementation after prefix replay, resumed, or cancelled by
+/// dropping the session. Replacement never trusts a new stream until its whole
+/// observed prefix has matched the original identity order.
+pub struct DynamicRrfSession<'a> {
+    sources: Vec<ExactRrfStream<'a>>,
+    state: DynamicRrfState,
+    source_pulls: Vec<usize>,
+    source_history: Vec<Vec<ExtendedPointId>>,
+    policy: DynamicRrfPolicy,
+    warmup_pulls: usize,
+    total_pulls: usize,
+    pulls_since_check: usize,
+    certification_checks: usize,
+    force_check: bool,
+    exhausted_order: Option<Vec<ExtendedPointId>>,
+}
+
+impl<'a> DynamicRrfSession<'a> {
+    pub fn new(
+        sources: Vec<ExactRrfStream<'a>>,
+        top_k: usize,
+        rrf_k: usize,
+        weights: Option<&[f32]>,
+        policy: DynamicRrfPolicy,
+    ) -> OperationResult<Self> {
+        if policy.warmup_check_interval == Some(0) {
+            return Err(OperationError::validation_error(
+                "Dynamic RRF warmup check interval must be positive",
+            ));
+        }
+        if policy.exhaustive_after_pulls_per_source == Some(0) {
+            return Err(OperationError::validation_error(
+                "Dynamic RRF exhaustive pull budget must be positive",
+            ));
+        }
+        let source_count = sources.len();
+        Ok(Self {
+            sources,
+            state: DynamicRrfState::new(source_count, top_k, rrf_k, weights)?,
+            source_pulls: vec![0; source_count],
+            source_history: vec![Vec::new(); source_count],
+            policy,
+            warmup_pulls: top_k.saturating_mul(source_count).saturating_mul(2),
+            total_pulls: 0,
+            pulls_since_check: 0,
+            certification_checks: 0,
+            force_check: true,
+            exhausted_order: None,
+        })
+    }
+
+    pub fn source_pulls(&self) -> &[usize] {
+        &self.source_pulls
+    }
+
+    pub fn source_history(&self, source: usize) -> Option<&[ExtendedPointId]> {
+        self.source_history.get(source).map(Vec::as_slice)
+    }
+
+    pub fn source_is_exhausted(&self, source: usize) -> Option<bool> {
+        self.state.exhausted.get(source).copied()
+    }
+
+    /// Extends the exact prefix requested from this recoverable session.
+    /// Already certified and observed ranks remain valid; decreasing the target
+    /// would make a nested consumer's progress ambiguous and is rejected.
+    pub fn extend_top_k(&mut self, top_k: usize) -> OperationResult<()> {
+        if top_k < self.state.top_k {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF prefix target cannot decrease from {} to {top_k}",
+                self.state.top_k,
+            )));
+        }
+        self.state.top_k = top_k;
+        self.warmup_pulls = self
+            .warmup_pulls
+            .max(top_k.saturating_mul(self.sources.len()).saturating_mul(2));
+        self.force_check = true;
+        Ok(())
+    }
+
+    pub fn run_to_prefix(&mut self, top_k: usize) -> OperationResult<DynamicRrfExecution> {
+        self.extend_top_k(top_k)?;
+        if let Some(order) = &self.exhausted_order {
+            return Ok(DynamicRrfExecution {
+                point_ids: order.iter().take(top_k).copied().collect(),
+                source_pulls: self.source_pulls.clone(),
+                source_exhausted: self.state.exhausted.clone(),
+                certification_checks: self.certification_checks,
+                stop_reason: DynamicRrfStopReason::AllSourcesExhausted,
+            });
+        }
+        let execution = self.run_to_completion()?;
+        if execution.stop_reason == DynamicRrfStopReason::AllSourcesExhausted {
+            let order = self.state.complete_order();
+            let point_ids = order.iter().take(top_k).copied().collect();
+            self.exhausted_order = Some(order);
+            return Ok(DynamicRrfExecution {
+                point_ids,
+                ..execution
+            });
+        }
+        Ok(execution)
+    }
+
+    pub fn replace_source(
+        &mut self,
+        source: usize,
+        mut replacement: ExactRrfStream<'a>,
+    ) -> OperationResult<()> {
+        let Some(history) = self.source_history.get(source) else {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF replacement source {source} is out of range"
+            )));
+        };
+        if self.state.exhausted[source] {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF source {source} is already exhausted and cannot be replaced"
+            )));
+        }
+        for (rank, expected) in history.iter().enumerate() {
+            let actual = replacement.next().ok_or_else(|| {
+                OperationError::validation_error(format!(
+                    "Dynamic RRF replacement source {source} ended before observed rank {rank}"
+                ))
+            })?;
+            if actual != *expected {
+                return Err(OperationError::validation_error(format!(
+                    "Dynamic RRF replacement source {source} disagrees at rank {rank}: expected {expected}, got {actual}"
+                )));
+            }
+        }
+        self.sources[source] = replacement;
+        Ok(())
+    }
+
+    /// Advances until Top-K is fixed or every requested source reaches its
+    /// target pull count. `None` means that source does not gate the pause.
+    pub fn advance_until_each(
+        &mut self,
+        minimum_pulls: &[Option<usize>],
+    ) -> OperationResult<DynamicRrfAdvance> {
+        if minimum_pulls.len() != self.sources.len() {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF pause targets have length {}; expected {}",
+                minimum_pulls.len(),
+                self.sources.len()
+            )));
+        }
+        let pause_enabled = minimum_pulls.iter().any(Option::is_some);
+        loop {
+            let drain_to_exhaustion =
+                self.policy
+                    .exhaustive_after_pulls_per_source
+                    .is_some_and(|budget| {
+                        self.total_pulls >= budget.saturating_mul(self.sources.len())
+                    });
+            let check_interval = if self.total_pulls <= self.warmup_pulls {
+                self.policy
+                    .warmup_check_interval
+                    .unwrap_or(self.sources.len())
+            } else {
+                (self.total_pulls / 8).clamp(MIN_CERTIFICATION_INTERVAL, MAX_CERTIFICATION_INTERVAL)
+            };
+            if self.state.all_sources_exhausted()
+                || (!drain_to_exhaustion
+                    && (self.force_check || self.pulls_since_check >= check_interval))
+            {
+                self.certification_checks += 1;
+                if let Some(point_ids) = self.state.fixed_top_k() {
+                    let stop_reason = if self.state.all_sources_exhausted() {
+                        DynamicRrfStopReason::AllSourcesExhausted
+                    } else {
+                        DynamicRrfStopReason::TopKFixed
+                    };
+                    return Ok(DynamicRrfAdvance::Fixed(DynamicRrfExecution {
+                        point_ids,
+                        source_pulls: self.source_pulls.clone(),
+                        source_exhausted: self.state.exhausted.clone(),
+                        certification_checks: self.certification_checks,
+                        stop_reason,
+                    }));
+                }
+                self.pulls_since_check = 0;
+                self.force_check = false;
+            }
+
+            let pause_reached = pause_enabled
+                && minimum_pulls.iter().enumerate().all(|(source, target)| {
+                    target.is_none_or(|target| {
+                        self.source_pulls[source] >= target || self.state.exhausted[source]
+                    })
+                });
+            if pause_reached {
+                // A pause boundary is also an explicit certification boundary.
+                // This keeps probe depth independent from the amortized check schedule.
+                self.certification_checks += 1;
+                if let Some(point_ids) = self.state.fixed_top_k() {
+                    let stop_reason = if self.state.all_sources_exhausted() {
+                        DynamicRrfStopReason::AllSourcesExhausted
+                    } else {
+                        DynamicRrfStopReason::TopKFixed
+                    };
+                    return Ok(DynamicRrfAdvance::Fixed(DynamicRrfExecution {
+                        point_ids,
+                        source_pulls: self.source_pulls.clone(),
+                        source_exhausted: self.state.exhausted.clone(),
+                        certification_checks: self.certification_checks,
+                        stop_reason,
+                    }));
+                }
+                return Ok(DynamicRrfAdvance::Paused);
+            }
+
+            let source = (0..self.sources.len())
+                .filter_map(|source| {
+                    self.state
+                        .next_possible_contribution(source)
+                        .map(|bound| (source, OrderedFloat(bound)))
+                })
+                .max_by(|(left_source, left_bound), (right_source, right_bound)| {
+                    left_bound
+                        .cmp(right_bound)
+                        .then_with(|| right_source.cmp(left_source))
+                })
+                .map(|(source, _)| source)
+                .expect("unfinished Dynamic RRF must have a source to advance");
+
+            match self.sources[source].next() {
+                Some(id) => {
+                    self.state.observe(source, id)?;
+                    self.source_pulls[source] += 1;
+                    self.source_history[source].push(id);
+                    self.total_pulls += 1;
+                    self.pulls_since_check += 1;
+                }
+                None => {
+                    self.state.finish_source(source)?;
+                    self.force_check = true;
+                }
+            }
+        }
+    }
+
+    pub fn run_to_completion(&mut self) -> OperationResult<DynamicRrfExecution> {
+        match self.advance_until_each(&vec![None; self.sources.len()])? {
+            DynamicRrfAdvance::Fixed(execution) => Ok(execution),
+            DynamicRrfAdvance::Paused => {
+                unreachable!("a session without pause targets cannot pause")
+            }
+        }
+    }
+}
+
+impl DynamicRrfState {
+    pub fn new(
+        source_count: usize,
+        top_k: usize,
+        rrf_k: usize,
+        weights: Option<&[f32]>,
+    ) -> OperationResult<Self> {
+        if source_count == 0 {
+            return Err(OperationError::validation_error(
+                "Dynamic RRF requires at least one source",
+            ));
+        }
+        if rrf_k == 0 {
+            return Err(OperationError::validation_error(
+                "Dynamic RRF requires k to be greater than zero",
+            ));
+        }
+
+        let weights = match weights {
+            Some(weights) if weights.len() != source_count => {
+                return Err(OperationError::validation_error(format!(
+                    "Number of weights in Dynamic RRF should match number of sources: got {}, expected {source_count}",
+                    weights.len(),
+                )));
+            }
+            Some(weights) => weights.to_vec(),
+            None => vec![1.0; source_count],
+        };
+
+        if weights
+            .iter()
+            .any(|weight| !weight.is_finite() || *weight < 0.0)
+        {
+            return Err(OperationError::validation_error(
+                "Dynamic RRF weights must be finite and non-negative",
+            ));
+        }
+
+        Ok(Self {
+            rrf_k,
+            top_k,
+            weights,
+            next_positions: vec![0; source_count],
+            exhausted: vec![false; source_count],
+            points: AHashMap::new(),
+        })
+    }
+
+    pub fn observe(&mut self, source: usize, id: ExtendedPointId) -> OperationResult<()> {
+        if source >= self.weights.len() {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF source {source} is out of range",
+            )));
+        }
+        if self.exhausted[source] {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF source {source} was already exhausted",
+            )));
+        }
+
+        let contribution = position_score(
+            self.next_positions[source],
+            self.rrf_k,
+            self.weights[source],
+        );
+        let point = self.points.entry(id).or_insert_with(|| PartialRrfPoint {
+            contributions: vec![None; self.weights.len()],
+        });
+        if point.contributions[source].is_some() {
+            return Err(OperationError::validation_error(format!(
+                "Point {id} occurs more than once in Dynamic RRF source {source}",
+            )));
+        }
+        point.contributions[source] = Some(contribution);
+        self.next_positions[source] += 1;
+        Ok(())
+    }
+
+    pub fn finish_source(&mut self, source: usize) -> OperationResult<()> {
+        let Some(exhausted) = self.exhausted.get_mut(source) else {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF source {source} is out of range",
+            )));
+        };
+        *exhausted = true;
+        Ok(())
+    }
+
+    pub fn next_possible_contribution(&self, source: usize) -> Option<f32> {
+        if source >= self.weights.len() || self.exhausted[source] {
+            return None;
+        }
+        Some(position_score(
+            self.next_positions[source],
+            self.rrf_k,
+            self.weights[source],
+        ))
+    }
+
+    pub fn all_sources_exhausted(&self) -> bool {
+        self.exhausted.iter().all(|exhausted| *exhausted)
+    }
+
+    /// Returns the exact fused identity order once it is fixed, regardless of
+    /// whether every final RRF score has itself been fully materialized.
+    pub fn fixed_top_k(&self) -> Option<Vec<ExtendedPointId>> {
+        if self.top_k == 0 {
+            return Some(Vec::new());
+        }
+
+        let all_exhausted = self.exhausted.iter().all(|exhausted| *exhausted);
+        if !all_exhausted && self.points.len() < self.top_k {
+            return None;
+        }
+        if all_exhausted {
+            return Some(self.complete_order().into_iter().take(self.top_k).collect());
+        }
+
+        let next_contributions: Vec<_> = (0..self.weights.len())
+            .map(|source| self.next_possible_contribution(source).unwrap_or(0.0))
+            .collect();
+        let unseen_upper_bound: f32 = next_contributions.iter().sum();
+        let unseen_points_possible = true;
+
+        let mut remaining: Vec<_> = self
+            .points
+            .iter()
+            .map(|(id, point)| {
+                let lower_bound = point
+                    .contributions
+                    .iter()
+                    .map(|contribution| contribution.unwrap_or(0.0))
+                    .sum::<f32>();
+                let upper_bound = point
+                    .contributions
+                    .iter()
+                    .zip(&next_contributions)
+                    .map(|(contribution, next)| contribution.unwrap_or(*next))
+                    .sum::<f32>();
+                (*id, lower_bound, upper_bound)
+            })
+            .collect();
+        let target_count = self.top_k;
+        let mut fixed = Vec::with_capacity(target_count);
+
+        for _ in 0..target_count {
+            let winner_index = remaining
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| rrf_order(a.0, a.1, b.0, b.1))
+                .map(|(index, _)| index)?;
+            let winner = remaining[winner_index];
+
+            if unseen_points_possible && winner.1 <= unseen_upper_bound {
+                return None;
+            }
+            if remaining.iter().enumerate().any(|(index, challenger)| {
+                index != winner_index
+                    && !guaranteed_before(winner.0, winner.1, challenger.0, challenger.2)
+            }) {
+                return None;
+            }
+
+            fixed.push(winner.0);
+            remaining.swap_remove(winner_index);
+        }
+
+        Some(fixed)
+    }
+
+    fn complete_order(&self) -> Vec<ExtendedPointId> {
+        debug_assert!(self.all_sources_exhausted());
+        let mut points: Vec<_> = self
+            .points
+            .iter()
+            .filter_map(|(id, point)| {
+                let score = point
+                    .contributions
+                    .iter()
+                    .map(|contribution| contribution.unwrap_or(0.0))
+                    .sum::<f32>();
+                (score > 0.0).then_some((*id, score))
+            })
+            .collect();
+        points.sort_unstable_by(|left, right| rrf_order(left.0, left.1, right.0, right.1));
+        points.into_iter().map(|(id, _)| id).collect()
+    }
+}
+
+/// Pull exact channel streams only until their fused Top-K identity order is
+/// certified. The scheduler advances the source whose next unseen rank has the
+/// largest possible RRF contribution; source index resolves equal bounds.
+pub fn execute_dynamic_rrf(
+    sources: Vec<ExactRrfStream<'_>>,
+    top_k: usize,
+    rrf_k: usize,
+    weights: Option<&[f32]>,
+) -> OperationResult<DynamicRrfExecution> {
+    execute_dynamic_rrf_with_policy(sources, top_k, rrf_k, weights, DynamicRrfPolicy::default())
+}
+
+pub fn execute_dynamic_rrf_with_policy(
+    sources: Vec<ExactRrfStream<'_>>,
+    top_k: usize,
+    rrf_k: usize,
+    weights: Option<&[f32]>,
+    policy: DynamicRrfPolicy,
+) -> OperationResult<DynamicRrfExecution> {
+    DynamicRrfSession::new(sources, top_k, rrf_k, weights, policy)?.run_to_completion()
+}
+
+fn rrf_order(
+    left_id: ExtendedPointId,
+    left_score: f32,
+    right_id: ExtendedPointId,
+    right_score: f32,
+) -> std::cmp::Ordering {
+    OrderedFloat(right_score)
+        .cmp(&OrderedFloat(left_score))
+        .then_with(|| left_id.cmp(&right_id))
+}
+
+fn guaranteed_before(
+    winner_id: ExtendedPointId,
+    winner_lower_bound: f32,
+    challenger_id: ExtendedPointId,
+    challenger_upper_bound: f32,
+) -> bool {
+    winner_lower_bound > challenger_upper_bound
+        || (winner_lower_bound == challenger_upper_bound && winner_id < challenger_id)
 }
 
 /// Compute RRF scores for multiple results from different sources.
@@ -98,8 +640,30 @@ pub fn rrf_scoring(
     Ok(scores)
 }
 
+/// Compute the deterministic positive-score order used by Stratumind exact
+/// composition without changing Qdrant's existing RRF response semantics.
+///
+/// Qdrant historically retains zero-score identities and does not specify an
+/// identity tie-break. Exact ranked streams require both choices to be fixed,
+/// so this wrapper deliberately narrows the order only at the Stratumind
+/// boundary.
+pub fn exact_rrf_scoring(
+    responses: Vec<Vec<ScoredPoint>>,
+    k: usize,
+    weights: Option<&[f32]>,
+) -> OperationResult<Vec<ScoredPoint>> {
+    let mut scores = rrf_scoring(responses, k, weights)?;
+    scores.retain(|point| point.score > 0.0);
+    scores.sort_unstable_by(|left, right| rrf_order(left.id, left.score, right.id, right.score));
+    Ok(scores)
+}
+
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+    use sparse::common::sparse_vector::RemappedSparseVector;
+    use sparse::index::block_max::{BlockMaxIndex, SparseDocument};
+
     use super::*;
     use crate::types::ScoredPoint;
 
@@ -113,6 +677,111 @@ mod tests {
             shard_key: None,
             order_value: None,
         }
+    }
+
+    fn exhaustive_top_k(
+        sources: &[Vec<ExtendedPointId>],
+        top_k: usize,
+        rrf_k: usize,
+        weights: Option<&[f32]>,
+    ) -> Vec<ExtendedPointId> {
+        let responses = sources
+            .iter()
+            .map(|source| {
+                source
+                    .iter()
+                    .map(|id| make_scored_point(id.as_u64(), 0.0))
+                    .collect()
+            })
+            .collect();
+        exact_rrf_scoring(responses, rrf_k, weights)
+            .unwrap()
+            .into_iter()
+            .take(top_k)
+            .map(|point| point.id)
+            .collect()
+    }
+
+    fn run_dynamic(
+        sources: &[Vec<ExtendedPointId>],
+        top_k: usize,
+        rrf_k: usize,
+        weights: Option<&[f32]>,
+    ) -> (Vec<ExtendedPointId>, Vec<usize>) {
+        let mut state = DynamicRrfState::new(sources.len(), top_k, rrf_k, weights).unwrap();
+        let mut observed = vec![0; sources.len()];
+
+        loop {
+            for (source, points) in sources.iter().enumerate() {
+                if observed[source] == points.len() && !state.exhausted[source] {
+                    state.finish_source(source).unwrap();
+                }
+            }
+
+            if let Some(fixed) = state.fixed_top_k() {
+                return (fixed, observed);
+            }
+
+            let source = (0..sources.len())
+                .filter(|source| !state.exhausted[*source])
+                .max_by(|left, right| {
+                    let left_bound = state.next_possible_contribution(*left).unwrap();
+                    let right_bound = state.next_possible_contribution(*right).unwrap();
+                    OrderedFloat(left_bound)
+                        .cmp(&OrderedFloat(right_bound))
+                        .then_with(|| right.cmp(left))
+                })
+                .expect("unfinished Dynamic RRF must have a source to advance");
+            let id = sources[source][observed[source]];
+            state.observe(source, id).unwrap();
+            observed[source] += 1;
+        }
+    }
+
+    fn random_rankings(
+        allow_missing_points: bool,
+    ) -> impl Strategy<Value = (Vec<Vec<ExtendedPointId>>, Vec<f32>, usize, usize)> {
+        (1usize..48, 1usize..5)
+            .prop_flat_map(|(point_count, source_count)| {
+                (
+                    Just(point_count),
+                    Just(source_count),
+                    prop::collection::vec(any::<u16>(), point_count * source_count),
+                    prop::collection::vec(any::<bool>(), point_count * source_count),
+                    prop::collection::vec(0u8..5, source_count),
+                    1usize..point_count + 1,
+                    1usize..101,
+                )
+            })
+            .prop_map(
+                move |(point_count, source_count, keys, presence, weight_classes, top_k, rrf_k)| {
+                    let sources = (0..source_count)
+                        .map(|source| {
+                            let mut ids: Vec<_> = (0..point_count as u64)
+                                .filter(|id| {
+                                    !allow_missing_points
+                                        || presence[source * point_count + *id as usize]
+                                })
+                                .collect();
+                            ids.sort_unstable_by_key(|id| {
+                                (keys[source * point_count + *id as usize], *id)
+                            });
+                            ids.into_iter().map(ExtendedPointId::from).collect()
+                        })
+                        .collect();
+                    let weights = weight_classes
+                        .into_iter()
+                        .map(|weight| match weight {
+                            0 => 0.0,
+                            1 => 0.5,
+                            2 => 1.0,
+                            3 => 2.0,
+                            _ => 4.0,
+                        })
+                        .collect();
+                    (sources, weights, top_k, rrf_k)
+                },
+            )
     }
 
     #[test]
@@ -282,5 +951,287 @@ mod tests {
 
         assert_eq!(p1.score, 0.5); // 1/(0+2)
         assert_eq!(p2.score, 0.0); // zero weight
+    }
+
+    #[test]
+    fn exact_rrf_identity_breaks_score_ties() {
+        let responses = vec![
+            vec![make_scored_point(2, 0.0)],
+            vec![make_scored_point(1, 0.0)],
+        ];
+
+        let scored_points = exact_rrf_scoring(responses, DEFAULT_RRF_K, None).unwrap();
+
+        assert_eq!(scored_points[0].id, 1.into());
+        assert_eq!(scored_points[1].id, 2.into());
+    }
+
+    #[test]
+    fn exact_rrf_excludes_zero_score_identities() {
+        let responses = vec![
+            vec![make_scored_point(1, 0.0)],
+            vec![make_scored_point(2, 0.0)],
+        ];
+
+        let scored_points = exact_rrf_scoring(responses, DEFAULT_RRF_K, Some(&[1.0, 0.0])).unwrap();
+
+        assert_eq!(scored_points.len(), 1);
+        assert_eq!(scored_points[0].id, 1.into());
+    }
+
+    #[test]
+    fn test_dynamic_rrf_stops_early_for_identical_sources() {
+        let source: Vec<_> = (0..100).map(ExtendedPointId::from).collect();
+        let sources = vec![source.clone(), source];
+
+        let expected = exhaustive_top_k(&sources, 3, DEFAULT_RRF_K, None);
+        let (actual, observed) = run_dynamic(&sources, 3, DEFAULT_RRF_K, None);
+
+        assert_eq!(actual, expected);
+        assert_eq!(observed, vec![3, 3]);
+    }
+
+    #[test]
+    fn executor_stops_early_for_identical_sources() {
+        let source: Vec<_> = (0..100).map(ExtendedPointId::from).collect();
+        let sources: Vec<ExactRrfStream<'_>> = vec![
+            Box::new(source.clone().into_iter()),
+            Box::new(source.clone().into_iter()),
+        ];
+
+        let execution = execute_dynamic_rrf(sources, 3, DEFAULT_RRF_K, None).unwrap();
+
+        assert_eq!(execution.point_ids, source[..3]);
+        assert_eq!(execution.source_pulls, vec![3, 3]);
+        assert_eq!(execution.source_exhausted, vec![false, false]);
+        assert_eq!(execution.stop_reason, DynamicRrfStopReason::TopKFixed);
+    }
+
+    #[test]
+    fn recoverable_session_extends_an_exact_prefix_without_restarting_sources() {
+        let first: Vec<_> = (0..100).map(ExtendedPointId::from).collect();
+        let second: Vec<_> = (0..100).rev().map(ExtendedPointId::from).collect();
+        let expected = exhaustive_top_k(&[first.clone(), second.clone()], 12, DEFAULT_RRF_K, None);
+        let sources: Vec<ExactRrfStream<'_>> =
+            vec![Box::new(first.into_iter()), Box::new(second.into_iter())];
+        let mut session =
+            DynamicRrfSession::new(sources, 1, DEFAULT_RRF_K, None, DynamicRrfPolicy::default())
+                .unwrap();
+        let mut previous_pulls = vec![0; 2];
+
+        for prefix in 1..=12 {
+            let execution = session.run_to_prefix(prefix).unwrap();
+            assert_eq!(execution.point_ids, expected[..prefix]);
+            assert!(
+                execution
+                    .source_pulls
+                    .iter()
+                    .zip(&previous_pulls)
+                    .all(|(current, previous)| current >= previous),
+            );
+            previous_pulls = execution.source_pulls;
+        }
+        assert!(session.run_to_prefix(11).is_err());
+    }
+
+    #[test]
+    fn exhausted_session_reuses_one_complete_order_for_later_prefixes() {
+        let first = vec![ExtendedPointId::from(1)];
+        let second = vec![ExtendedPointId::from(1)];
+        let expected = exhaustive_top_k(&[first.clone(), second.clone()], 3, DEFAULT_RRF_K, None);
+        let sources: Vec<ExactRrfStream<'_>> =
+            vec![Box::new(first.into_iter()), Box::new(second.into_iter())];
+        let mut session =
+            DynamicRrfSession::new(sources, 1, DEFAULT_RRF_K, None, DynamicRrfPolicy::default())
+                .unwrap();
+
+        let first = session.run_to_prefix(2).unwrap();
+        assert_eq!(first.stop_reason, DynamicRrfStopReason::AllSourcesExhausted);
+        let extended = session.run_to_prefix(3).unwrap();
+
+        assert_eq!(extended.point_ids, expected);
+        assert_eq!(extended.source_pulls, first.source_pulls);
+        assert_eq!(extended.certification_checks, first.certification_checks);
+    }
+
+    #[test]
+    fn resumable_session_replays_prefix_before_replacing_streams() {
+        let first: Vec<_> = (0..100).map(ExtendedPointId::from).collect();
+        let second: Vec<_> = (0..100).map(ExtendedPointId::from).collect();
+        let expected = exhaustive_top_k(&[first.clone(), second.clone()], 5, DEFAULT_RRF_K, None);
+        let sources: Vec<ExactRrfStream<'_>> = vec![
+            Box::new(first.clone().into_iter()),
+            Box::new(second.clone().into_iter()),
+        ];
+        let mut session =
+            DynamicRrfSession::new(sources, 5, DEFAULT_RRF_K, None, DynamicRrfPolicy::default())
+                .unwrap();
+
+        let progress = session.advance_until_each(&[Some(2), Some(2)]).unwrap();
+
+        assert_eq!(progress, DynamicRrfAdvance::Paused);
+        assert_eq!(session.source_pulls(), &[2, 2]);
+        session
+            .replace_source(0, Box::new(first.into_iter()))
+            .unwrap();
+        session
+            .replace_source(1, Box::new(second.into_iter()))
+            .unwrap();
+        assert_eq!(session.run_to_completion().unwrap().point_ids, expected);
+    }
+
+    #[test]
+    fn resumable_session_rejects_replacement_prefix_mismatch() {
+        let source: Vec<_> = (0..100).map(ExtendedPointId::from).collect();
+        let sources: Vec<ExactRrfStream<'_>> = vec![Box::new(source.into_iter())];
+        let mut session =
+            DynamicRrfSession::new(sources, 5, DEFAULT_RRF_K, None, DynamicRrfPolicy::default())
+                .unwrap();
+        assert_eq!(
+            session.advance_until_each(&[Some(2)]).unwrap(),
+            DynamicRrfAdvance::Paused
+        );
+        let invalid: Vec<_> = [0_u64, 999, 2, 3, 4]
+            .into_iter()
+            .map(ExtendedPointId::from)
+            .collect();
+
+        let error = session
+            .replace_source(0, Box::new(invalid.into_iter()))
+            .unwrap_err();
+
+        assert!(error.to_string().contains("disagrees at rank 1"));
+    }
+
+    #[test]
+    fn executor_fuses_block_max_streams_exactly() {
+        let documents = (0..64)
+            .map(|id| SparseDocument {
+                id,
+                vector: RemappedSparseVector {
+                    indices: vec![0, 1, 2],
+                    values: vec![1.0, (id % 7) as f32, (63 - id) as f32],
+                },
+            })
+            .collect();
+        let index = BlockMaxIndex::build(documents, 8).unwrap();
+        let first_query = RemappedSparseVector {
+            indices: vec![0, 1],
+            values: vec![1.0, 2.0],
+        };
+        let second_query = RemappedSparseVector {
+            indices: vec![0, 2],
+            values: vec![1.0, 0.5],
+        };
+        let ranked_ids = |query: RemappedSparseVector| {
+            index
+                .stream(query)
+                .unwrap()
+                .map(|point| ExtendedPointId::from(u64::from(point.idx)))
+                .collect::<Vec<_>>()
+        };
+        let exhaustive_sources = vec![
+            ranked_ids(first_query.clone()),
+            ranked_ids(second_query.clone()),
+        ];
+        let expected = exhaustive_top_k(&exhaustive_sources, 7, DEFAULT_RRF_K, None);
+        let sources: Vec<ExactRrfStream<'_>> = vec![
+            Box::new(
+                index
+                    .stream(first_query)
+                    .unwrap()
+                    .map(|point| ExtendedPointId::from(u64::from(point.idx))),
+            ),
+            Box::new(
+                index
+                    .stream(second_query)
+                    .unwrap()
+                    .map(|point| ExtendedPointId::from(u64::from(point.idx))),
+            ),
+        ];
+
+        let actual = execute_dynamic_rrf(sources, 7, DEFAULT_RRF_K, None).unwrap();
+
+        assert_eq!(actual.point_ids, expected);
+        assert!(
+            actual.source_pulls.iter().sum::<usize>()
+                < exhaustive_sources.iter().map(Vec::len).sum::<usize>()
+        );
+    }
+
+    #[test]
+    fn test_dynamic_rrf_handles_opposite_sources() {
+        let ascending: Vec<_> = (0..20).map(ExtendedPointId::from).collect();
+        let descending: Vec<_> = (0..20).rev().map(ExtendedPointId::from).collect();
+        let sources = vec![ascending, descending];
+
+        let expected = exhaustive_top_k(&sources, 5, DEFAULT_RRF_K, None);
+        let (actual, _) = run_dynamic(&sources, 5, DEFAULT_RRF_K, None);
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_dynamic_rrf_zero_weights_produce_no_positive_fusion_result() {
+        let sources = vec![
+            vec![3.into(), 2.into(), 1.into()],
+            vec![2.into(), 3.into(), 1.into()],
+        ];
+        let weights = [0.0, 0.0];
+
+        let expected = exhaustive_top_k(&sources, 3, DEFAULT_RRF_K, Some(&weights));
+        let (actual, observed) = run_dynamic(&sources, 3, DEFAULT_RRF_K, Some(&weights));
+
+        assert_eq!(actual, expected);
+        assert!(actual.is_empty());
+        assert_eq!(observed, vec![3, 3]);
+    }
+
+    #[test]
+    fn test_dynamic_rrf_rejects_duplicate_point_in_source() {
+        let mut state = DynamicRrfState::new(1, 1, DEFAULT_RRF_K, None).unwrap();
+        state.observe(0, 1.into()).unwrap();
+
+        let duplicate = state.observe(0, 1.into());
+
+        assert!(duplicate.is_err());
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
+
+        #[test]
+        fn dynamic_rrf_matches_exhaustive_rrf(
+            (sources, weights, top_k, rrf_k) in random_rankings(false)
+        ) {
+            let expected = exhaustive_top_k(&sources, top_k, rrf_k, Some(&weights));
+            let (actual, _) = run_dynamic(&sources, top_k, rrf_k, Some(&weights));
+
+            prop_assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn dynamic_rrf_matches_exhaustive_rrf_with_partial_sources(
+            (sources, weights, top_k, rrf_k) in random_rankings(true)
+        ) {
+            let expected = exhaustive_top_k(&sources, top_k, rrf_k, Some(&weights));
+            let (actual, _) = run_dynamic(&sources, top_k, rrf_k, Some(&weights));
+
+            prop_assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn batched_dynamic_rrf_executor_matches_exhaustive_rrf(
+            (sources, weights, top_k, rrf_k) in random_rankings(true)
+        ) {
+            let expected = exhaustive_top_k(&sources, top_k, rrf_k, Some(&weights));
+            let streams: Vec<ExactRrfStream<'static>> = sources
+                .into_iter()
+                .map(|source| Box::new(source.into_iter()) as ExactRrfStream<'static>)
+                .collect();
+            let actual = execute_dynamic_rrf(streams, top_k, rrf_k, Some(&weights)).unwrap();
+
+            prop_assert_eq!(actual.point_ids, expected);
+        }
     }
 }

@@ -1,0 +1,74 @@
+[
+  {
+    "n": 2,
+    "feature": "minimum_prefix_overlap",
+    "train_threshold": 0,
+    "test_dynamic_choices": 150,
+    "test_oracle_matches": 147,
+    "test_total_ms": 195.86009,
+    "always_dynamic_ms": 166.139418,
+    "always_exhaustive_ms": 457.69058,
+    "oracle_ms": 165.215084,
+    "router_vs_always_dynamic": 1.1788899489222961
+  },
+  {
+    "n": 2,
+    "feature": "average_prefix_overlap",
+    "train_threshold": 0,
+    "test_dynamic_choices": 150,
+    "test_oracle_matches": 147,
+    "test_total_ms": 195.86009,
+    "always_dynamic_ms": 166.139418,
+    "always_exhaustive_ms": 457.69058,
+    "oracle_ms": 165.215084,
+    "router_vs_always_dynamic": 1.1788899489222961
+  },
+  {
+    "n": 4,
+    "feature": "minimum_prefix_overlap",
+    "train_threshold": 0,
+    "test_dynamic_choices": 150,
+    "test_oracle_matches": 147,
+    "test_total_ms": 376.916126,
+    "always_dynamic_ms": 322.967542,
+    "always_exhaustive_ms": 806.842919,
+    "oracle_ms": 322.624209,
+    "router_vs_always_dynamic": 1.1670402656128211
+  },
+  {
+    "n": 4,
+    "feature": "average_prefix_overlap",
+    "train_threshold": 0,
+    "test_dynamic_choices": 150,
+    "test_oracle_matches": 147,
+    "test_total_ms": 376.916126,
+    "always_dynamic_ms": 322.967542,
+    "always_exhaustive_ms": 806.842919,
+    "oracle_ms": 322.624209,
+    "router_vs_always_dynamic": 1.1670402656128211
+  },
+  {
+    "n": 8,
+    "feature": "minimum_prefix_overlap",
+    "train_threshold": 0,
+    "test_dynamic_choices": 150,
+    "test_oracle_matches": 145,
+    "test_total_ms": 823.65492,
+    "always_dynamic_ms": 702.071376,
+    "always_exhaustive_ms": 1553.091543,
+    "oracle_ms": 693.518586,
+    "router_vs_always_dynamic": 1.1731783236808675
+  },
+  {
+    "n": 8,
+    "feature": "average_prefix_overlap",
+    "train_threshold": 0,
+    "test_dynamic_choices": 150,
+    "test_oracle_matches": 145,
+    "test_total_ms": 823.65492,
+    "always_dynamic_ms": 702.071376,
+    "always_exhaustive_ms": 1553.091543,
+    "oracle_ms": 693.518586,
+    "router_vs_always_dynamic": 1.1731783236808675
+  }
+]

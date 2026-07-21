@@ -1,0 +1,56 @@
+{
+  "channels": [
+    {
+      "channelId": "dense-intent",
+      "exhausted": false,
+      "logicalRankPulls": 4936
+    },
+    {
+      "channelId": "sparse-lexical",
+      "exhausted": true,
+      "logicalRankPulls": 1703
+    }
+  ],
+  "experiment": "spectra-n-channel-exact-server-smoke-v2",
+  "first_hit": {
+    "fusionScore": null,
+    "ordinal": 3637,
+    "pointId": "40212412",
+    "rank": 1
+  },
+  "guarantee": {
+    "orderedTopKExact": true,
+    "scope": "full-corpus",
+    "scoresExact": false,
+    "tieBreak": "frozen-point-identity-ascending"
+  },
+  "health": {
+    "buildMillis": 523.549208,
+    "denseDimension": 384,
+    "documents": 5183,
+    "mode": "reference-exact",
+    "snapshot": "d55fe1415ffde1c1c92bd1152fc3608db7483c5a66c263fa9739203b9d72dfde",
+    "status": "ok"
+  },
+  "physical": {
+    "denseLogicalDotProducts": 5183,
+    "densePhysicalDotProducts": 5183,
+    "durationMicros": 77915,
+    "executor": "n-channel-exact",
+    "peakReplayBufferedIdentities": 0,
+    "physicalRankPulls": 6639,
+    "physicalStreams": 2
+  },
+  "query_source_id": "0",
+  "rerank_candidate_k": 20,
+  "schema_version": 2,
+  "stale_generation_status": 400,
+  "stop": {
+    "certificationChecks": 67,
+    "reason": "top-k-fixed",
+    "sourcePulls": [
+      4936,
+      1703
+    ]
+  }
+}

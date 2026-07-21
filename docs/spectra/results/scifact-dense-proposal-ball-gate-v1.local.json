@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "experiment": "scifact-dense-proposal-ball-gate-v1",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "build_profile": "release",
+  "dataset_dir": "/tmp/spectra-scifact-snapshot",
+  "documents": 5183,
+  "queries": 100,
+  "dimension": 384,
+  "top_k": 20,
+  "proposal": {
+    "executor": "qdrant-hnsw",
+    "m": 16,
+    "ef_construct": 100,
+    "ef_search": 256,
+    "proposal_k": 20,
+    "mean_recall_at_20": 1.0,
+    "ordered_top_k_mismatches": 0,
+    "p50_ns": 229792,
+    "p95_ns": 343458
+  },
+  "certificate": {
+    "executor": "hierarchical-euclidean-plus-spherical-cap",
+    "batch_size": 20,
+    "leaf_size": 64,
+    "branch_factor": 8,
+    "clustering_iterations": 4,
+    "nodes": 201,
+    "leaves": 128,
+    "ordered_top_k_mismatches": 0,
+    "bound_evaluations": 20100,
+    "internal_nodes_expanded": 7300,
+    "leaf_nodes_expanded": 12800,
+    "exact_scores": 518300,
+    "possible_exact_scores": 518300,
+    "exact_score_ratio": 1.0,
+    "certificate_only_p50_ns": 1516625,
+    "combined_p50_ns": 1749833,
+    "combined_p95_ns": 2065916
+  },
+  "baselines": {
+    "qdrant_exact_scan_p50_ns": 180917,
+    "qdrant_exact_scan_p95_ns": 235750,
+    "standalone_signed_int8_p50_ns": 342708,
+    "standalone_signed_int8_exact_score_ratio": 0.14478487362531353
+  },
+  "decision": "reject-hnsw-plus-ball-from-default-path",
+  "reason": "A perfect proposal did not allow the high-dimensional ball certificate to skip any exact vector score."
+}

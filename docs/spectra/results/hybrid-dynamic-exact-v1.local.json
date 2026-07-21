@@ -1,0 +1,54 @@
+{
+  "status": "local_research_result_not_publication_result",
+  "environment": {
+    "os": "Darwin 25.5.0 arm64",
+    "rustc": "1.97.1 (8bab26f4f 2026-07-14)",
+    "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+    "build_profile": "release"
+  },
+  "configuration": {
+    "documents": 20000,
+    "queries": 100,
+    "top_k": 20,
+    "rrf_k": 2,
+    "block_size": 128,
+    "dense_dimension": 32,
+    "sparse_blocks": 157,
+    "dense_blocks": 157
+  },
+  "correctness": {
+    "ordered_top_k_mismatches": 0,
+    "fixed_before_exhaustion": 100,
+    "all_sources_exhausted": 0
+  },
+  "build": {
+    "sparse_ns": 1104333,
+    "dense_ns": 1012416
+  },
+  "dynamic": {
+    "source_pulls": [121696, 121696],
+    "certification_checks": 7778,
+    "latency": {
+      "p50_ns": 1462292,
+      "p95_ns": 2005375,
+      "p99_ns": 2192250,
+      "mean_ns": 1499037
+    },
+    "sparse_blocks_expanded": 8309,
+    "sparse_documents_evaluated": 1062304,
+    "dense_blocks_expanded": 8048,
+    "dense_documents_evaluated": 1025248
+  },
+  "exhaustive": {
+    "latency": {
+      "p50_ns": 5458042,
+      "p95_ns": 6142292,
+      "p99_ns": 8834875,
+      "mean_ns": 5616087
+    },
+    "sparse_blocks_expanded": 15700,
+    "sparse_documents_evaluated": 2000000,
+    "dense_blocks_expanded": 15700,
+    "dense_documents_evaluated": 2000000
+  }
+}

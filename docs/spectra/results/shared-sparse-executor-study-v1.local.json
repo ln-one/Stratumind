@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-shared-sparse-executor-study-v1",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "status": "preliminary-local",
+  "exact_contract": "Every reported arm matched exhaustive full-corpus WRRF ordered Top-K.",
+  "static_shared_full_counterexample": {
+    "documents": 100000,
+    "queries": 5,
+    "channels": 8,
+    "top_k": 20,
+    "scenario": "correlated ranks with one Sparse term per channel",
+    "rows": [
+      {"term_groups": 1, "unique_to_logical_ratio": 0.125, "posting_block_p50_ms": 0.227334, "shared_full_p50_ms": 7.359958, "static_auto_p50_ms": 7.148500},
+      {"term_groups": 2, "unique_to_logical_ratio": 0.250, "posting_block_p50_ms": 0.225042, "shared_full_p50_ms": 3.124583, "static_auto_p50_ms": 2.901417},
+      {"term_groups": 4, "unique_to_logical_ratio": 0.500, "posting_block_p50_ms": 0.256125, "shared_full_p50_ms": 3.134750, "static_auto_p50_ms": 3.058625},
+      {"term_groups": 6, "unique_to_logical_ratio": 0.750, "posting_block_p50_ms": 0.299875, "shared_full_p50_ms": 3.393792, "static_auto_p50_ms": 3.235291},
+      {"term_groups": 8, "unique_to_logical_ratio": 1.000, "posting_block_p50_ms": 0.307875, "shared_full_p50_ms": 3.660833, "static_auto_p50_ms": 0.325166}
+    ],
+    "conclusion": "Posting overlap alone cannot route an eager full evaluator because Dynamic WRRF may certify after a tiny rank prefix."
+  },
+  "probe_then_shared_ablation": {
+    "frozen_probe_rule": "Probe each Sparse stream to Top-K, force a WRRF certificate check, then prefix-verify any replacement stream.",
+    "synthetic_maximum_overlap": {"p50_ms": 0.207583, "selected_shared_queries": 0, "ordered_top_k_mismatches": 0},
+    "fiqa_n8_interleaved_repeats": [
+      {"repeat": 1, "posting_p50_ms": 17.645042, "shared_full_p50_ms": 19.767959, "probe_then_shared_p50_ms": 22.393167},
+      {"repeat": 2, "posting_p50_ms": 21.482167, "shared_full_p50_ms": 20.020333, "probe_then_shared_p50_ms": 21.606125},
+      {"repeat": 3, "posting_p50_ms": 21.393500, "shared_full_p50_ms": 20.557917, "probe_then_shared_p50_ms": 21.780542}
+    ],
+    "conclusion": "Resumable replacement protects the early-stop counterexample but duplicated posting work prevents it from becoming the default."
+  },
+  "shared_lazy": {
+    "mechanism": "The first channel to open an aligned document batch decodes union-term postings once and materializes exact batch scores for every Sparse channel; channel bounds and rank streams remain independent.",
+    "synthetic_boundaries": [
+      {"term_groups": 1, "queries": 20, "p50_ms": 0.231500, "p95_ms": 0.272541, "physical_posting_elements": 81920, "logical_posting_elements": 655360, "unique_batches": 20, "reused_batches": 140, "ordered_top_k_mismatches": 0},
+      {"term_groups": 8, "queries": 5, "p50_ms": 0.322875, "p95_ms": 0.368709, "physical_posting_elements": 163840, "logical_posting_elements": 163840, "unique_batches": 5, "reused_batches": 35, "ordered_top_k_mismatches": 0}
+    ],
+    "fiqa_100_queries": [
+      {"channels": 2, "p50_ms": 3.950792, "p95_ms": 21.911709, "physical_posting_elements": 2227531, "logical_posting_elements": 2227531, "ordered_top_k_mismatches": 0},
+      {"channels": 4, "p50_ms": 6.595584, "p95_ms": 20.295459, "physical_posting_elements": 2227531, "logical_posting_elements": 3464069, "ordered_top_k_mismatches": 0},
+      {"channels": 8, "p50_ms": 21.663125, "p95_ms": 71.214500, "physical_posting_elements": 2227560, "logical_posting_elements": 6682680, "ordered_top_k_mismatches": 0}
+    ],
+    "frozen_router": "Superseded by the rank-sharing-aware U<D rule: U is union posting volume for SharedLazy and D is deduplicated independent posting volume after bitwise-identical, equal-WRRF-weight Sparse rank streams are coalesced. Select SharedLazy iff U<D; otherwise use PostingBlock plus transparent rank replay. The rule is training-free and qrels-blind.",
+    "claim_limit": "Physical decode reuse is established. Latency advantage remains preliminary until counterbalanced repetitions, larger real corpora, mmap/filter tests, CPU counters, and confidence intervals are complete."
+  }
+}

@@ -14,7 +14,10 @@ use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
 use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
 use quantization::encoded_vectors_u8::{self, ScalarQuantizationMethod};
 use quantization::turboquant::{TQBits, TQMode};
-use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8, encoded_vectors_pq};
+use quantization::{
+    EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8, ScalarReconstructionStats,
+    encoded_vectors_pq,
+};
 use serde::{Deserialize, Serialize};
 
 use super::quantized_multivector_storage::{
@@ -253,6 +256,86 @@ pub struct QuantizedVectors {
 }
 
 impl QuantizedVectors {
+    /// Returns reconstruction norms for Scalar quantization. Other quantizers
+    /// require their own proven reconstruction contract before exact
+    /// certification can use them.
+    pub fn scalar_reconstruction_stats(
+        &self,
+        id: PointOffsetType,
+        original: &[f32],
+    ) -> Option<ScalarReconstructionStats> {
+        match &self.storage_impl {
+            QuantizedVectorStorage::ScalarRam(storage) => {
+                storage.reconstruction_stats(original, &storage.get_quantized_vector(id))
+            }
+            QuantizedVectorStorage::ScalarMmap(storage) => {
+                storage.reconstruction_stats(original, &storage.get_quantized_vector(id))
+            }
+            QuantizedVectorStorage::ScalarChunkedMmap(storage) => {
+                storage.reconstruction_stats(original, &storage.get_quantized_vector(id))
+            }
+            QuantizedVectorStorage::PQRam(_)
+            | QuantizedVectorStorage::PQMmap(_)
+            | QuantizedVectorStorage::PQChunkedMmap(_)
+            | QuantizedVectorStorage::BinaryRam(_)
+            | QuantizedVectorStorage::BinaryMmap(_)
+            | QuantizedVectorStorage::BinaryChunkedMmap(_)
+            | QuantizedVectorStorage::TQRam(_)
+            | QuantizedVectorStorage::TQMmap(_)
+            | QuantizedVectorStorage::TQChunkedMmap(_)
+            | QuantizedVectorStorage::ScalarRamMulti(_)
+            | QuantizedVectorStorage::ScalarMmapMulti(_)
+            | QuantizedVectorStorage::ScalarChunkedMmapMulti(_)
+            | QuantizedVectorStorage::PQRamMulti(_)
+            | QuantizedVectorStorage::PQMmapMulti(_)
+            | QuantizedVectorStorage::PQChunkedMmapMulti(_)
+            | QuantizedVectorStorage::BinaryRamMulti(_)
+            | QuantizedVectorStorage::BinaryMmapMulti(_)
+            | QuantizedVectorStorage::BinaryChunkedMmapMulti(_)
+            | QuantizedVectorStorage::TQRamMulti(_)
+            | QuantizedVectorStorage::TQMmapMulti(_)
+            | QuantizedVectorStorage::TQChunkedMmapMulti(_) => None,
+        }
+    }
+
+    pub fn scalar_query_reconstruction_stats(
+        &self,
+        original: &[f32],
+    ) -> Option<ScalarReconstructionStats> {
+        match &self.storage_impl {
+            QuantizedVectorStorage::ScalarRam(storage) => {
+                storage.query_reconstruction_stats(original)
+            }
+            QuantizedVectorStorage::ScalarMmap(storage) => {
+                storage.query_reconstruction_stats(original)
+            }
+            QuantizedVectorStorage::ScalarChunkedMmap(storage) => {
+                storage.query_reconstruction_stats(original)
+            }
+            QuantizedVectorStorage::PQRam(_)
+            | QuantizedVectorStorage::PQMmap(_)
+            | QuantizedVectorStorage::PQChunkedMmap(_)
+            | QuantizedVectorStorage::BinaryRam(_)
+            | QuantizedVectorStorage::BinaryMmap(_)
+            | QuantizedVectorStorage::BinaryChunkedMmap(_)
+            | QuantizedVectorStorage::TQRam(_)
+            | QuantizedVectorStorage::TQMmap(_)
+            | QuantizedVectorStorage::TQChunkedMmap(_)
+            | QuantizedVectorStorage::ScalarRamMulti(_)
+            | QuantizedVectorStorage::ScalarMmapMulti(_)
+            | QuantizedVectorStorage::ScalarChunkedMmapMulti(_)
+            | QuantizedVectorStorage::PQRamMulti(_)
+            | QuantizedVectorStorage::PQMmapMulti(_)
+            | QuantizedVectorStorage::PQChunkedMmapMulti(_)
+            | QuantizedVectorStorage::BinaryRamMulti(_)
+            | QuantizedVectorStorage::BinaryMmapMulti(_)
+            | QuantizedVectorStorage::BinaryChunkedMmapMulti(_)
+            | QuantizedVectorStorage::TQRamMulti(_)
+            | QuantizedVectorStorage::TQMmapMulti(_)
+            | QuantizedVectorStorage::TQChunkedMmapMulti(_) => None,
+        }
+    }
+
     pub fn config(&self) -> &QuantizedVectorsConfig {
         &self.config
     }

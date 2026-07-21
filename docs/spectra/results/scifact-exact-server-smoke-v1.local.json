@@ -1,0 +1,41 @@
+{
+  "dataset": "BEIR SciFact full corpus snapshot",
+  "snapshot": "d55fe1415ffde1c1c92bd1152fc3608db7483c5a66c263fa9739203b9d72dfde",
+  "documents": 5183,
+  "dense_dimension": 384,
+  "query_source_id": "0",
+  "top_k": 20,
+  "health": {
+    "status": "ok",
+    "mode": "reference-exact",
+    "build_millis": 21.836459
+  },
+  "first_hit": {
+    "point_id": "40212412",
+    "ordinal": 3637,
+    "rank": 1,
+    "fusion_score": null
+  },
+  "guarantee": {
+    "scope": "full-corpus",
+    "ordered_top_k_exact": true,
+    "scores_exact": false,
+    "tie_break": "frozen-point-identity-ascending"
+  },
+  "stop": {
+    "reason": "top-k-fixed",
+    "source_pulls": [1703, 4933],
+    "certification_checks": 67
+  },
+  "physical": {
+    "duration_micros": 4315,
+    "sparse_blocks_expanded": 41,
+    "sparse_documents_evaluated": 5183,
+    "dense_internal_nodes_expanded": 0,
+    "dense_blocks_expanded": 41,
+    "dense_documents_evaluated": 5183
+  },
+  "negative_gate": {
+    "stale_generation_status": 400
+  }
+}

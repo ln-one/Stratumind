@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "experiment": "fiqa-dense-bound-gate-v1",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "build_profile": "release",
+  "dataset_dir": "/tmp/spectra-fiqa-snapshot",
+  "documents": 57600,
+  "queries": 20,
+  "dense_dimension": 384,
+  "top_k": 20,
+  "dense_leaf_size": 16,
+  "dense_branch_factor": 8,
+  "dense_clustering_iterations": 4,
+  "decision": "reject-coordinate-box-from-default-path",
+  "reason": "The additional admissible bound changed neither blocks nor exact document scores consumed and increased latency.",
+  "configurations": [
+    {
+      "name": "euclidean-plus-spherical-cap",
+      "ordered_top_k_mismatches": 0,
+      "build_ns": 4054125584,
+      "dynamic_p50_ns": 26090958,
+      "dynamic_p95_ns": 33739666,
+      "dynamic_mean_ns": 26980785,
+      "dense_bound_evaluations": 92060,
+      "dense_blocks_expanded": 80334,
+      "dense_documents_evaluated": 1151590,
+      "exhaustive_dense_documents": 1152000
+    },
+    {
+      "name": "euclidean-plus-spherical-cap-plus-coordinate-box",
+      "ordered_top_k_mismatches": 0,
+      "build_ns": 4332355708,
+      "dynamic_p50_ns": 28959250,
+      "dynamic_p95_ns": 35503375,
+      "dynamic_mean_ns": 30056779,
+      "dense_bound_evaluations": 92060,
+      "dense_blocks_expanded": 80334,
+      "dense_documents_evaluated": 1151590,
+      "exhaustive_dense_documents": 1152000
+    }
+  ],
+  "derived": {
+    "baseline_dense_exact_fraction": 0.9996440972222222,
+    "coordinate_box_dense_exact_fraction": 0.9996440972222222,
+    "coordinate_box_p50_delta_fraction": 0.1099312728225399
+  }
+}

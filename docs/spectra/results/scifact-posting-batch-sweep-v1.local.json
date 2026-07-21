@@ -1,0 +1,327 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-scifact-posting-batch-sweep-v1",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "query_limit": 300,
+  "channel_count": 2,
+  "runs": [
+    {
+      "batch_size": 128,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-scifact-v1",
+        "dataset_dir": "/tmp/spectra-scifact-snapshot",
+        "documents": 5183,
+        "dimension": 384,
+        "top_k": 20,
+        "rrf_k": 2,
+        "warmup_check_interval": 64,
+        "exhaustive_after_pulls_per_source": null,
+        "sparse_stream_strategy": "posting-block",
+        "build_ns": 32325792,
+        "matrix": [
+          {
+            "channels": 2,
+            "queries": 300,
+            "ordered_top_k_mismatches": 0,
+            "top_k_fixed_queries": 300,
+            "all_sources_exhausted_queries": 0,
+            "dynamic_source_pulls": [
+              239214,
+              214554
+            ],
+            "exhaustive_source_pulls": [
+              1554900,
+              751031
+            ],
+            "source_pull_ratio": 0.19678299133842253,
+            "dynamic_dense_quantized_scores": 1554900,
+            "dynamic_dense_exact_scores": 498692,
+            "dynamic_sparse_documents_evaluated": 0,
+            "dynamic_sparse_posting_elements_visited": 1155100,
+            "dynamic_sparse_batches_expanded": 12285,
+            "dynamic_sparse_adaptive_refills": 0,
+            "dynamic_sparse_results_materialized": 0,
+            "dynamic_latency": {
+              "p50_ns": 860167,
+              "p95_ns": 2664542,
+              "p99_ns": 3038833,
+              "mean_ns": 1100531
+            },
+            "exhaustive_latency": {
+              "p50_ns": 2931458,
+              "p95_ns": 3380875,
+              "p99_ns": 3681459,
+              "mean_ns": 2953556
+            }
+          }
+        ]
+      }
+    },
+    {
+      "batch_size": 256,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-scifact-v1",
+        "dataset_dir": "/tmp/spectra-scifact-snapshot",
+        "documents": 5183,
+        "dimension": 384,
+        "top_k": 20,
+        "rrf_k": 2,
+        "warmup_check_interval": 64,
+        "exhaustive_after_pulls_per_source": null,
+        "sparse_stream_strategy": "posting-block",
+        "build_ns": 31784250,
+        "matrix": [
+          {
+            "channels": 2,
+            "queries": 300,
+            "ordered_top_k_mismatches": 0,
+            "top_k_fixed_queries": 300,
+            "all_sources_exhausted_queries": 0,
+            "dynamic_source_pulls": [
+              239214,
+              214554
+            ],
+            "exhaustive_source_pulls": [
+              1554900,
+              751031
+            ],
+            "source_pull_ratio": 0.19678299133842253,
+            "dynamic_dense_quantized_scores": 1554900,
+            "dynamic_dense_exact_scores": 498692,
+            "dynamic_sparse_documents_evaluated": 0,
+            "dynamic_sparse_posting_elements_visited": 1155242,
+            "dynamic_sparse_batches_expanded": 6297,
+            "dynamic_sparse_adaptive_refills": 0,
+            "dynamic_sparse_results_materialized": 0,
+            "dynamic_latency": {
+              "p50_ns": 822416,
+              "p95_ns": 2475875,
+              "p99_ns": 2947000,
+              "mean_ns": 1041356
+            },
+            "exhaustive_latency": {
+              "p50_ns": 2856625,
+              "p95_ns": 3259125,
+              "p99_ns": 3407042,
+              "mean_ns": 2852101
+            }
+          }
+        ]
+      }
+    },
+    {
+      "batch_size": 512,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-scifact-v1",
+        "dataset_dir": "/tmp/spectra-scifact-snapshot",
+        "documents": 5183,
+        "dimension": 384,
+        "top_k": 20,
+        "rrf_k": 2,
+        "warmup_check_interval": 64,
+        "exhaustive_after_pulls_per_source": null,
+        "sparse_stream_strategy": "posting-block",
+        "build_ns": 30113708,
+        "matrix": [
+          {
+            "channels": 2,
+            "queries": 300,
+            "ordered_top_k_mismatches": 0,
+            "top_k_fixed_queries": 300,
+            "all_sources_exhausted_queries": 0,
+            "dynamic_source_pulls": [
+              239214,
+              214554
+            ],
+            "exhaustive_source_pulls": [
+              1554900,
+              751031
+            ],
+            "source_pull_ratio": 0.19678299133842253,
+            "dynamic_dense_quantized_scores": 1554900,
+            "dynamic_dense_exact_scores": 498692,
+            "dynamic_sparse_documents_evaluated": 0,
+            "dynamic_sparse_posting_elements_visited": 1155242,
+            "dynamic_sparse_batches_expanded": 3297,
+            "dynamic_sparse_adaptive_refills": 0,
+            "dynamic_sparse_results_materialized": 0,
+            "dynamic_latency": {
+              "p50_ns": 811042,
+              "p95_ns": 2467000,
+              "p99_ns": 2789125,
+              "mean_ns": 1019264
+            },
+            "exhaustive_latency": {
+              "p50_ns": 2894500,
+              "p95_ns": 3322542,
+              "p99_ns": 3439166,
+              "mean_ns": 2888001
+            }
+          }
+        ]
+      }
+    },
+    {
+      "batch_size": 1024,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-scifact-v1",
+        "dataset_dir": "/tmp/spectra-scifact-snapshot",
+        "documents": 5183,
+        "dimension": 384,
+        "top_k": 20,
+        "rrf_k": 2,
+        "warmup_check_interval": 64,
+        "exhaustive_after_pulls_per_source": null,
+        "sparse_stream_strategy": "posting-block",
+        "build_ns": 30242500,
+        "matrix": [
+          {
+            "channels": 2,
+            "queries": 300,
+            "ordered_top_k_mismatches": 0,
+            "top_k_fixed_queries": 300,
+            "all_sources_exhausted_queries": 0,
+            "dynamic_source_pulls": [
+              239214,
+              214554
+            ],
+            "exhaustive_source_pulls": [
+              1554900,
+              751031
+            ],
+            "source_pull_ratio": 0.19678299133842253,
+            "dynamic_dense_quantized_scores": 1554900,
+            "dynamic_dense_exact_scores": 498692,
+            "dynamic_sparse_documents_evaluated": 0,
+            "dynamic_sparse_posting_elements_visited": 1155242,
+            "dynamic_sparse_batches_expanded": 1797,
+            "dynamic_sparse_adaptive_refills": 0,
+            "dynamic_sparse_results_materialized": 0,
+            "dynamic_latency": {
+              "p50_ns": 779208,
+              "p95_ns": 2632834,
+              "p99_ns": 2967667,
+              "mean_ns": 1029116
+            },
+            "exhaustive_latency": {
+              "p50_ns": 2913666,
+              "p95_ns": 3312542,
+              "p99_ns": 3469084,
+              "mean_ns": 2903731
+            }
+          }
+        ]
+      }
+    },
+    {
+      "batch_size": 2048,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-scifact-v1",
+        "dataset_dir": "/tmp/spectra-scifact-snapshot",
+        "documents": 5183,
+        "dimension": 384,
+        "top_k": 20,
+        "rrf_k": 2,
+        "warmup_check_interval": 64,
+        "exhaustive_after_pulls_per_source": null,
+        "sparse_stream_strategy": "posting-block",
+        "build_ns": 30515250,
+        "matrix": [
+          {
+            "channels": 2,
+            "queries": 300,
+            "ordered_top_k_mismatches": 0,
+            "top_k_fixed_queries": 300,
+            "all_sources_exhausted_queries": 0,
+            "dynamic_source_pulls": [
+              239214,
+              214554
+            ],
+            "exhaustive_source_pulls": [
+              1554900,
+              751031
+            ],
+            "source_pull_ratio": 0.19678299133842253,
+            "dynamic_dense_quantized_scores": 1554900,
+            "dynamic_dense_exact_scores": 498692,
+            "dynamic_sparse_documents_evaluated": 0,
+            "dynamic_sparse_posting_elements_visited": 1155243,
+            "dynamic_sparse_batches_expanded": 900,
+            "dynamic_sparse_adaptive_refills": 0,
+            "dynamic_sparse_results_materialized": 0,
+            "dynamic_latency": {
+              "p50_ns": 786792,
+              "p95_ns": 2404291,
+              "p99_ns": 3270916,
+              "mean_ns": 1032207
+            },
+            "exhaustive_latency": {
+              "p50_ns": 2855750,
+              "p95_ns": 3364459,
+              "p99_ns": 3518833,
+              "mean_ns": 2873626
+            }
+          }
+        ]
+      }
+    },
+    {
+      "batch_size": 4096,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-scifact-v1",
+        "dataset_dir": "/tmp/spectra-scifact-snapshot",
+        "documents": 5183,
+        "dimension": 384,
+        "top_k": 20,
+        "rrf_k": 2,
+        "warmup_check_interval": 64,
+        "exhaustive_after_pulls_per_source": null,
+        "sparse_stream_strategy": "posting-block",
+        "build_ns": 30405500,
+        "matrix": [
+          {
+            "channels": 2,
+            "queries": 300,
+            "ordered_top_k_mismatches": 0,
+            "top_k_fixed_queries": 300,
+            "all_sources_exhausted_queries": 0,
+            "dynamic_source_pulls": [
+              239214,
+              214554
+            ],
+            "exhaustive_source_pulls": [
+              1554900,
+              751031
+            ],
+            "source_pull_ratio": 0.19678299133842253,
+            "dynamic_dense_quantized_scores": 1554900,
+            "dynamic_dense_exact_scores": 498692,
+            "dynamic_sparse_documents_evaluated": 0,
+            "dynamic_sparse_posting_elements_visited": 1155243,
+            "dynamic_sparse_batches_expanded": 600,
+            "dynamic_sparse_adaptive_refills": 0,
+            "dynamic_sparse_results_materialized": 0,
+            "dynamic_latency": {
+              "p50_ns": 812792,
+              "p95_ns": 2488292,
+              "p99_ns": 3033458,
+              "mean_ns": 1058011
+            },
+            "exhaustive_latency": {
+              "p50_ns": 2921792,
+              "p95_ns": 3356333,
+              "p99_ns": 3612125,
+              "mean_ns": 2931542
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

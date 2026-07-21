@@ -229,6 +229,24 @@ impl PostingListIter for PostingListIterator<'_> {
         true
     }
 
+    fn reliable_block_max() -> bool {
+        false
+    }
+
+    fn max_weight_till_id(&mut self, _id: PointOffsetType) -> Option<DimWeight> {
+        None
+    }
+
+    fn skip_till_id(&mut self, id: PointOffsetType) {
+        if self.skip_to(id).is_some() {
+            self.advance();
+        }
+    }
+
+    fn block_max_endpoints(&self) -> Option<(DimWeight, DimWeight)> {
+        None
+    }
+
     fn into_std_iter(self) -> impl Iterator<Item = PostingElement> {
         self.elements.iter().cloned().map(PostingElement::from)
     }

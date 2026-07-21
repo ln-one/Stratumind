@@ -1,0 +1,417 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-scifact-n-channel-sparse-strategy-matrix-v1",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "generated_at_local": "2026-07-21",
+  "execution_note": "Three strategies executed sequentially with the same release binary; raw per-strategy exhaustive controls are retained.",
+  "strategies": {
+    "document_block": {
+      "schema_version": 1,
+      "experiment": "spectra-n-channel-scifact-v1",
+      "dataset_dir": "/tmp/spectra-scifact-snapshot",
+      "documents": 5183,
+      "dimension": 384,
+      "top_k": 20,
+      "rrf_k": 2,
+      "warmup_check_interval": 64,
+      "exhaustive_after_pulls_per_source": null,
+      "sparse_stream_strategy": "document-block",
+      "build_ns": 31959834,
+      "matrix": [
+        {
+          "channels": 2,
+          "queries": 1109,
+          "ordered_top_k_mismatches": 0,
+          "top_k_fixed_queries": 1106,
+          "all_sources_exhausted_queries": 3,
+          "dynamic_source_pulls": [
+            858367,
+            761747
+          ],
+          "exhaustive_source_pulls": [
+            5747947,
+            2745476
+          ],
+          "source_pull_ratio": 0.1907492420900266,
+          "dynamic_dense_quantized_scores": 5747947,
+          "dynamic_dense_exact_scores": 1824964,
+          "dynamic_sparse_documents_evaluated": 5741679,
+          "dynamic_sparse_posting_elements_visited": 0,
+          "dynamic_sparse_batches_expanded": 0,
+          "dynamic_sparse_adaptive_refills": 0,
+          "dynamic_sparse_results_materialized": 0,
+          "dynamic_latency": {
+            "p50_ns": 1557750,
+            "p95_ns": 3177375,
+            "p99_ns": 4055208,
+            "mean_ns": 1739634
+          },
+          "exhaustive_latency": {
+            "p50_ns": 2950208,
+            "p95_ns": 3375958,
+            "p99_ns": 3499209,
+            "mean_ns": 2957069
+          }
+        },
+        {
+          "channels": 4,
+          "queries": 1109,
+          "ordered_top_k_mismatches": 0,
+          "top_k_fixed_queries": 1109,
+          "all_sources_exhausted_queries": 0,
+          "dynamic_source_pulls": [
+            989735,
+            917089,
+            989147,
+            792939
+          ],
+          "exhaustive_source_pulls": [
+            5747947,
+            2745476,
+            5747947,
+            1739140
+          ],
+          "source_pull_ratio": 0.23083806461746215,
+          "dynamic_dense_quantized_scores": 11495894,
+          "dynamic_dense_exact_scores": 3867429,
+          "dynamic_sparse_documents_evaluated": 11432113,
+          "dynamic_sparse_posting_elements_visited": 0,
+          "dynamic_sparse_batches_expanded": 0,
+          "dynamic_sparse_adaptive_refills": 0,
+          "dynamic_sparse_results_materialized": 0,
+          "dynamic_latency": {
+            "p50_ns": 3028541,
+            "p95_ns": 5517500,
+            "p99_ns": 6853875,
+            "mean_ns": 3256399
+          },
+          "exhaustive_latency": {
+            "p50_ns": 5147500,
+            "p95_ns": 5836042,
+            "p99_ns": 6196042,
+            "mean_ns": 5149279
+          }
+        },
+        {
+          "channels": 8,
+          "queries": 1109,
+          "ordered_top_k_mismatches": 0,
+          "top_k_fixed_queries": 1109,
+          "all_sources_exhausted_queries": 0,
+          "dynamic_source_pulls": [
+            1134341,
+            1071244,
+            1134093,
+            894286,
+            1133919,
+            868290,
+            1133587,
+            1070446
+          ],
+          "exhaustive_source_pulls": [
+            5747947,
+            2745476,
+            5747947,
+            1739140,
+            5747947,
+            1642807,
+            5747947,
+            2745476
+          ],
+          "source_pull_ratio": 0.2648764759559697,
+          "dynamic_dense_quantized_scores": 22991788,
+          "dynamic_dense_exact_scores": 9580889,
+          "dynamic_sparse_documents_evaluated": 22834725,
+          "dynamic_sparse_posting_elements_visited": 0,
+          "dynamic_sparse_batches_expanded": 0,
+          "dynamic_sparse_adaptive_refills": 0,
+          "dynamic_sparse_results_materialized": 0,
+          "dynamic_latency": {
+            "p50_ns": 6429375,
+            "p95_ns": 11273625,
+            "p99_ns": 13508459,
+            "mean_ns": 6857737
+          },
+          "exhaustive_latency": {
+            "p50_ns": 9696000,
+            "p95_ns": 10973042,
+            "p99_ns": 11437333,
+            "mean_ns": 9738140
+          }
+        }
+      ]
+    },
+    "posting_block": {
+      "schema_version": 1,
+      "experiment": "spectra-n-channel-scifact-v1",
+      "dataset_dir": "/tmp/spectra-scifact-snapshot",
+      "documents": 5183,
+      "dimension": 384,
+      "top_k": 20,
+      "rrf_k": 2,
+      "warmup_check_interval": 64,
+      "exhaustive_after_pulls_per_source": null,
+      "sparse_stream_strategy": "posting-block",
+      "build_ns": 31357291,
+      "matrix": [
+        {
+          "channels": 2,
+          "queries": 1109,
+          "ordered_top_k_mismatches": 0,
+          "top_k_fixed_queries": 1106,
+          "all_sources_exhausted_queries": 3,
+          "dynamic_source_pulls": [
+            858367,
+            761747
+          ],
+          "exhaustive_source_pulls": [
+            5747947,
+            2745476
+          ],
+          "source_pull_ratio": 0.1907492420900266,
+          "dynamic_dense_quantized_scores": 5747947,
+          "dynamic_dense_exact_scores": 1824964,
+          "dynamic_sparse_documents_evaluated": 0,
+          "dynamic_sparse_posting_elements_visited": 4141768,
+          "dynamic_sparse_batches_expanded": 2218,
+          "dynamic_sparse_adaptive_refills": 0,
+          "dynamic_sparse_results_materialized": 0,
+          "dynamic_latency": {
+            "p50_ns": 861667,
+            "p95_ns": 2531958,
+            "p99_ns": 3266208,
+            "mean_ns": 1067921
+          },
+          "exhaustive_latency": {
+            "p50_ns": 2977375,
+            "p95_ns": 3384458,
+            "p99_ns": 3556417,
+            "mean_ns": 2975544
+          }
+        },
+        {
+          "channels": 4,
+          "queries": 1109,
+          "ordered_top_k_mismatches": 0,
+          "top_k_fixed_queries": 1109,
+          "all_sources_exhausted_queries": 0,
+          "dynamic_source_pulls": [
+            989735,
+            917089,
+            989147,
+            792939
+          ],
+          "exhaustive_source_pulls": [
+            5747947,
+            2745476,
+            5747947,
+            1739140
+          ],
+          "source_pull_ratio": 0.23083806461746215,
+          "dynamic_dense_quantized_scores": 11495894,
+          "dynamic_dense_exact_scores": 3867429,
+          "dynamic_sparse_documents_evaluated": 0,
+          "dynamic_sparse_posting_elements_visited": 6290113,
+          "dynamic_sparse_batches_expanded": 4434,
+          "dynamic_sparse_adaptive_refills": 0,
+          "dynamic_sparse_results_materialized": 0,
+          "dynamic_latency": {
+            "p50_ns": 1857458,
+            "p95_ns": 4392667,
+            "p99_ns": 5283250,
+            "mean_ns": 2091228
+          },
+          "exhaustive_latency": {
+            "p50_ns": 5178792,
+            "p95_ns": 5864041,
+            "p99_ns": 6138625,
+            "mean_ns": 5190344
+          }
+        },
+        {
+          "channels": 8,
+          "queries": 1109,
+          "ordered_top_k_mismatches": 0,
+          "top_k_fixed_queries": 1109,
+          "all_sources_exhausted_queries": 0,
+          "dynamic_source_pulls": [
+            1134341,
+            1071244,
+            1134093,
+            894286,
+            1133919,
+            868290,
+            1133587,
+            1070446
+          ],
+          "exhaustive_source_pulls": [
+            5747947,
+            2745476,
+            5747947,
+            1739140,
+            5747947,
+            1642807,
+            5747947,
+            2745476
+          ],
+          "source_pull_ratio": 0.2648764759559697,
+          "dynamic_dense_quantized_scores": 22991788,
+          "dynamic_dense_exact_scores": 9580889,
+          "dynamic_sparse_documents_evaluated": 0,
+          "dynamic_sparse_posting_elements_visited": 12425331,
+          "dynamic_sparse_batches_expanded": 8863,
+          "dynamic_sparse_adaptive_refills": 0,
+          "dynamic_sparse_results_materialized": 0,
+          "dynamic_latency": {
+            "p50_ns": 4154375,
+            "p95_ns": 9241666,
+            "p99_ns": 11516375,
+            "mean_ns": 4641513
+          },
+          "exhaustive_latency": {
+            "p50_ns": 9802042,
+            "p95_ns": 11032083,
+            "p99_ns": 11480375,
+            "mean_ns": 9813892
+          }
+        }
+      ]
+    },
+    "adaptive_native": {
+      "schema_version": 1,
+      "experiment": "spectra-n-channel-scifact-v1",
+      "dataset_dir": "/tmp/spectra-scifact-snapshot",
+      "documents": 5183,
+      "dimension": 384,
+      "top_k": 20,
+      "rrf_k": 2,
+      "warmup_check_interval": 64,
+      "exhaustive_after_pulls_per_source": null,
+      "sparse_stream_strategy": "adaptive-native",
+      "build_ns": 31776458,
+      "matrix": [
+        {
+          "channels": 2,
+          "queries": 1109,
+          "ordered_top_k_mismatches": 0,
+          "top_k_fixed_queries": 1106,
+          "all_sources_exhausted_queries": 3,
+          "dynamic_source_pulls": [
+            858367,
+            761747
+          ],
+          "exhaustive_source_pulls": [
+            5747947,
+            2745476
+          ],
+          "source_pull_ratio": 0.1907492420900266,
+          "dynamic_dense_quantized_scores": 5747947,
+          "dynamic_dense_exact_scores": 1824964,
+          "dynamic_sparse_documents_evaluated": 0,
+          "dynamic_sparse_posting_elements_visited": 11853783,
+          "dynamic_sparse_batches_expanded": 0,
+          "dynamic_sparse_adaptive_refills": 3205,
+          "dynamic_sparse_results_materialized": 1734425,
+          "dynamic_latency": {
+            "p50_ns": 875750,
+            "p95_ns": 2498542,
+            "p99_ns": 3238166,
+            "mean_ns": 1074515
+          },
+          "exhaustive_latency": {
+            "p50_ns": 2974541,
+            "p95_ns": 3378917,
+            "p99_ns": 3546208,
+            "mean_ns": 2984579
+          }
+        },
+        {
+          "channels": 4,
+          "queries": 1109,
+          "ordered_top_k_mismatches": 0,
+          "top_k_fixed_queries": 1109,
+          "all_sources_exhausted_queries": 0,
+          "dynamic_source_pulls": [
+            989735,
+            917089,
+            989147,
+            792939
+          ],
+          "exhaustive_source_pulls": [
+            5747947,
+            2745476,
+            5747947,
+            1739140
+          ],
+          "source_pull_ratio": 0.23083806461746215,
+          "dynamic_dense_quantized_scores": 11495894,
+          "dynamic_dense_exact_scores": 3867429,
+          "dynamic_sparse_documents_evaluated": 0,
+          "dynamic_sparse_posting_elements_visited": 19770237,
+          "dynamic_sparse_batches_expanded": 0,
+          "dynamic_sparse_adaptive_refills": 6831,
+          "dynamic_sparse_results_materialized": 3826891,
+          "dynamic_latency": {
+            "p50_ns": 1842459,
+            "p95_ns": 4283792,
+            "p99_ns": 5550875,
+            "mean_ns": 2094066
+          },
+          "exhaustive_latency": {
+            "p50_ns": 5217166,
+            "p95_ns": 5877667,
+            "p99_ns": 6123875,
+            "mean_ns": 5229245
+          }
+        },
+        {
+          "channels": 8,
+          "queries": 1109,
+          "ordered_top_k_mismatches": 0,
+          "top_k_fixed_queries": 1109,
+          "all_sources_exhausted_queries": 0,
+          "dynamic_source_pulls": [
+            1134341,
+            1071244,
+            1134093,
+            894286,
+            1133919,
+            868290,
+            1133587,
+            1070446
+          ],
+          "exhaustive_source_pulls": [
+            5747947,
+            2745476,
+            5747947,
+            1739140,
+            5747947,
+            1642807,
+            5747947,
+            2745476
+          ],
+          "source_pull_ratio": 0.2648764759559697,
+          "dynamic_dense_quantized_scores": 22991788,
+          "dynamic_dense_exact_scores": 9580889,
+          "dynamic_sparse_documents_evaluated": 0,
+          "dynamic_sparse_posting_elements_visited": 41047982,
+          "dynamic_sparse_batches_expanded": 0,
+          "dynamic_sparse_adaptive_refills": 14262,
+          "dynamic_sparse_results_materialized": 8615242,
+          "dynamic_latency": {
+            "p50_ns": 4122875,
+            "p95_ns": 8692459,
+            "p99_ns": 10900708,
+            "mean_ns": 4558229
+          },
+          "exhaustive_latency": {
+            "p50_ns": 9889750,
+            "p95_ns": 11074750,
+            "p99_ns": 11594917,
+            "mean_ns": 9884724
+          }
+        }
+      ]
+    }
+  }
+}

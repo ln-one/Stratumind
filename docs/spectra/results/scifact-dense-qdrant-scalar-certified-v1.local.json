@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-dense-qdrant-native-v1",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "dataset_dir": "/tmp/spectra-scifact-snapshot",
+  "documents": 5183,
+  "queries": 1109,
+  "dimension": 384,
+  "top_k": 20,
+  "hnsw_ef_search": 256,
+  "scalar_quantized_build_ns": 35861916,
+  "scalar_quantized_index_bytes": 2011322,
+  "hnsw_ordered_top_k_mismatches": 3,
+  "hnsw_mean_recall_at_k": 0.9998647430117222,
+  "certified_ordered_top_k_mismatches": 0,
+  "certified_exact_scores": 855099,
+  "certified_quantized_scores": 5747947,
+  "certified_exact_score_ratio": 0.14876598549012368,
+  "hnsw_latency": { "p50_ns": 144667, "p95_ns": 243417, "p99_ns": 340875 },
+  "certified_latency": { "p50_ns": 333792, "p95_ns": 605500, "p99_ns": 717291 },
+  "exact_scan_latency": { "p50_ns": 167375, "p95_ns": 200042, "p99_ns": 234709 }
+}

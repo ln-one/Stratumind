@@ -178,6 +178,15 @@ mod tests {
             ]
         );
 
+        let telemetry = search_context.telemetry();
+        assert_eq!(telemetry.posting_lists, 3);
+        assert_eq!(telemetry.posting_elements, 9);
+        assert_eq!(telemetry.posting_elements_visited, 9);
+        assert_eq!(telemetry.posting_elements_remaining, 0);
+        assert_eq!(telemetry.posting_elements_skipped, 0);
+        assert_eq!(telemetry.batch_count, 1);
+        assert_eq!(telemetry.scored_id_span, 3);
+
         drop(search_context);
         drop(hardware_counter);
 
@@ -186,6 +195,61 @@ mod tests {
         if index.index.is_on_disk() {
             assert!(accumulator.get_vector_io_read() > 0);
         }
+    }
+
+    #[test]
+    fn compressed_block_max_skips_low_impact_batches<I: InvertedIndex>() {
+        if !I::Iter::reliable_block_max() {
+            return;
+        }
+
+        let index = TestIndex::<I>::from_ram({
+            let mut builder = InvertedIndexBuilder::new();
+            for id in 0..30_000 {
+                let weight = if id < 100 { 100.0 } else { 1.0 };
+                builder.add(id, [(1, weight), (2, weight)].into());
+            }
+            builder.build()
+        });
+        let is_stopped = AtomicBool::new(false);
+        let hardware_counter = HardwareCounterCell::disposable();
+        let mut scratch = SearchScratch::new_for_test();
+        let mut search_context = SearchContext::new(
+            RemappedSparseVector {
+                indices: vec![1, 2],
+                values: vec![1.0, 1.0],
+            },
+            20,
+            &index.index,
+            &mut scratch,
+            &is_stopped,
+            &hardware_counter,
+        )
+        .unwrap();
+
+        let points = round_scores::<I>(search_context.search(&match_all));
+
+        assert_eq!(points.len(), 20);
+        assert_eq!(
+            points[0],
+            ScoredPointOffset {
+                idx: 0,
+                score: 200.0
+            }
+        );
+        assert_eq!(
+            points[19],
+            ScoredPointOffset {
+                idx: 19,
+                score: 200.0
+            }
+        );
+        let telemetry = search_context.telemetry();
+        assert!(telemetry.use_block_pruning);
+        assert!(telemetry.block_prune_attempts >= 2);
+        assert!(telemetry.block_prune_successes >= 2);
+        assert!(telemetry.posting_elements_skipped >= 39_000);
+        assert!(telemetry.posting_elements_visited < telemetry.posting_elements / 2);
     }
 
     #[test]
@@ -418,9 +482,48 @@ mod tests {
         .unwrap();
 
         // assuming we have gathered enough results and want to prune the longest posting list
-        assert!(search_context.prune_longest_posting_list(30.0));
+        assert!(search_context.prune_longest_posting_list(30.1));
         // the longest posting list was pruned to the end
         assert_eq!(search_context.posting_list_len(0), 0);
+        let telemetry = search_context.telemetry();
+        assert_eq!(telemetry.posting_elements, 3);
+        assert_eq!(telemetry.posting_elements_visited, 0);
+        assert_eq!(telemetry.posting_elements_skipped, 3);
+        assert_eq!(telemetry.prune_attempts, 1);
+        assert_eq!(telemetry.prune_successes, 1);
+    }
+
+    #[test]
+    fn exact_equal_score_bound_is_not_pruned<I: InvertedIndex>() {
+        if TypeId::of::<I>() != TypeId::of::<InvertedIndexRam>() {
+            return;
+        }
+        let index = TestIndex::<I>::from_ram({
+            let mut builder = InvertedIndexBuilder::new();
+            builder.add(1, [(1, 10.0)].into());
+            builder.add(2, [(1, 20.0)].into());
+            builder.add(3, [(1, 30.0)].into());
+            builder.build()
+        });
+        let is_stopped = AtomicBool::new(false);
+        let accumulator = HwMeasurementAcc::new();
+        let hardware_counter = accumulator.get_counter_cell();
+        let mut scratch = SearchScratch::new_for_test();
+        let mut search_context = SearchContext::new(
+            RemappedSparseVector {
+                indices: vec![1],
+                values: vec![1.0],
+            },
+            1,
+            &index.index,
+            &mut scratch,
+            &is_stopped,
+            &hardware_counter,
+        )
+        .unwrap();
+
+        assert!(!search_context.prune_longest_posting_list(30.0));
+        assert_eq!(search_context.posting_list_len(0), 3);
     }
 
     #[test]
@@ -454,7 +557,7 @@ mod tests {
         .unwrap();
 
         // assuming we have gathered enough results and want to prune the longest posting list
-        assert!(search_context.prune_longest_posting_list(30.0));
+        assert!(search_context.prune_longest_posting_list(30.1));
         // the longest posting list was pruned to the end
         assert_eq!(search_context.posting_list_len(0), 0);
     }
@@ -498,7 +601,7 @@ mod tests {
         // we should actually check the best score up to `6` - 1 only instead of the max possible score (40.0)
         assert!(!search_context.prune_longest_posting_list(30.0));
 
-        assert!(search_context.prune_longest_posting_list(40.0));
+        assert!(search_context.prune_longest_posting_list(40.1));
         // the longest posting list was pruned to the end
         assert_eq!(
             search_context.posting_list_len(0),

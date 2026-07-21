@@ -119,6 +119,7 @@ common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
 issues = { path = "lib/common/issues" }
 segment = { path = "lib/segment", default-features = false }
+sparse = { path = "lib/sparse" }
 shard = { path = "lib/shard", default-features = false }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }

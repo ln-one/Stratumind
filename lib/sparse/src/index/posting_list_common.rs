@@ -86,5 +86,19 @@ pub trait PostingListIter {
     /// Whether the max_next_weight is reliable.
     fn reliable_max_next_weight() -> bool;
 
+    /// Whether this iterator can provide an admissible maximum weight through
+    /// a document id without decoding every posting in the range.
+    fn reliable_block_max() -> bool;
+
+    /// Maximum stored weight from the current iterator position through `id`.
+    /// Implementations may return a conservative overestimate.
+    fn max_weight_till_id(&mut self, id: PointOffsetType) -> Option<DimWeight>;
+
+    /// Advance to the first posting whose record id is greater than `id`.
+    fn skip_till_id(&mut self, id: PointOffsetType);
+
+    /// Maximum stored weights at the first and last physical posting blocks.
+    fn block_max_endpoints(&self) -> Option<(DimWeight, DimWeight)>;
+
     fn into_std_iter(self) -> impl Iterator<Item = PostingElement>;
 }

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-sparse-posting-block-max-v1-summary",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "quality_contract": "ordered exact Top-20 against the same compressed index with block pruning disabled",
+  "physical_design": {
+    "posting_chunk_entries": 128,
+    "max_impact_bytes_per_full_f32_chunk": 4,
+    "selected_document_id_batch": 4096,
+    "native_document_id_batch": 10000,
+    "router": "enable only when the query-weighted first-block maximum is strictly greater than the last-block maximum"
+  },
+  "batch_size_matrix_1m": [
+    {"batch": 256, "pattern": "descending", "baseline_p50_ns": 1371833, "routed_p50_ns": 1399417, "posting_elements_skipped": 46849204, "mismatches": 0},
+    {"batch": 512, "pattern": "descending", "baseline_p50_ns": 1353417, "routed_p50_ns": 1242833, "posting_elements_skipped": 46845721, "mismatches": 0},
+    {"batch": 1024, "pattern": "descending", "baseline_p50_ns": 1386792, "routed_p50_ns": 1162667, "posting_elements_skipped": 46795241, "mismatches": 0},
+    {"batch": 2048, "pattern": "descending", "baseline_p50_ns": 1382459, "routed_p50_ns": 1085875, "posting_elements_skipped": 46824429, "mismatches": 0},
+    {"batch": 4096, "pattern": "descending", "baseline_p50_ns": 1355708, "routed_p50_ns": 1038125, "posting_elements_skipped": 46675186, "mismatches": 0},
+    {"batch": 10000, "pattern": "descending", "baseline_p50_ns": 1386125, "routed_p50_ns": 1048834, "posting_elements_skipped": 46116016, "mismatches": 0}
+  ],
+  "final_routed_matrix": [
+    {
+      "documents": 1000000,
+      "queries": 100,
+      "pattern": "descending",
+      "index_bytes": 13832752,
+      "estimated_block_max_bytes": 93200,
+      "ordered_top_k_mismatches": 0,
+      "baseline_p50_ns": 1354417,
+      "routed_p50_ns": 1033041,
+      "baseline_p95_ns": 1544375,
+      "routed_p95_ns": 1167084,
+      "posting_elements": 106640626,
+      "posting_elements_skipped": 46675186,
+      "trend_disabled_queries": 0
+    },
+    {
+      "documents": 1000000,
+      "queries": 100,
+      "pattern": "flat",
+      "ordered_top_k_mismatches": 0,
+      "baseline_p50_ns": 1396000,
+      "routed_p50_ns": 1406875,
+      "posting_elements_skipped": 0,
+      "trend_disabled_queries": 100
+    },
+    {
+      "documents": 1000000,
+      "queries": 100,
+      "pattern": "ascending",
+      "ordered_top_k_mismatches": 0,
+      "baseline_p50_ns": 1423250,
+      "routed_p50_ns": 1431708,
+      "posting_elements_skipped": 0,
+      "trend_disabled_queries": 100
+    },
+    {
+      "documents": 5000000,
+      "queries": 20,
+      "pattern": "descending",
+      "index_bytes": 68965320,
+      "estimated_block_max_bytes": 468120,
+      "ordered_top_k_mismatches": 0,
+      "baseline_p50_ns": 6867042,
+      "routed_p50_ns": 5392042,
+      "baseline_p95_ns": 7194167,
+      "routed_p95_ns": 5752333,
+      "posting_elements": 106640626,
+      "posting_elements_skipped": 48248049,
+      "trend_disabled_queries": 0
+    },
+    {
+      "documents": 5000000,
+      "queries": 20,
+      "pattern": "ascending",
+      "ordered_top_k_mismatches": 0,
+      "baseline_p50_ns": 7292208,
+      "routed_p50_ns": 7352542,
+      "posting_elements_skipped": 0,
+      "trend_disabled_queries": 20
+    }
+  ],
+  "limitations": [
+    "The baseline shares the modified compressed-posting layout and is not a clean upstream Qdrant binary.",
+    "The posting layout change still requires an explicit storage-version migration.",
+    "Real BEIR and MIRACL sparse corpora have not yet been measured.",
+    "The 5M rows contain only 20 queries and require repeated runs for confidence intervals."
+  ]
+}

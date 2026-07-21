@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-dense-qdrant-native-v1",
+  "status": "local-research-only",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "dataset": {
+    "name": "BEIR SciFact",
+    "license": "CC BY-NC 2.0; research-only, not bundled with Spectra",
+    "documents": 5183,
+    "queries": 1109,
+    "dimension": 384
+  },
+  "fixed_configuration": {
+    "build_profile": "release",
+    "top_k": 100,
+    "hnsw_m": 16,
+    "hnsw_ef_construct": 100,
+    "hnsw_build_threads": 1
+  },
+  "storage": {
+    "vector_segment_bytes": 44065422,
+    "vector_segment_files": 28,
+    "hnsw_index_bytes": 173826,
+    "hnsw_index_files": 3,
+    "total_index_bytes": 44239248
+  },
+  "runs": [
+    {
+      "hnsw_ef_search": 64,
+      "segment_load_ns": 80681875,
+      "hnsw_build_ns": 420280417,
+      "ordered_top_k_mismatches": 862,
+      "mean_recall_at_k": 0.9744634806131739,
+      "hnsw_latency_ns": { "p50": 62333, "p95": 82417, "p99": 121709, "mean": 64507 },
+      "hnsw_throughput_queries_per_second": 15502.13396868692,
+      "exact_scan_latency_ns": { "p50": 172667, "p95": 204041, "p99": 256500, "mean": 178180 },
+      "exact_scan_throughput_queries_per_second": 5612.294100162112
+    },
+    {
+      "hnsw_ef_search": 128,
+      "segment_load_ns": 75301500,
+      "hnsw_build_ns": 431872417,
+      "ordered_top_k_mismatches": 663,
+      "mean_recall_at_k": 0.9860324616771936,
+      "hnsw_latency_ns": { "p50": 76333, "p95": 108417, "p99": 175167, "mean": 79903 },
+      "hnsw_throughput_queries_per_second": 12515.146402329321,
+      "exact_scan_latency_ns": { "p50": 175250, "p95": 209250, "p99": 258792, "mean": 180478 },
+      "exact_scan_throughput_queries_per_second": 5540.822496878479
+    },
+    {
+      "hnsw_ef_search": 256,
+      "segment_load_ns": 73942042,
+      "hnsw_build_ns": 424696125,
+      "ordered_top_k_mismatches": 167,
+      "mean_recall_at_k": 0.99804328223625,
+      "hnsw_latency_ns": { "p50": 127041, "p95": 177333, "p99": 253000, "mean": 131640 },
+      "hnsw_throughput_queries_per_second": 7596.424345935876,
+      "exact_scan_latency_ns": { "p50": 176167, "p95": 207125, "p99": 261334, "mean": 180884 },
+      "exact_scan_throughput_queries_per_second": 5528.388491753576
+    },
+    {
+      "hnsw_ef_search": 512,
+      "segment_load_ns": 73722791,
+      "hnsw_build_ns": 437510209,
+      "ordered_top_k_mismatches": 25,
+      "mean_recall_at_k": 0.9998016230838596,
+      "hnsw_latency_ns": { "p50": 207375, "p95": 288500, "p99": 428250, "mean": 214884 },
+      "hnsw_throughput_queries_per_second": 4653.659705972296,
+      "exact_scan_latency_ns": { "p50": 175375, "p95": 206333, "p99": 255500, "mean": 180425 },
+      "exact_scan_throughput_queries_per_second": 5542.460583122328
+    }
+  ],
+  "interpretation": "On this small real corpus HNSW has a clear speed-recall tradeoff. ef=256 retains 99.804% Recall@100 and is faster than exact scan; ef=512 reaches 99.980% but is slower than exact scan. No approximate run is ordered-identical to the exact oracle for every query."
+}

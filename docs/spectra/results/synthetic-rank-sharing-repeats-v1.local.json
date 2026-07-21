@@ -1,0 +1,1989 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-synthetic-rank-sharing-repeats-v1",
+  "created_at": "2026-07-21T09:23:40.316749+00:00",
+  "selection_contract": "training-free, qrels-blind U<D structural rule",
+  "machine": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit"
+  },
+  "configuration": {
+    "binary": "/tmp/spectra-qdrant-target/release/examples/spectra_n_channel_synthetic",
+    "output": "docs/spectra/results/synthetic-rank-sharing-repeats-v1.local.json",
+    "repetitions": 5,
+    "warmup_repetitions": 1,
+    "documents": 100000,
+    "queries": 100,
+    "channels": 8,
+    "term_groups": "1,8",
+    "strategies": "posting-block,auto-shared-lazy",
+    "batch_size": 4096
+  },
+  "summary": [
+    {
+      "strategy": "auto-shared-lazy",
+      "term_groups": 1,
+      "repetitions": 5,
+      "ordered_top_k_mismatches": 0,
+      "median_run_p50_ns": 128750,
+      "median_run_p95_ns": 147542,
+      "mean_run_p50_ns": 127591,
+      "mean_run_p95_ns": 153000,
+      "physical_to_logical_rank_pull_ratio": 0.125
+    },
+    {
+      "strategy": "auto-shared-lazy",
+      "term_groups": 8,
+      "repetitions": 5,
+      "ordered_top_k_mismatches": 0,
+      "median_run_p50_ns": 295625,
+      "median_run_p95_ns": 337292,
+      "mean_run_p50_ns": 293525,
+      "mean_run_p95_ns": 342225,
+      "physical_to_logical_rank_pull_ratio": 1.0
+    },
+    {
+      "strategy": "posting-block",
+      "term_groups": 1,
+      "repetitions": 5,
+      "ordered_top_k_mismatches": 0,
+      "median_run_p50_ns": 129000,
+      "median_run_p95_ns": 156041,
+      "mean_run_p50_ns": 127633,
+      "mean_run_p95_ns": 153658,
+      "physical_to_logical_rank_pull_ratio": 0.125
+    },
+    {
+      "strategy": "posting-block",
+      "term_groups": 8,
+      "repetitions": 5,
+      "ordered_top_k_mismatches": 0,
+      "median_run_p50_ns": 292416,
+      "median_run_p95_ns": 345541,
+      "mean_run_p50_ns": 288875,
+      "mean_run_p95_ns": 344675,
+      "physical_to_logical_rank_pull_ratio": 1.0
+    }
+  ],
+  "runs": [
+    {
+      "repetition": 1,
+      "position": 1,
+      "strategy": "posting-block",
+      "term_groups": 1,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 1,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "posting-block",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 15619542,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 100,
+              "shared_groups": 100,
+              "logical_pulls": 19200,
+              "physical_pulls": 2400,
+              "buffered_identities": 2400
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 409600,
+            "sparse_batches_expanded": 100,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 0,
+            "sparse_estimated_logical_posting_elements": 0,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 129583,
+              "p95_ns": 156041,
+              "p99_ns": 187834,
+              "mean_ns": 132398
+            },
+            "exhaustive_latency": {
+              "p50_ns": 60778250,
+              "p95_ns": 63615875,
+              "p99_ns": 68159334,
+              "mean_ns": 60844998
+            },
+            "routed_latency": {
+              "p50_ns": 245208,
+              "p95_ns": 288000,
+              "p99_ns": 307375,
+              "mean_ns": 247105
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 1,
+      "position": 2,
+      "strategy": "auto-shared-lazy",
+      "term_groups": 1,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 1,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "auto-shared-lazy",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 15937417,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 100,
+              "shared_groups": 100,
+              "logical_pulls": 19200,
+              "physical_pulls": 2400,
+              "buffered_identities": 2400
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 409600,
+            "sparse_batches_expanded": 100,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 10000000,
+            "sparse_estimated_logical_posting_elements": 80000000,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 129209,
+              "p95_ns": 166791,
+              "p99_ns": 172042,
+              "mean_ns": 131096
+            },
+            "exhaustive_latency": {
+              "p50_ns": 58754417,
+              "p95_ns": 63200083,
+              "p99_ns": 65990166,
+              "mean_ns": 59277962
+            },
+            "routed_latency": {
+              "p50_ns": 236500,
+              "p95_ns": 283542,
+              "p99_ns": 296291,
+              "mean_ns": 239091
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 1,
+      "position": 3,
+      "strategy": "posting-block",
+      "term_groups": 8,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 8,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "posting-block",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 16830916,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 800,
+              "shared_groups": 0,
+              "logical_pulls": 19200,
+              "physical_pulls": 19200,
+              "buffered_identities": 0
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 3276800,
+            "sparse_batches_expanded": 800,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 0,
+            "sparse_estimated_logical_posting_elements": 0,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 294167,
+              "p95_ns": 328125,
+              "p99_ns": 352625,
+              "mean_ns": 256407
+            },
+            "exhaustive_latency": {
+              "p50_ns": 57849916,
+              "p95_ns": 60901084,
+              "p99_ns": 65422209,
+              "mean_ns": 58076352
+            },
+            "routed_latency": {
+              "p50_ns": 384542,
+              "p95_ns": 429959,
+              "p99_ns": 464375,
+              "mean_ns": 367084
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 1,
+      "position": 4,
+      "strategy": "auto-shared-lazy",
+      "term_groups": 8,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 8,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "auto-shared-lazy",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 16403416,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 800,
+              "shared_groups": 0,
+              "logical_pulls": 19200,
+              "physical_pulls": 19200,
+              "buffered_identities": 0
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 3276800,
+            "sparse_batches_expanded": 800,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 80000000,
+            "sparse_estimated_logical_posting_elements": 80000000,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 296333,
+              "p95_ns": 336875,
+              "p99_ns": 367417,
+              "mean_ns": 260474
+            },
+            "exhaustive_latency": {
+              "p50_ns": 58454333,
+              "p95_ns": 62848333,
+              "p99_ns": 68471833,
+              "mean_ns": 58811703
+            },
+            "routed_latency": {
+              "p50_ns": 364750,
+              "p95_ns": 456458,
+              "p99_ns": 509209,
+              "mean_ns": 373632
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 2,
+      "position": 1,
+      "strategy": "posting-block",
+      "term_groups": 1,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 1,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "posting-block",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 15484084,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 100,
+              "shared_groups": 100,
+              "logical_pulls": 19200,
+              "physical_pulls": 2400,
+              "buffered_identities": 2400
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 409600,
+            "sparse_batches_expanded": 100,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 0,
+            "sparse_estimated_logical_posting_elements": 0,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 129166,
+              "p95_ns": 157125,
+              "p99_ns": 161959,
+              "mean_ns": 129723
+            },
+            "exhaustive_latency": {
+              "p50_ns": 59589708,
+              "p95_ns": 63089042,
+              "p99_ns": 64986666,
+              "mean_ns": 59598797
+            },
+            "routed_latency": {
+              "p50_ns": 240375,
+              "p95_ns": 271167,
+              "p99_ns": 290500,
+              "mean_ns": 240761
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 2,
+      "position": 2,
+      "strategy": "auto-shared-lazy",
+      "term_groups": 8,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 8,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "auto-shared-lazy",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 17554500,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 800,
+              "shared_groups": 0,
+              "logical_pulls": 19200,
+              "physical_pulls": 19200,
+              "buffered_identities": 0
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 3276800,
+            "sparse_batches_expanded": 800,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 80000000,
+            "sparse_estimated_logical_posting_elements": 80000000,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 286958,
+              "p95_ns": 357166,
+              "p99_ns": 398500,
+              "mean_ns": 265657
+            },
+            "exhaustive_latency": {
+              "p50_ns": 59566750,
+              "p95_ns": 63401375,
+              "p99_ns": 64221125,
+              "mean_ns": 59591713
+            },
+            "routed_latency": {
+              "p50_ns": 388708,
+              "p95_ns": 453917,
+              "p99_ns": 500584,
+              "mean_ns": 378070
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 2,
+      "position": 3,
+      "strategy": "posting-block",
+      "term_groups": 8,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 8,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "posting-block",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 15548333,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 800,
+              "shared_groups": 0,
+              "logical_pulls": 19200,
+              "physical_pulls": 19200,
+              "buffered_identities": 0
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 3276800,
+            "sparse_batches_expanded": 800,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 0,
+            "sparse_estimated_logical_posting_elements": 0,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 288792,
+              "p95_ns": 343000,
+              "p99_ns": 364209,
+              "mean_ns": 260160
+            },
+            "exhaustive_latency": {
+              "p50_ns": 58284208,
+              "p95_ns": 62520541,
+              "p99_ns": 64796166,
+              "mean_ns": 58588932
+            },
+            "routed_latency": {
+              "p50_ns": 355958,
+              "p95_ns": 452375,
+              "p99_ns": 478875,
+              "mean_ns": 372916
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 2,
+      "position": 4,
+      "strategy": "auto-shared-lazy",
+      "term_groups": 1,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 1,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "auto-shared-lazy",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 17232375,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 100,
+              "shared_groups": 100,
+              "logical_pulls": 19200,
+              "physical_pulls": 2400,
+              "buffered_identities": 2400
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 409600,
+            "sparse_batches_expanded": 100,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 10000000,
+            "sparse_estimated_logical_posting_elements": 80000000,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 125041,
+              "p95_ns": 146458,
+              "p99_ns": 163583,
+              "mean_ns": 125890
+            },
+            "exhaustive_latency": {
+              "p50_ns": 59137833,
+              "p95_ns": 62822459,
+              "p99_ns": 64438958,
+              "mean_ns": 59060957
+            },
+            "routed_latency": {
+              "p50_ns": 237541,
+              "p95_ns": 266416,
+              "p99_ns": 301417,
+              "mean_ns": 238205
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 3,
+      "position": 1,
+      "strategy": "posting-block",
+      "term_groups": 8,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 8,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "posting-block",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 15104500,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 800,
+              "shared_groups": 0,
+              "logical_pulls": 19200,
+              "physical_pulls": 19200,
+              "buffered_identities": 0
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 3276800,
+            "sparse_batches_expanded": 800,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 0,
+            "sparse_estimated_logical_posting_elements": 0,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 292416,
+              "p95_ns": 345541,
+              "p99_ns": 361041,
+              "mean_ns": 262193
+            },
+            "exhaustive_latency": {
+              "p50_ns": 59312500,
+              "p95_ns": 62087417,
+              "p99_ns": 67549375,
+              "mean_ns": 59423837
+            },
+            "routed_latency": {
+              "p50_ns": 372083,
+              "p95_ns": 464750,
+              "p99_ns": 496125,
+              "mean_ns": 371618
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 3,
+      "position": 2,
+      "strategy": "auto-shared-lazy",
+      "term_groups": 8,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 8,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "auto-shared-lazy",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 14918000,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 800,
+              "shared_groups": 0,
+              "logical_pulls": 19200,
+              "physical_pulls": 19200,
+              "buffered_identities": 0
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 3276800,
+            "sparse_batches_expanded": 800,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 80000000,
+            "sparse_estimated_logical_posting_elements": 80000000,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 295625,
+              "p95_ns": 349417,
+              "p99_ns": 374541,
+              "mean_ns": 264984
+            },
+            "exhaustive_latency": {
+              "p50_ns": 59317667,
+              "p95_ns": 61929666,
+              "p99_ns": 65543041,
+              "mean_ns": 59411231
+            },
+            "routed_latency": {
+              "p50_ns": 381709,
+              "p95_ns": 472042,
+              "p99_ns": 514791,
+              "mean_ns": 372723
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 3,
+      "position": 3,
+      "strategy": "posting-block",
+      "term_groups": 1,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 1,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "posting-block",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 16386959,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 100,
+              "shared_groups": 100,
+              "logical_pulls": 19200,
+              "physical_pulls": 2400,
+              "buffered_identities": 2400
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 409600,
+            "sparse_batches_expanded": 100,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 0,
+            "sparse_estimated_logical_posting_elements": 0,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 122666,
+              "p95_ns": 144166,
+              "p99_ns": 210584,
+              "mean_ns": 125748
+            },
+            "exhaustive_latency": {
+              "p50_ns": 58218000,
+              "p95_ns": 61439834,
+              "p99_ns": 62944209,
+              "mean_ns": 58609679
+            },
+            "routed_latency": {
+              "p50_ns": 233916,
+              "p95_ns": 276125,
+              "p99_ns": 367334,
+              "mean_ns": 234500
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 3,
+      "position": 4,
+      "strategy": "auto-shared-lazy",
+      "term_groups": 1,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 1,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "auto-shared-lazy",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 16688667,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 100,
+              "shared_groups": 100,
+              "logical_pulls": 19200,
+              "physical_pulls": 2400,
+              "buffered_identities": 2400
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 409600,
+            "sparse_batches_expanded": 100,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 10000000,
+            "sparse_estimated_logical_posting_elements": 80000000,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 129167,
+              "p95_ns": 156917,
+              "p99_ns": 176750,
+              "mean_ns": 129616
+            },
+            "exhaustive_latency": {
+              "p50_ns": 59872041,
+              "p95_ns": 62993417,
+              "p99_ns": 64143209,
+              "mean_ns": 59883530
+            },
+            "routed_latency": {
+              "p50_ns": 238167,
+              "p95_ns": 285042,
+              "p99_ns": 305042,
+              "mean_ns": 239654
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 4,
+      "position": 1,
+      "strategy": "posting-block",
+      "term_groups": 8,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 8,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "posting-block",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 16665167,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 800,
+              "shared_groups": 0,
+              "logical_pulls": 19200,
+              "physical_pulls": 19200,
+              "buffered_identities": 0
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 3276800,
+            "sparse_batches_expanded": 800,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 0,
+            "sparse_estimated_logical_posting_elements": 0,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 273584,
+              "p95_ns": 353042,
+              "p99_ns": 396458,
+              "mean_ns": 263236
+            },
+            "exhaustive_latency": {
+              "p50_ns": 60260709,
+              "p95_ns": 63075208,
+              "p99_ns": 67994125,
+              "mean_ns": 60352313
+            },
+            "routed_latency": {
+              "p50_ns": 385292,
+              "p95_ns": 457541,
+              "p99_ns": 497458,
+              "mean_ns": 380503
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 4,
+      "position": 2,
+      "strategy": "auto-shared-lazy",
+      "term_groups": 1,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 1,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "auto-shared-lazy",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 16912625,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 100,
+              "shared_groups": 100,
+              "logical_pulls": 19200,
+              "physical_pulls": 2400,
+              "buffered_identities": 2400
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 409600,
+            "sparse_batches_expanded": 100,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 10000000,
+            "sparse_estimated_logical_posting_elements": 80000000,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 128750,
+              "p95_ns": 147542,
+              "p99_ns": 157208,
+              "mean_ns": 128095
+            },
+            "exhaustive_latency": {
+              "p50_ns": 59813208,
+              "p95_ns": 62689167,
+              "p99_ns": 63250500,
+              "mean_ns": 59605650
+            },
+            "routed_latency": {
+              "p50_ns": 239125,
+              "p95_ns": 274042,
+              "p99_ns": 288125,
+              "mean_ns": 239805
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 4,
+      "position": 3,
+      "strategy": "posting-block",
+      "term_groups": 1,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 1,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "posting-block",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 16953791,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 100,
+              "shared_groups": 100,
+              "logical_pulls": 19200,
+              "physical_pulls": 2400,
+              "buffered_identities": 2400
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 409600,
+            "sparse_batches_expanded": 100,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 0,
+            "sparse_estimated_logical_posting_elements": 0,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 129000,
+              "p95_ns": 152709,
+              "p99_ns": 161542,
+              "mean_ns": 130439
+            },
+            "exhaustive_latency": {
+              "p50_ns": 60044166,
+              "p95_ns": 62747625,
+              "p99_ns": 67591000,
+              "mean_ns": 60033987
+            },
+            "routed_latency": {
+              "p50_ns": 245791,
+              "p95_ns": 279375,
+              "p99_ns": 291750,
+              "mean_ns": 247319
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 4,
+      "position": 4,
+      "strategy": "auto-shared-lazy",
+      "term_groups": 8,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 8,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "auto-shared-lazy",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 15530625,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 800,
+              "shared_groups": 0,
+              "logical_pulls": 19200,
+              "physical_pulls": 19200,
+              "buffered_identities": 0
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 3276800,
+            "sparse_batches_expanded": 800,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 80000000,
+            "sparse_estimated_logical_posting_elements": 80000000,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 295625,
+              "p95_ns": 337292,
+              "p99_ns": 360250,
+              "mean_ns": 260744
+            },
+            "exhaustive_latency": {
+              "p50_ns": 59505875,
+              "p95_ns": 63376291,
+              "p99_ns": 71262125,
+              "mean_ns": 59872249
+            },
+            "routed_latency": {
+              "p50_ns": 356041,
+              "p95_ns": 475167,
+              "p99_ns": 525250,
+              "mean_ns": 374123
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 5,
+      "position": 1,
+      "strategy": "posting-block",
+      "term_groups": 1,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 1,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "posting-block",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 17330292,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 100,
+              "shared_groups": 100,
+              "logical_pulls": 19200,
+              "physical_pulls": 2400,
+              "buffered_identities": 2400
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 409600,
+            "sparse_batches_expanded": 100,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 0,
+            "sparse_estimated_logical_posting_elements": 0,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 127750,
+              "p95_ns": 158250,
+              "p99_ns": 181458,
+              "mean_ns": 128995
+            },
+            "exhaustive_latency": {
+              "p50_ns": 58219750,
+              "p95_ns": 62111000,
+              "p99_ns": 67251750,
+              "mean_ns": 58649578
+            },
+            "routed_latency": {
+              "p50_ns": 240083,
+              "p95_ns": 270667,
+              "p99_ns": 307250,
+              "mean_ns": 241016
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 5,
+      "position": 2,
+      "strategy": "auto-shared-lazy",
+      "term_groups": 1,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 1,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "auto-shared-lazy",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 16910500,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 100,
+              "shared_groups": 100,
+              "logical_pulls": 19200,
+              "physical_pulls": 2400,
+              "buffered_identities": 2400
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 409600,
+            "sparse_batches_expanded": 100,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 10000000,
+            "sparse_estimated_logical_posting_elements": 80000000,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 125791,
+              "p95_ns": 147292,
+              "p99_ns": 151042,
+              "mean_ns": 127766
+            },
+            "exhaustive_latency": {
+              "p50_ns": 58341875,
+              "p95_ns": 61605333,
+              "p99_ns": 66532209,
+              "mean_ns": 58367680
+            },
+            "routed_latency": {
+              "p50_ns": 237958,
+              "p95_ns": 266750,
+              "p99_ns": 272584,
+              "mean_ns": 237199
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 5,
+      "position": 3,
+      "strategy": "posting-block",
+      "term_groups": 8,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 8,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "posting-block",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 16136125,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 800,
+              "shared_groups": 0,
+              "logical_pulls": 19200,
+              "physical_pulls": 19200,
+              "buffered_identities": 0
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 3276800,
+            "sparse_batches_expanded": 800,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 0,
+            "sparse_estimated_logical_posting_elements": 0,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 295417,
+              "p95_ns": 353667,
+              "p99_ns": 373125,
+              "mean_ns": 264202
+            },
+            "exhaustive_latency": {
+              "p50_ns": 58621417,
+              "p95_ns": 60877792,
+              "p99_ns": 62312375,
+              "mean_ns": 58459810
+            },
+            "routed_latency": {
+              "p50_ns": 387083,
+              "p95_ns": 453333,
+              "p99_ns": 479125,
+              "mean_ns": 378897
+            }
+          }
+        ]
+      }
+    },
+    {
+      "repetition": 5,
+      "position": 4,
+      "strategy": "auto-shared-lazy",
+      "term_groups": 8,
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-n-channel-synthetic-v1",
+        "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "channel_family": "sparse",
+        "documents": 100000,
+        "queries": 100,
+        "top_k": 20,
+        "sparse_term_groups": 8,
+        "batch_size": 4096,
+        "sparse_stream_strategy": "auto-shared-lazy",
+        "router_probe_depth": 64,
+        "router_minimum_overlap": 0.25,
+        "build_ns": 16217208,
+        "matrix": [
+          {
+            "channels": 8,
+            "ordered_top_k_mismatches": 0,
+            "rank_stream_sharing": {
+              "logical_streams": 800,
+              "physical_streams": 800,
+              "shared_groups": 0,
+              "logical_pulls": 19200,
+              "physical_pulls": 19200,
+              "buffered_identities": 0
+            },
+            "dynamic_source_pulls": [
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400,
+              2400
+            ],
+            "exhaustive_source_pulls": [
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000,
+              10000000
+            ],
+            "source_pull_ratio": 0.00024,
+            "dense_quantized_scores": 0,
+            "dense_exact_scores": 0,
+            "sparse_posting_elements_visited": 3276800,
+            "sparse_batches_expanded": 800,
+            "sparse_shared_physical_posting_elements": 0,
+            "sparse_shared_logical_posting_elements": 0,
+            "sparse_auto_selected_shared_queries": 0,
+            "sparse_estimated_unique_posting_elements": 80000000,
+            "sparse_estimated_logical_posting_elements": 80000000,
+            "sparse_probe_selected_shared_queries": 0,
+            "sparse_prefix_identities_replayed": 0,
+            "sparse_shared_lazy_unique_batches": 0,
+            "sparse_shared_lazy_reused_batches": 0,
+            "sparse_shared_lazy_physical_posting_elements": 0,
+            "sparse_shared_lazy_logical_posting_elements": 0,
+            "router_dynamic_queries": 100,
+            "router_exhaustive_queries": 0,
+            "router_average_prefix_overlap": 1.0,
+            "router_minimum_prefix_overlap": 1.0,
+            "router_ordered_top_k_mismatches": 0,
+            "dynamic_latency": {
+              "p50_ns": 293084,
+              "p95_ns": 330375,
+              "p99_ns": 344917,
+              "mean_ns": 260832
+            },
+            "exhaustive_latency": {
+              "p50_ns": 59003000,
+              "p95_ns": 62973167,
+              "p99_ns": 65385083,
+              "mean_ns": 59379825
+            },
+            "routed_latency": {
+              "p50_ns": 373792,
+              "p95_ns": 468709,
+              "p99_ns": 571125,
+              "mean_ns": 374403
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

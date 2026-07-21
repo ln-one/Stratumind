@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-sparse-native-snapshot-v1",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "build_profile": "release",
+  "dataset_dir": "/tmp/spectra-trec-covid-100k-snapshot",
+  "documents": 100000,
+  "queries": 50,
+  "top_k": 20,
+  "block_size": 128,
+  "native_posting_pruning": false,
+  "native_build_ns": 71263166,
+  "block_max_build_ns": 293102875,
+  "native_posting_lists": 127392,
+  "native_searchable_bytes": 86701440,
+  "block_max_blocks": 782,
+  "block_max_envelope_nonzeros": 2513019,
+  "block_max_searchable_bytes_estimate": 77905112,
+  "native_parity_mismatches": 0,
+  "native_ordered_identity_mismatches": 0,
+  "native_identity_set_mismatches": 0,
+  "native_max_absolute_score_delta": 0.0,
+  "native_first_mismatch": null,
+  "native_first_identity_set_mismatch": null,
+  "block_max_parity_mismatches": 0,
+  "native": {
+    "latency": {
+      "p50_ns": 384542,
+      "p95_ns": 449708,
+      "p99_ns": 561500,
+      "mean_ns": 378728,
+      "throughput_queries_per_second": 2640.4154450784613
+    },
+    "telemetry": {
+      "posting_lists": 323,
+      "posting_elements": 4940772,
+      "posting_elements_visited": 4940772,
+      "posting_elements_skipped": 0,
+      "prune_attempts": 0,
+      "prune_successes": 0
+    }
+  },
+  "block_max": {
+    "latency": {
+      "p50_ns": 10332250,
+      "p95_ns": 15546209,
+      "p99_ns": 18007167,
+      "mean_ns": 9671736,
+      "throughput_queries_per_second": 103.39404668287115
+    },
+    "telemetry": {
+      "bound_evaluations": 39100,
+      "zero_bound_blocks": 0,
+      "blocks_expanded": 29094,
+      "documents_evaluated": 3721536,
+      "points_emitted": 1000
+    }
+  },
+  "exhaustive": {
+    "latency": {
+      "p50_ns": 8701875,
+      "p95_ns": 14562917,
+      "p99_ns": 22991875,
+      "mean_ns": 9283526,
+      "throughput_queries_per_second": 107.71768495142125
+    },
+    "telemetry": {
+      "posting_lists": 323,
+      "posting_elements": 4940772,
+      "posting_elements_visited": 4940772,
+      "posting_elements_skipped": 0,
+      "prune_attempts": 0,
+      "prune_successes": 0
+    }
+  }
+}

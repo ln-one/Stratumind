@@ -1,0 +1,66 @@
+{
+  "schema_version": 2,
+  "experiment": "spectra-fiqa-n-channel-exact-quality-v2",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "dataset": {
+    "name": "BEIR FiQA test",
+    "documents": 57600,
+    "queries": 647,
+    "dimension": 384,
+    "archive_sha256": "32c7df99ed21252fdfb2cf3f5673502a8d245ee0c44c4a133570d92ce2b3ad02",
+    "snapshot_manifest_sha256": "f59126a57c2a9c29ea8b0a8195212fd64385a84a4285ec629c830fa9b0e30742",
+    "local_use_note": "Research-only local snapshot; 38 empty documents were skipped and the one affected test query was explicitly dropped in the manifest."
+  },
+  "profile": {
+    "top_k": 20,
+    "rrf_k": 2,
+    "warmup_check_interval": 64,
+    "sparse_stream_strategy": "posting-block",
+    "sparse_batch_size": 4096,
+    "query_variants": "alternating dense and sparse deterministic variants"
+  },
+  "runs": [
+    {
+      "channels": 2,
+      "ordered_top_k_mismatches": 0,
+      "dynamic_oracle_queries": 637,
+      "source_pull_ratio": 0.07569089957402524,
+      "dynamic_sparse_posting_elements_visited": 14274279,
+      "quality_metric_queries": 647,
+      "recall_at_20": 0.5257176277269012,
+      "ndcg_at_20": 0.40657518125020026,
+      "dynamic_latency_ns": {"p50": 3767083, "p95": 20333833, "p99": 54137459, "mean": 6726844},
+      "exhaustive_latency_ns": {"p50": 45310875, "p95": 48963083, "p99": 50662708, "mean": 45551451}
+    },
+    {
+      "channels": 4,
+      "ordered_top_k_mismatches": 0,
+      "dynamic_oracle_queries": 646,
+      "source_pull_ratio": 0.052122713391970006,
+      "dynamic_sparse_posting_elements_visited": 21947022,
+      "quality_metric_queries": 647,
+      "recall_at_20": 0.5132627075826457,
+      "ndcg_at_20": 0.3969578210631917,
+      "dynamic_latency_ns": {"p50": 6914000, "p95": 25276375, "p99": 48874959, "mean": 9739089},
+      "exhaustive_latency_ns": {"p50": 84885416, "p95": 90866583, "p99": 94929541, "mean": 84957963}
+    },
+    {
+      "channels": 8,
+      "ordered_top_k_mismatches": 0,
+      "dynamic_oracle_queries": 642,
+      "source_pull_ratio": 0.07098438907410283,
+      "dynamic_sparse_posting_elements_visited": 42822983,
+      "quality_metric_queries": 647,
+      "recall_at_20": 0.513256612870214,
+      "ndcg_at_20": 0.4107664269644623,
+      "dynamic_latency_ns": {"p50": 20957416, "p95": 81357750, "p99": 150253917, "mean": 29497198},
+      "exhaustive_latency_ns": {"p50": 161557166, "p95": 171489958, "p99": 174677083, "mean": 161378354}
+    }
+  ],
+  "interpretation": {
+    "correctness": "Dynamic Exact WRRF exactly matched exhaustive WRRF ordering for every evaluated query and channel count.",
+    "quality_scope": "Recall/NDCG measure the fused WRRF ranking itself. Exact Dynamic and exhaustive WRRF have identical quality by construction.",
+    "latency_scope": "Single-machine local runs; repetitions and confidence intervals are still required before publication claims.",
+    "router_scope": "Prefix-overlap routing is excluded from the winning path because it generalized poorly on this dataset."
+  }
+}

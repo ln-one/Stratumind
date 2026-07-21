@@ -1,0 +1,4 @@
+{"ordinal":0,"source_id":"doc-a","dense":[1.0,0.0],"sparse_indices":[1],"sparse_values":[2.0]}
+{"ordinal":1,"source_id":"doc-b","dense":[0.8,0.2],"sparse_indices":[1,2],"sparse_values":[1.0,1.0]}
+{"ordinal":2,"source_id":"doc-c","dense":[0.0,1.0],"sparse_indices":[2],"sparse_values":[2.0]}
+{"ordinal":3,"source_id":"doc-d","dense":[-1.0,0.0],"sparse_indices":[3],"sparse_values":[1.0]}

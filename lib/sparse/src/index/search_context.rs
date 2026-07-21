@@ -6,6 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::Result;
+use serde::Serialize;
 
 use super::posting_list_common::PostingListIter;
 use crate::SearchScratch;
@@ -13,6 +14,28 @@ use crate::common::sparse_vector::{RemappedSparseVector, score_vectors};
 use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::PostingListIterator;
+
+// Stratumind extension: executor-level access telemetry for same-kernel experiments.
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct SearchTelemetry {
+    pub posting_lists: usize,
+    pub posting_elements: usize,
+    pub posting_elements_visited: usize,
+    pub posting_elements_remaining: usize,
+    pub posting_elements_skipped: usize,
+    pub batch_count: usize,
+    pub scored_id_span: usize,
+    pub prune_attempts: usize,
+    pub prune_successes: usize,
+    pub block_prune_attempts: usize,
+    pub block_prune_successes: usize,
+    pub block_pruning_router_disabled: bool,
+    pub block_pruning_trend_disabled: bool,
+    pub use_pruning: bool,
+    pub use_block_pruning: bool,
+    pub cancelled: bool,
+}
 
 /// Iterator over posting lists with a reference to the corresponding query index and weight
 pub struct IndexedPostingListIterator<T: PostingListIter> {
@@ -35,7 +58,13 @@ pub struct SearchContext<'a, T: PostingListIter = PostingListIterator<'a>> {
     /// Scores buffer from [`SearchScratch`].
     scores: &'a mut Vec<ScoreType>,
     use_pruning: bool,
+    use_block_pruning: bool,
+    block_prune_failure_limit: Option<usize>,
+    consecutive_block_prune_failures: usize,
+    block_prune_has_succeeded: bool,
     hardware_counter: &'a HardwareCounterCell,
+    telemetry: SearchTelemetry,
+    batch_size: PointOffsetType,
 }
 
 impl<'a, T: PostingListIter> SearchContext<'a, T> {
@@ -79,7 +108,19 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
         // This is a limitation of the current pruning implementation.
         let use_pruning = T::reliable_max_next_weight() && query.values.iter().all(|v| *v >= 0.0);
+        let use_block_pruning =
+            T::reliable_block_max() && query.values.iter().all(|value| *value >= 0.0);
         let min_record_id = Some(min_record_id);
+        let telemetry = SearchTelemetry {
+            posting_lists: postings_iterators.len(),
+            posting_elements: postings_iterators
+                .iter()
+                .map(|posting| posting.posting_list_iterator.len_to_end())
+                .sum(),
+            use_pruning,
+            use_block_pruning,
+            ..Default::default()
+        };
         Ok(SearchContext {
             postings_iterators,
             query,
@@ -90,7 +131,13 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             max_record_id,
             scores: &mut scratch.scores,
             use_pruning,
+            use_block_pruning,
+            block_prune_failure_limit: None,
+            consecutive_block_prune_failures: 0,
+            block_prune_has_succeeded: false,
             hardware_counter,
+            telemetry,
+            batch_size: ADVANCE_BATCH_SIZE as PointOffsetType,
         })
     }
 
@@ -109,8 +156,11 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         for id in sorted_ids {
             // check for cancellation
             if self.is_stopped.load(Relaxed) {
+                self.telemetry.cancelled = true;
                 break;
             }
+
+            self.telemetry.scored_id_span += 1;
 
             indices.clear();
             values.clear();
@@ -120,6 +170,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                 match posting_iterator.posting_list_iterator.skip_to(id) {
                     None => {} // no match for posting list
                     Some(element) => {
+                        self.telemetry.posting_elements_visited += 1;
                         // match for posting list
                         indices.push(posting_iterator.query_index);
                         values.push(element.weight);
@@ -159,10 +210,13 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
     ) {
         // init batch scores
         let batch_len = batch_last_id - batch_start_id + 1;
+        self.telemetry.batch_count += 1;
+        self.telemetry.scored_id_span += batch_len as usize;
         self.scores.clear(); // keep underlying allocated memory
         self.scores.resize(batch_len as usize, 0.0);
 
         for posting in self.postings_iterators.iter_mut() {
+            let elements_before = posting.posting_list_iterator.len_to_end();
             posting.posting_list_iterator.for_each_till_id(
                 batch_last_id,
                 self.scores.as_mut_slice(),
@@ -175,20 +229,25 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                     *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
                 },
             );
+            self.telemetry.posting_elements_visited +=
+                elements_before - posting.posting_list_iterator.len_to_end();
         }
 
         for (local_index, &score) in self.scores.iter().enumerate() {
-            // publish only the non-zero scores above the current min to beat
-            if score != 0.0 && score > self.top_results.threshold() {
-                let real_id = batch_start_id + local_index as PointOffsetType;
-                // do not score if filter condition is not satisfied
-                if !filter_condition(real_id) {
-                    continue;
-                }
+            if score != 0.0 {
                 let score_point_offset = ScoredPointOffset {
                     score,
-                    idx: real_id,
+                    idx: batch_start_id + local_index as PointOffsetType,
                 };
+                // Publish only points that can beat the current complete
+                // score-and-identity threshold.
+                if !self.top_results.would_accept(score_point_offset) {
+                    continue;
+                }
+                // do not score if filter condition is not satisfied
+                if !filter_condition(score_point_offset.idx) {
+                    continue;
+                }
                 self.top_results.push(score_point_offset);
             }
         }
@@ -198,6 +257,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
     fn process_last_posting_list<F: Fn(PointOffsetType) -> bool>(&mut self, filter_condition: &F) {
         debug_assert_eq!(self.postings_iterators.len(), 1);
         let posting = &mut self.postings_iterators[0];
+        let elements_before = posting.posting_list_iterator.len_to_end();
         posting.posting_list_iterator.for_each_till_id(
             PointOffsetType::MAX,
             &mut (),
@@ -210,6 +270,8 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                 self.top_results.push(ScoredPointOffset { score, idx: id });
             },
         );
+        self.telemetry.posting_elements_visited +=
+            elements_before - posting.posting_list_iterator.len_to_end();
     }
 
     /// Returns the next min record id from all posting list iterators
@@ -293,6 +355,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         loop {
             // check for cancellation (atomic amortized by batch)
             if self.is_stopped.load(Relaxed) {
+                self.telemetry.cancelled = true;
                 break;
             }
 
@@ -303,9 +366,17 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
 
             // compute batch range of contiguous ids for the next batch
             let last_batch_id = min(
-                start_batch_id + ADVANCE_BATCH_SIZE as u32,
+                start_batch_id.saturating_add(self.batch_size),
                 self.max_record_id,
             );
+
+            if self.prune_batch_if_safe(start_batch_id, last_batch_id) {
+                self.postings_iterators.retain(|posting_iterator| {
+                    posting_iterator.posting_list_iterator.len_to_end() != 0
+                });
+                self.min_record_id = Self::next_min_id(&mut self.postings_iterators);
+                continue;
+            }
 
             // advance and score posting lists iterators
             self.advance_batch(start_batch_id, last_batch_id, filter_condition);
@@ -324,7 +395,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             }
 
             // if only one posting list left, we can score it quickly
-            if self.postings_iterators.len() == 1 {
+            if self.postings_iterators.len() == 1 && !self.use_block_pruning {
                 self.process_last_posting_list(filter_condition);
                 break;
             }
@@ -355,6 +426,54 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         queue.into_vec()
     }
 
+    fn prune_batch_if_safe(
+        &mut self,
+        start_batch_id: PointOffsetType,
+        last_batch_id: PointOffsetType,
+    ) -> bool {
+        if !self.use_block_pruning || self.top_results.len() < self.top {
+            return false;
+        }
+        self.telemetry.block_prune_attempts += 1;
+        let mut upper_bound = 0.0;
+        for posting in &mut self.postings_iterators {
+            if let Some(max_weight) = posting
+                .posting_list_iterator
+                .max_weight_till_id(last_batch_id)
+            {
+                upper_bound += max_weight * posting.query_weight;
+            }
+        }
+        if self.top_results.would_accept(ScoredPointOffset {
+            score: upper_bound,
+            idx: start_batch_id,
+        }) {
+            if !self.block_prune_has_succeeded {
+                self.consecutive_block_prune_failures += 1;
+                if self
+                    .block_prune_failure_limit
+                    .is_some_and(|limit| self.consecutive_block_prune_failures >= limit)
+                {
+                    self.use_block_pruning = false;
+                    self.telemetry.use_block_pruning = false;
+                    self.telemetry.block_pruning_router_disabled = true;
+                }
+            }
+            return false;
+        }
+
+        self.block_prune_has_succeeded = true;
+        self.consecutive_block_prune_failures = 0;
+        for posting in &mut self.postings_iterators {
+            let position_before = posting.posting_list_iterator.current_index();
+            posting.posting_list_iterator.skip_till_id(last_batch_id);
+            self.telemetry.posting_elements_skipped +=
+                posting.posting_list_iterator.current_index() - position_before;
+        }
+        self.telemetry.block_prune_successes += 1;
+        true
+    }
+
     /// Prune posting lists that cannot possibly contribute to the top results
     /// Assumes longest posting list is at the head of the posting list iterators
     /// Returns true if the longest posting list was pruned
@@ -362,6 +481,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         if self.postings_iterators.is_empty() {
             return false;
         }
+        self.telemetry.prune_attempts += 1;
         // peek first element of longest posting list
         let (longest_posting_iterator, rest_iterators) = self.postings_iterators.split_at_mut(1);
         let longest_posting_iterator = &mut longest_posting_iterator[0];
@@ -387,7 +507,10 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                             let max_weight_from_list = element.weight.max(element.max_next_weight);
                             let max_score_contribution =
                                 max_weight_from_list * longest_posting_iterator.query_weight;
-                            if max_score_contribution <= min_score {
+                            // Equality is not enough to prune under the stable
+                            // score-and-identity order: the skipped range may
+                            // contain a smaller identity with the same score.
+                            if max_score_contribution < min_score {
                                 // prune to next_min_id
                                 let longest_posting_iterator =
                                     &mut self.postings_iterators[0].posting_list_iterator;
@@ -397,7 +520,13 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                                 let position_after_pruning =
                                     longest_posting_iterator.current_index();
                                 // check if pruning took place
-                                return position_before_pruning != position_after_pruning;
+                                let skipped = position_after_pruning - position_before_pruning;
+                                if skipped != 0 {
+                                    self.telemetry.prune_successes += 1;
+                                    self.telemetry.posting_elements_skipped += skipped;
+                                    return true;
+                                }
+                                return false;
                             }
                         }
                     }
@@ -408,10 +537,21 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                     let max_weight_from_list = element.weight.max(element.max_next_weight);
                     let max_score_contribution =
                         max_weight_from_list * longest_posting_iterator.query_weight;
-                    if max_score_contribution <= min_score {
+                    // Keep equal-score suffixes because their identities may
+                    // still beat the current K-th identity.
+                    if max_score_contribution < min_score {
                         // prune to the end!
                         let longest_posting_iterator = &mut self.postings_iterators[0];
+                        let position_before_pruning = longest_posting_iterator
+                            .posting_list_iterator
+                            .current_index();
                         longest_posting_iterator.posting_list_iterator.skip_to_end();
+                        let position_after_pruning = longest_posting_iterator
+                            .posting_list_iterator
+                            .current_index();
+                        self.telemetry.prune_successes += 1;
+                        self.telemetry.posting_elements_skipped +=
+                            position_after_pruning - position_before_pruning;
                         return true;
                     }
                 }
@@ -419,5 +559,77 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         }
         // no pruning took place
         false
+    }
+
+    pub fn telemetry(&self) -> SearchTelemetry {
+        let posting_elements_remaining = self
+            .postings_iterators
+            .iter()
+            .map(|posting| posting.posting_list_iterator.len_to_end())
+            .sum();
+        let mut telemetry = self.telemetry;
+        telemetry.posting_elements_remaining = posting_elements_remaining;
+        telemetry
+    }
+
+    /// Enable or disable compressed-posting block pruning for controlled
+    /// same-index experiments. Enabling cannot override an unsupported iterator
+    /// or a query with negative weights.
+    pub fn set_block_pruning(&mut self, enabled: bool) {
+        self.use_block_pruning &= enabled;
+        self.telemetry.use_block_pruning = self.use_block_pruning;
+    }
+
+    pub fn block_pruning_enabled(&self) -> bool {
+        self.use_block_pruning
+    }
+
+    /// Disable max-next-weight posting pruning for strict-execution ablations.
+    /// Enabling cannot override an iterator or query that does not support it.
+    pub fn set_posting_pruning(&mut self, enabled: bool) {
+        self.use_pruning &= enabled;
+        self.telemetry.use_pruning = self.use_pruning;
+    }
+
+    /// Stop paying for block-bound checks after `limit` consecutive failures.
+    /// This changes only the physical executor; disabling pruning preserves the
+    /// same exhaustive sparse Top-K contract.
+    pub fn set_block_prune_failure_limit(&mut self, limit: Option<usize>) {
+        assert!(
+            limit != Some(0),
+            "block prune failure limit must be positive"
+        );
+        self.block_prune_failure_limit = limit;
+    }
+
+    /// Disable block pruning when the query-weighted last posting blocks have a
+    /// larger envelope than the first blocks. This is a cost hint only; falling
+    /// back to ordinary posting traversal preserves exact Top-K.
+    pub fn apply_block_max_endpoint_trend_router(&mut self) {
+        if !self.use_block_pruning {
+            return;
+        }
+        let mut first_upper_bound = 0.0;
+        let mut last_upper_bound = 0.0;
+        for posting in &self.postings_iterators {
+            let Some((first, last)) = posting.posting_list_iterator.block_max_endpoints() else {
+                return;
+            };
+            first_upper_bound += first * posting.query_weight;
+            last_upper_bound += last * posting.query_weight;
+        }
+        if last_upper_bound >= first_upper_bound {
+            self.use_block_pruning = false;
+            self.telemetry.use_block_pruning = false;
+            self.telemetry.block_pruning_trend_disabled = true;
+        }
+    }
+
+    /// Set the contiguous document-id batch width used by the sparse scorer.
+    pub fn set_batch_size(&mut self, batch_size: usize) {
+        assert!(batch_size > 0, "sparse batch size must be positive");
+        self.batch_size = batch_size
+            .try_into()
+            .expect("sparse batch size exceeds PointOffsetType");
     }
 }

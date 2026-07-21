@@ -39,6 +39,15 @@ pub struct EncodedQueryU8 {
     encoded_query: Vec<u8>,
 }
 
+/// Norm metadata needed to turn an approximate scalar-quantized dot product
+/// into an admissible interval around the original full-precision score.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScalarReconstructionStats {
+    pub original_norm: f64,
+    pub reconstructed_norm: f64,
+    pub residual_norm: f64,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum Metadata {
@@ -134,6 +143,46 @@ impl MetadataInt8 {
 impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     pub fn storage(&self) -> &TStorage {
         &self.encoded_vectors
+    }
+
+    /// Computes exact L2 reconstruction metadata for one encoded vector.
+    ///
+    /// The encoded score is the dot product of reconstructed vectors. For an
+    /// original vector `x` and reconstruction `x_hat`, callers can combine
+    /// `||x - x_hat||`, `||x||`, and the corresponding Query values using
+    /// Cauchy-Schwarz to obtain a rigorous score-error bound.
+    pub fn reconstruction_stats(
+        &self,
+        original: &[f32],
+        encoded: &[u8],
+    ) -> Option<ScalarReconstructionStats> {
+        let Metadata::Int8(metadata) = &self.metadata;
+        if original.len() != metadata.vector_parameters.dim
+            || encoded.len() < ADDITIONAL_CONSTANT_SIZE + metadata.actual_dim
+        {
+            return None;
+        }
+        let codes = &encoded
+            [ADDITIONAL_CONSTANT_SIZE..ADDITIONAL_CONSTANT_SIZE + metadata.vector_parameters.dim];
+        Some(reconstruction_stats(metadata, original, codes))
+    }
+
+    /// Computes reconstruction metadata for a Query under the same frozen
+    /// scalar quantizer used by the stored vectors.
+    pub fn query_reconstruction_stats(
+        &self,
+        original: &[f32],
+    ) -> Option<ScalarReconstructionStats> {
+        let Metadata::Int8(metadata) = &self.metadata;
+        if original.len() != metadata.vector_parameters.dim {
+            return None;
+        }
+        let query = Self::encode_int8_query(metadata, original);
+        Some(reconstruction_stats(
+            metadata,
+            original,
+            &query.encoded_query[..metadata.vector_parameters.dim],
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -586,6 +635,30 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 }
 
+fn reconstruction_stats(
+    metadata: &MetadataInt8,
+    original: &[f32],
+    codes: &[u8],
+) -> ScalarReconstructionStats {
+    let mut original_squared = 0.0f64;
+    let mut reconstructed_squared = 0.0f64;
+    let mut residual_squared = 0.0f64;
+    for (&value, &code) in original.iter().zip(codes) {
+        let original = f64::from(value);
+        let reconstructed =
+            f64::from(metadata.alpha) * f64::from(code) + f64::from(metadata.offset);
+        let residual = original - reconstructed;
+        original_squared += original * original;
+        reconstructed_squared += reconstructed * reconstructed;
+        residual_squared += residual * residual;
+    }
+    ScalarReconstructionStats {
+        original_norm: original_squared.sqrt(),
+        reconstructed_norm: reconstructed_squared.sqrt(),
+        residual_norm: residual_squared.sqrt().next_up(),
+    }
+}
+
 pub fn get_actual_dim(vector_parameters: &VectorParameters) -> usize {
     vector_parameters.dim + (ALIGNMENT - vector_parameters.dim % ALIGNMENT) % ALIGNMENT
 }
@@ -804,6 +877,62 @@ unsafe extern "C" {
 
     fn impl_score_dot_sse(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
     fn impl_score_l1_sse(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
+}
+
+#[cfg(test)]
+mod reconstruction_tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
+
+    use super::*;
+    use crate::encoded_storage::TestEncodedStorageBuilder;
+
+    #[test]
+    fn residual_norm_certifies_original_dot_product() {
+        let vectors = [vec![0.2, -0.7, 1.3], vec![-0.4, 0.9, 0.1]];
+        let query = vec![0.6, -0.2, 0.8];
+        let parameters = VectorParameters {
+            dim: 3,
+            distance_type: DistanceType::Dot,
+            invert: false,
+            deprecated_count: None,
+        };
+        let encoded = EncodedVectorsU8::encode(
+            vectors.iter(),
+            TestEncodedStorageBuilder::new(None, get_quantized_vector_size(&parameters)),
+            &parameters,
+            vectors.len(),
+            None,
+            ScalarQuantizationMethod::Int8,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let query_stats = encoded.query_reconstruction_stats(&query).unwrap();
+        let encoded_query = encoded.encode_query(&query);
+
+        for (id, vector) in vectors.iter().enumerate() {
+            let bytes = encoded.storage().get_vector_data(id as PointOffsetType);
+            let stats = encoded.reconstruction_stats(vector, &bytes).unwrap();
+            let approximate = f64::from(encoded.score_point(
+                &encoded_query,
+                id as PointOffsetType,
+                &HardwareCounterCell::new(),
+            ));
+            let exact = vector
+                .iter()
+                .zip(&query)
+                .map(|(left, right)| f64::from(*left) * f64::from(*right))
+                .sum::<f64>();
+            let error = query_stats.residual_norm * stats.original_norm
+                + query_stats.reconstructed_norm * stats.residual_norm;
+            let floating_guard =
+                (approximate.abs() + error + query_stats.original_norm * stats.original_norm)
+                    * f64::from(f32::EPSILON)
+                    * 128.0;
+
+            assert!((exact - approximate).abs() <= error + floating_guard);
+        }
+    }
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]

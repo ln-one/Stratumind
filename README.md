@@ -1,3 +1,21 @@
+## Stratumind
+
+Stratumind is an independently maintained research fork of Qdrant v1.18.2 for
+exact polyphonic retrieval: independently ranked channels may share physical
+work while preserving the same deterministic Top-K as exhaustive WRRF
+composition.
+
+The current implementation is a research prototype, not an official Qdrant
+release. The generic composition model and reproducible experiments are
+documented in [`docs/spectra/exact-composition-research.md`](docs/spectra/exact-composition-research.md).
+Historical `spectra_*` paths are retained as experiment provenance and do not
+denote the fork's current project identity.
+
+Stratumind remains based on and compatible with the Apache-2.0-licensed Qdrant
+codebase. The upstream README follows unchanged below.
+
+---
+
 <p align="center">
   <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://github.com/qdrant/qdrant/raw/master/docs/logo-dark.svg">

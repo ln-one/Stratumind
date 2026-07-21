@@ -1,0 +1,5135 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-exact-composition-matrix-v1",
+  "generated_at_utc": "2026-07-21T19:01:07.090575+00:00",
+  "kind": "synthetic",
+  "platform": "macOS-26.5.2-arm64-arm-64bit",
+  "python": "3.9.6",
+  "binary": "/tmp/spectra-qdrant-target/release/examples/spectra_exact_composition",
+  "binary_sha256": "9ab0ba15cd61821d862f1fd3f31373340554ae45626f0c84300aea763157d167",
+  "seed": 20260721,
+  "configuration_count": 60,
+  "arguments": {
+    "kind": "synthetic",
+    "binary": "/tmp/spectra-qdrant-target/release/examples/spectra_exact_composition",
+    "dataset_dir": null,
+    "output": "docs/spectra/results/exact-composition-synthetic-bounded-v1.local.json",
+    "documents": 5000,
+    "queries": 5,
+    "query_repeats": 3,
+    "matrix_repeats": 1,
+    "leaves": 4,
+    "top_k": 20,
+    "rrf_k": 60,
+    "internal_limit": 80,
+    "block_size": 128,
+    "topologies": "flat,chain_open,balanced_open,balanced_finite,diamond_shared,diamond_unfolded",
+    "scenarios": "correlated,clustered,independent,anti_correlated,flat_ties",
+    "budgets": "32,128",
+    "timeout_seconds": 300.0,
+    "isolated_memory_probes": true,
+    "seed": 20260721
+  },
+  "rows": [
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32063488,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7880704,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1953917
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 26443776,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 37803458
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "balanced_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 234458,
+          "p95_ns": 236375,
+          "p99_ns": 236375,
+          "mean_ns": 233625
+        },
+        "dynamic_latency": {
+          "p50_ns": 69458,
+          "p95_ns": 133041,
+          "p99_ns": 133041,
+          "mean_ns": 77072
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2333333,
+          "p95_ns": 3612250,
+          "p99_ns": 3612250,
+          "mean_ns": 2457111
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 31719424,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7782400,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1992083
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31965184,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 38392500
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "chain_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 244459,
+          "p95_ns": 245292,
+          "p99_ns": 245292,
+          "mean_ns": 243850
+        },
+        "dynamic_latency": {
+          "p50_ns": 67875,
+          "p95_ns": 97292,
+          "p99_ns": 97292,
+          "mean_ns": 72266
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2342125,
+          "p95_ns": 2764917,
+          "p99_ns": 2764917,
+          "mean_ns": 2376186
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 34996224,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 16875520,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 540611958
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31539200,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 42282875
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "diamond_unfolded",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 5,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 1,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 375000,
+        "exhaustive_leaf_identities": 375000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 1095,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 8,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 35020,
+        "peak_exhaustive_payload_bytes": 840480,
+        "plan_build_latency": {
+          "p50_ns": 294083,
+          "p95_ns": 302416,
+          "p99_ns": 302416,
+          "mean_ns": 293933
+        },
+        "dynamic_latency": {
+          "p50_ns": 35573209,
+          "p95_ns": 38031959,
+          "p99_ns": 38031959,
+          "mean_ns": 35428452
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2699209,
+          "p95_ns": 3654667,
+          "p99_ns": 3654667,
+          "mean_ns": 2814408
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 33734656,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 16449536,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 481190917
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 26984448,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 38706584
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "chain_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.65,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 180,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 262541,
+          "p95_ns": 280208,
+          "p99_ns": 280208,
+          "mean_ns": 256641
+        },
+        "dynamic_latency": {
+          "p50_ns": 33786791,
+          "p95_ns": 38396166,
+          "p99_ns": 38396166,
+          "mean_ns": 32513313
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2494250,
+          "p95_ns": 2926792,
+          "p99_ns": 2926792,
+          "mean_ns": 2548472
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32899072,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 16302080,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 538173875
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31113216,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 41230458
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "diamond_unfolded",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 5,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.36,
+        "dynamic_leaf_pulls": 375000,
+        "exhaustive_leaf_identities": 375000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 195,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 8,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 35020,
+        "peak_exhaustive_payload_bytes": 840480,
+        "plan_build_latency": {
+          "p50_ns": 296292,
+          "p95_ns": 353417,
+          "p99_ns": 353417,
+          "mean_ns": 310908
+        },
+        "dynamic_latency": {
+          "p50_ns": 36551500,
+          "p95_ns": 39249000,
+          "p99_ns": 39249000,
+          "mean_ns": 36922611
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2612583,
+          "p95_ns": 3179166,
+          "p99_ns": 3179166,
+          "mean_ns": 2681916
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32555008,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 15941632,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 458699291
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 26673152,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 40812208
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "chain_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.65,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 330,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 236459,
+          "p95_ns": 258875,
+          "p99_ns": 258875,
+          "mean_ns": 240841
+        },
+        "dynamic_latency": {
+          "p50_ns": 30056166,
+          "p95_ns": 35983333,
+          "p99_ns": 35983333,
+          "mean_ns": 30333377
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2491458,
+          "p95_ns": 3086583,
+          "p99_ns": 3086583,
+          "mean_ns": 2566152
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 33325056,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 17203200,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 540413375
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31916032,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 38670958
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "diamond_shared",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.36,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 195,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 5001,
+        "sum_node_peak_replay_identities": 5006,
+        "peak_replay_payload_bytes": 120024,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 238125,
+          "p95_ns": 263458,
+          "p99_ns": 263458,
+          "mean_ns": 241416
+        },
+        "dynamic_latency": {
+          "p50_ns": 33457375,
+          "p95_ns": 37167708,
+          "p99_ns": 37167708,
+          "mean_ns": 33914919
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2455625,
+          "p95_ns": 3205167,
+          "p99_ns": 3205167,
+          "mean_ns": 2512216
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32079872,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7831552,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1325125
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31047680,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 39645666
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "chain_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 279042,
+          "p95_ns": 338625,
+          "p99_ns": 338625,
+          "mean_ns": 288858
+        },
+        "dynamic_latency": {
+          "p50_ns": 72416,
+          "p95_ns": 87833,
+          "p99_ns": 87833,
+          "mean_ns": 73519
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2352333,
+          "p95_ns": 2476625,
+          "p99_ns": 2476625,
+          "mean_ns": 2355111
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32882688,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 17154048,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 523339958
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31244288,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 42757542
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "diamond_unfolded",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 5,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 375000,
+        "exhaustive_leaf_identities": 375000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 1095,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 8,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 35020,
+        "peak_exhaustive_payload_bytes": 840480,
+        "plan_build_latency": {
+          "p50_ns": 285750,
+          "p95_ns": 338292,
+          "p99_ns": 338292,
+          "mean_ns": 296741
+        },
+        "dynamic_latency": {
+          "p50_ns": 33362417,
+          "p95_ns": 37249250,
+          "p99_ns": 37249250,
+          "mean_ns": 33900063
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2520750,
+          "p95_ns": 3051125,
+          "p99_ns": 3051125,
+          "mean_ns": 2601013
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 31850496,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7847936,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1982917
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31653888,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 29744500
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "balanced_finite",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 2700,
+        "intermediate_work_ratio": 0.3333333333333333,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20180,
+        "peak_exhaustive_payload_bytes": 484320,
+        "plan_build_latency": {
+          "p50_ns": 238959,
+          "p95_ns": 247250,
+          "p99_ns": 247250,
+          "mean_ns": 236100
+        },
+        "dynamic_latency": {
+          "p50_ns": 62750,
+          "p95_ns": 84333,
+          "p99_ns": 84333,
+          "mean_ns": 66452
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1771417,
+          "p95_ns": 2136083,
+          "p99_ns": 2136083,
+          "mean_ns": 1783875
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32342016,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 10829824,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 900,
+            "elapsed_ns": 33838417
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 24428544,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 30175541
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "balanced_finite",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 1,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 2700,
+        "intermediate_work_ratio": 0.3333333333333333,
+        "certification_checks": 720,
+        "cancelled_nodes": 45,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20180,
+        "peak_exhaustive_payload_bytes": 484320,
+        "plan_build_latency": {
+          "p50_ns": 257125,
+          "p95_ns": 272791,
+          "p99_ns": 272791,
+          "mean_ns": 253541
+        },
+        "dynamic_latency": {
+          "p50_ns": 2228416,
+          "p95_ns": 2402958,
+          "p99_ns": 2402958,
+          "mean_ns": 2213647
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1942667,
+          "p95_ns": 2188916,
+          "p99_ns": 2188916,
+          "mean_ns": 1969930
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32358400,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 15024128,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 33907417
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 29655040,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 23383542
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "flat",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 1,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 300,
+        "exhaustive_intermediate_identities": 300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 75,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 5,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20020,
+        "peak_exhaustive_payload_bytes": 480480,
+        "plan_build_latency": {
+          "p50_ns": 232375,
+          "p95_ns": 271209,
+          "p99_ns": 271209,
+          "mean_ns": 239866
+        },
+        "dynamic_latency": {
+          "p50_ns": 2064292,
+          "p95_ns": 2276333,
+          "p99_ns": 2276333,
+          "mean_ns": 2070036
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1415125,
+          "p95_ns": 1704917,
+          "p99_ns": 1704917,
+          "mean_ns": 1430055
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32784384,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 14516224,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 437670167
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 18104320,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 38268958
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "chain_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.53,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 1089,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 234500,
+          "p95_ns": 266375,
+          "p99_ns": 266375,
+          "mean_ns": 239658
+        },
+        "dynamic_latency": {
+          "p50_ns": 31475791,
+          "p95_ns": 39149917,
+          "p99_ns": 39149917,
+          "mean_ns": 31879297
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2423333,
+          "p95_ns": 3891958,
+          "p99_ns": 3891958,
+          "mean_ns": 2554263
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32800768,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 17137664,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 530225125
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31784960,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 40416042
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "diamond_shared",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 4104,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 5000,
+        "sum_node_peak_replay_identities": 5005,
+        "peak_replay_payload_bytes": 120000,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 242083,
+          "p95_ns": 273583,
+          "p99_ns": 273583,
+          "mean_ns": 243108
+        },
+        "dynamic_latency": {
+          "p50_ns": 34313042,
+          "p95_ns": 37165416,
+          "p99_ns": 37165416,
+          "mean_ns": 34691461
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2463458,
+          "p95_ns": 3117709,
+          "p99_ns": 3117709,
+          "mean_ns": 2503944
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 31932416,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7766016,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 300,
+            "elapsed_ns": 671166
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 30507008,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 21962542
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "flat",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 1,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 300,
+        "exhaustive_intermediate_identities": 300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 600,
+        "cancelled_nodes": 75,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 5,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20020,
+        "peak_exhaustive_payload_bytes": 480480,
+        "plan_build_latency": {
+          "p50_ns": 242791,
+          "p95_ns": 247791,
+          "p99_ns": 247791,
+          "mean_ns": 238924
+        },
+        "dynamic_latency": {
+          "p50_ns": 37166,
+          "p95_ns": 50875,
+          "p99_ns": 50875,
+          "mean_ns": 38255
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1293792,
+          "p95_ns": 1883291,
+          "p99_ns": 1883291,
+          "mean_ns": 1337016
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32096256,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7831552,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1278792
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31817728,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 41676459
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "diamond_shared",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 2,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 48,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 240625,
+          "p95_ns": 248500,
+          "p99_ns": 248500,
+          "mean_ns": 236274
+        },
+        "dynamic_latency": {
+          "p50_ns": 72625,
+          "p95_ns": 94375,
+          "p99_ns": 94375,
+          "mean_ns": 74133
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2356917,
+          "p95_ns": 2807084,
+          "p99_ns": 2807084,
+          "mean_ns": 2391997
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 19316736,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7782400,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 300,
+            "elapsed_ns": 1634625
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 17580032,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 22535167
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "flat",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 1,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 300,
+        "exhaustive_intermediate_identities": 300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 600,
+        "cancelled_nodes": 75,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 5,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20020,
+        "peak_exhaustive_payload_bytes": 480480,
+        "plan_build_latency": {
+          "p50_ns": 228333,
+          "p95_ns": 242458,
+          "p99_ns": 242458,
+          "mean_ns": 231633
+        },
+        "dynamic_latency": {
+          "p50_ns": 35000,
+          "p95_ns": 49833,
+          "p99_ns": 49833,
+          "mean_ns": 36824
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1283125,
+          "p95_ns": 1373125,
+          "p99_ns": 1373125,
+          "mean_ns": 1299811
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32718848,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 17121280,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 514028792
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 18612224,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 36969041
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "diamond_shared",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 1095,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 5000,
+        "sum_node_peak_replay_identities": 5005,
+        "peak_replay_payload_bytes": 120000,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 232542,
+          "p95_ns": 276500,
+          "p99_ns": 276500,
+          "mean_ns": 240416
+        },
+        "dynamic_latency": {
+          "p50_ns": 33094542,
+          "p95_ns": 35633625,
+          "p99_ns": 35633625,
+          "mean_ns": 33414361
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2420500,
+          "p95_ns": 2757542,
+          "p99_ns": 2757542,
+          "mean_ns": 2452083
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32112640,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7880704,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 2280792
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 30359552,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 42662834
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "diamond_shared",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 2,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 48,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 229708,
+          "p95_ns": 247667,
+          "p99_ns": 247667,
+          "mean_ns": 232350
+        },
+        "dynamic_latency": {
+          "p50_ns": 65292,
+          "p95_ns": 91584,
+          "p99_ns": 91584,
+          "mean_ns": 70955
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2352375,
+          "p95_ns": 3489834,
+          "p99_ns": 3489834,
+          "mean_ns": 2434258
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32079872,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7847936,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1164125
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31621120,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 38005333
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "balanced_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 246667,
+          "p95_ns": 266209,
+          "p99_ns": 266209,
+          "mean_ns": 247825
+        },
+        "dynamic_latency": {
+          "p50_ns": 70125,
+          "p95_ns": 93208,
+          "p99_ns": 93208,
+          "mean_ns": 72658
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2311875,
+          "p95_ns": 3029167,
+          "p99_ns": 3029167,
+          "mean_ns": 2373847
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32817152,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 14958592,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 503320125
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 25362432,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 37345625
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "balanced_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 1980,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 235041,
+          "p95_ns": 308709,
+          "p99_ns": 308709,
+          "mean_ns": 252283
+        },
+        "dynamic_latency": {
+          "p50_ns": 34891625,
+          "p95_ns": 37828583,
+          "p99_ns": 37828583,
+          "mean_ns": 34132944
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2335042,
+          "p95_ns": 2551375,
+          "p99_ns": 2551375,
+          "mean_ns": 2357002
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 19611648,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7962624,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1500,
+            "intermediate_identities": 900,
+            "elapsed_ns": 2211792
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31113216,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 44932750
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "diamond_unfolded",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 5,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1500,
+        "exhaustive_leaf_identities": 375000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 120,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 8,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 35020,
+        "peak_exhaustive_payload_bytes": 840480,
+        "plan_build_latency": {
+          "p50_ns": 290834,
+          "p95_ns": 313458,
+          "p99_ns": 313458,
+          "mean_ns": 292525
+        },
+        "dynamic_latency": {
+          "p50_ns": 77375,
+          "p95_ns": 92417,
+          "p99_ns": 92417,
+          "mean_ns": 76152
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2551167,
+          "p95_ns": 2657625,
+          "p99_ns": 2657625,
+          "mean_ns": 2548836
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32374784,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 14139392,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 900,
+            "elapsed_ns": 34654792
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31080448,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 40629042
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "balanced_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 1,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 810,
+        "cancelled_nodes": 45,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 242208,
+          "p95_ns": 261917,
+          "p99_ns": 261917,
+          "mean_ns": 241458
+        },
+        "dynamic_latency": {
+          "p50_ns": 2247541,
+          "p95_ns": 2389250,
+          "p99_ns": 2389250,
+          "mean_ns": 2246388
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2522083,
+          "p95_ns": 2660792,
+          "p99_ns": 2660792,
+          "mean_ns": 2525741
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32243712,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 8028160,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1500,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1403125
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 29327360,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 42817417
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "diamond_unfolded",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 5,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1500,
+        "exhaustive_leaf_identities": 375000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 120,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 8,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 35020,
+        "peak_exhaustive_payload_bytes": 840480,
+        "plan_build_latency": {
+          "p50_ns": 293917,
+          "p95_ns": 328958,
+          "p99_ns": 328958,
+          "mean_ns": 299883
+        },
+        "dynamic_latency": {
+          "p50_ns": 68375,
+          "p95_ns": 117583,
+          "p99_ns": 117583,
+          "mean_ns": 75761
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2587792,
+          "p95_ns": 3023375,
+          "p99_ns": 3023375,
+          "mean_ns": 2608997
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32227328,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 9601024,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 4800,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 17284292
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 26394624,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 29896375
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "balanced_finite",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.8300000000000001,
+        "dynamic_leaf_pulls": 4800,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.016,
+        "dynamic_intermediate_outputs": 2700,
+        "exhaustive_intermediate_identities": 2700,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 4911,
+        "cancelled_nodes": 75,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20180,
+        "peak_exhaustive_payload_bytes": 484320,
+        "plan_build_latency": {
+          "p50_ns": 231000,
+          "p95_ns": 272125,
+          "p99_ns": 272125,
+          "mean_ns": 243999
+        },
+        "dynamic_latency": {
+          "p50_ns": 1049750,
+          "p95_ns": 1125708,
+          "p99_ns": 1125708,
+          "mean_ns": 1040505
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1800417,
+          "p95_ns": 2407041,
+          "p99_ns": 2407041,
+          "mean_ns": 1849783
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32702464,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 16711680,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 506120792
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31834112,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 38481250
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "diamond_shared",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.36,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 357,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 5001,
+        "sum_node_peak_replay_identities": 5006,
+        "peak_replay_payload_bytes": 120024,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 236166,
+          "p95_ns": 249625,
+          "p99_ns": 249625,
+          "mean_ns": 233883
+        },
+        "dynamic_latency": {
+          "p50_ns": 33438667,
+          "p95_ns": 35244667,
+          "p99_ns": 35244667,
+          "mean_ns": 33274347
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2435958,
+          "p95_ns": 2585958,
+          "p99_ns": 2585958,
+          "mean_ns": 2448680
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 31965184,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7880704,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1152417
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 16138240,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 29856375
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "balanced_finite",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 2700,
+        "intermediate_work_ratio": 0.3333333333333333,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20180,
+        "peak_exhaustive_payload_bytes": 484320,
+        "plan_build_latency": {
+          "p50_ns": 244042,
+          "p95_ns": 320292,
+          "p99_ns": 320292,
+          "mean_ns": 263083
+        },
+        "dynamic_latency": {
+          "p50_ns": 68167,
+          "p95_ns": 118292,
+          "p99_ns": 118292,
+          "mean_ns": 72777
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1736209,
+          "p95_ns": 2169334,
+          "p99_ns": 2169334,
+          "mean_ns": 1769636
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 19759104,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 10633216,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 33402250
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 19775488,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 22300875
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "flat",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 1,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 300,
+        "exhaustive_intermediate_identities": 300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 75,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 5,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20020,
+        "peak_exhaustive_payload_bytes": 480480,
+        "plan_build_latency": {
+          "p50_ns": 238750,
+          "p95_ns": 260875,
+          "p99_ns": 260875,
+          "mean_ns": 243433
+        },
+        "dynamic_latency": {
+          "p50_ns": 2089708,
+          "p95_ns": 2443833,
+          "p99_ns": 2443833,
+          "mean_ns": 2122616
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1371416,
+          "p95_ns": 1650542,
+          "p99_ns": 1650542,
+          "mean_ns": 1389544
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 31997952,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 10731520,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 35225208
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 28393472,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 30630375
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "balanced_finite",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.5900000000000001,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 2700,
+        "exhaustive_intermediate_identities": 2700,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 180,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20180,
+        "peak_exhaustive_payload_bytes": 484320,
+        "plan_build_latency": {
+          "p50_ns": 248125,
+          "p95_ns": 287209,
+          "p99_ns": 287209,
+          "mean_ns": 252700
+        },
+        "dynamic_latency": {
+          "p50_ns": 2279625,
+          "p95_ns": 2435417,
+          "p99_ns": 2435417,
+          "mean_ns": 2267710
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1950708,
+          "p95_ns": 2706958,
+          "p99_ns": 2706958,
+          "mean_ns": 1979236
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32063488,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7831552,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 2230209
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 18104320,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 41077375
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "chain_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 233791,
+          "p95_ns": 268875,
+          "p99_ns": 268875,
+          "mean_ns": 239800
+        },
+        "dynamic_latency": {
+          "p50_ns": 68041,
+          "p95_ns": 131334,
+          "p99_ns": 131334,
+          "mean_ns": 73997
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2319708,
+          "p95_ns": 2702334,
+          "p99_ns": 2702334,
+          "mean_ns": 2366569
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 25280512,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7847936,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 2119750
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 19283968,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 39011375
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "balanced_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 236667,
+          "p95_ns": 266791,
+          "p99_ns": 266791,
+          "mean_ns": 240816
+        },
+        "dynamic_latency": {
+          "p50_ns": 64625,
+          "p95_ns": 93875,
+          "p99_ns": 93875,
+          "mean_ns": 67030
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2327166,
+          "p95_ns": 2762042,
+          "p99_ns": 2762042,
+          "mean_ns": 2343266
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 21790720,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7880704,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1226875
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 30801920,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 40263042
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "balanced_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 233834,
+          "p95_ns": 265541,
+          "p99_ns": 265541,
+          "mean_ns": 239958
+        },
+        "dynamic_latency": {
+          "p50_ns": 67375,
+          "p95_ns": 154833,
+          "p99_ns": 154833,
+          "mean_ns": 77347
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2311500,
+          "p95_ns": 2573708,
+          "p99_ns": 2573708,
+          "mean_ns": 2329675
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32030720,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 14123008,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 900,
+            "elapsed_ns": 34881000
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 29491200,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 30653666
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "balanced_finite",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 1,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 2700,
+        "intermediate_work_ratio": 0.3333333333333333,
+        "certification_checks": 810,
+        "cancelled_nodes": 45,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20180,
+        "peak_exhaustive_payload_bytes": 484320,
+        "plan_build_latency": {
+          "p50_ns": 244250,
+          "p95_ns": 256875,
+          "p99_ns": 256875,
+          "mean_ns": 243599
+        },
+        "dynamic_latency": {
+          "p50_ns": 2203000,
+          "p95_ns": 2573375,
+          "p99_ns": 2573375,
+          "mean_ns": 2213486
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1965417,
+          "p95_ns": 2525584,
+          "p99_ns": 2525584,
+          "mean_ns": 1992405
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 36110336,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7782400,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1298083
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31244288,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 36800167
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "chain_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 230959,
+          "p95_ns": 285625,
+          "p99_ns": 285625,
+          "mean_ns": 242475
+        },
+        "dynamic_latency": {
+          "p50_ns": 64375,
+          "p95_ns": 135791,
+          "p99_ns": 135791,
+          "mean_ns": 70844
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2331875,
+          "p95_ns": 4236834,
+          "p99_ns": 4236834,
+          "mean_ns": 2456780
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32555008,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 10944512,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 36491209
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 16121856,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 28437958
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "balanced_finite",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.5900000000000001,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 2700,
+        "exhaustive_intermediate_identities": 2700,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 333,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20180,
+        "peak_exhaustive_payload_bytes": 484320,
+        "plan_build_latency": {
+          "p50_ns": 233708,
+          "p95_ns": 246291,
+          "p99_ns": 246291,
+          "mean_ns": 234808
+        },
+        "dynamic_latency": {
+          "p50_ns": 2372250,
+          "p95_ns": 2555792,
+          "p99_ns": 2555792,
+          "mean_ns": 2390097
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1842625,
+          "p95_ns": 2380208,
+          "p99_ns": 2380208,
+          "mean_ns": 1874541
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32456704,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 14942208,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 36366916
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31686656,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 28868958
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "balanced_finite",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.8300000000000001,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 2700,
+        "exhaustive_intermediate_identities": 2700,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 1980,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20180,
+        "peak_exhaustive_payload_bytes": 484320,
+        "plan_build_latency": {
+          "p50_ns": 242250,
+          "p95_ns": 249167,
+          "p99_ns": 249167,
+          "mean_ns": 239875
+        },
+        "dynamic_latency": {
+          "p50_ns": 2194125,
+          "p95_ns": 2307666,
+          "p99_ns": 2307666,
+          "mean_ns": 2190755
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1773417,
+          "p95_ns": 2257500,
+          "p99_ns": 2257500,
+          "mean_ns": 1807847
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 33292288,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 16744448,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 548405541
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31883264,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 41454875
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "diamond_unfolded",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 5,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 375000,
+        "exhaustive_leaf_identities": 375000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 4104,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 8,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 35020,
+        "peak_exhaustive_payload_bytes": 840480,
+        "plan_build_latency": {
+          "p50_ns": 292792,
+          "p95_ns": 308875,
+          "p99_ns": 308875,
+          "mean_ns": 295658
+        },
+        "dynamic_latency": {
+          "p50_ns": 37294834,
+          "p95_ns": 40223625,
+          "p99_ns": 40223625,
+          "mean_ns": 37486444
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2585041,
+          "p95_ns": 2953125,
+          "p99_ns": 2953125,
+          "mean_ns": 2620224
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32473088,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 16351232,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 535844458
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31817728,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 42047791
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "diamond_unfolded",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 5,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.36,
+        "dynamic_leaf_pulls": 375000,
+        "exhaustive_leaf_identities": 375000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 357,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 8,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 35020,
+        "peak_exhaustive_payload_bytes": 840480,
+        "plan_build_latency": {
+          "p50_ns": 289000,
+          "p95_ns": 304625,
+          "p99_ns": 304625,
+          "mean_ns": 288583
+        },
+        "dynamic_latency": {
+          "p50_ns": 35515000,
+          "p95_ns": 38060709,
+          "p99_ns": 38060709,
+          "mean_ns": 35344888
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2692583,
+          "p95_ns": 3051375,
+          "p99_ns": 3051375,
+          "mean_ns": 2703524
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 33210368,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 16646144,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 517043916
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31850496,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 39214334
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "diamond_shared",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 1,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 1095,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 5001,
+        "sum_node_peak_replay_identities": 5006,
+        "peak_replay_payload_bytes": 120024,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 246167,
+          "p95_ns": 284583,
+          "p99_ns": 284583,
+          "mean_ns": 253858
+        },
+        "dynamic_latency": {
+          "p50_ns": 34915542,
+          "p95_ns": 37641458,
+          "p99_ns": 37641458,
+          "mean_ns": 35242080
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2417958,
+          "p95_ns": 2960000,
+          "p99_ns": 2960000,
+          "mean_ns": 2462011
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 31801344,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7929856,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1944666
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 24281088,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 29265042
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "balanced_finite",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 2700,
+        "intermediate_work_ratio": 0.3333333333333333,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20180,
+        "peak_exhaustive_payload_bytes": 484320,
+        "plan_build_latency": {
+          "p50_ns": 234667,
+          "p95_ns": 241667,
+          "p99_ns": 241667,
+          "mean_ns": 236533
+        },
+        "dynamic_latency": {
+          "p50_ns": 65167,
+          "p95_ns": 109958,
+          "p99_ns": 109958,
+          "mean_ns": 68683
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1746833,
+          "p95_ns": 1846042,
+          "p99_ns": 1846042,
+          "mean_ns": 1753722
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32833536,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 15400960,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 441219417
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 30703616,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 39252250
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "chain_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.5,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 252,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 234334,
+          "p95_ns": 244375,
+          "p99_ns": 244375,
+          "mean_ns": 236625
+        },
+        "dynamic_latency": {
+          "p50_ns": 29596791,
+          "p95_ns": 38228000,
+          "p99_ns": 38228000,
+          "mean_ns": 30200205
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2474000,
+          "p95_ns": 2887459,
+          "p99_ns": 2887459,
+          "mean_ns": 2526150
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 35848192,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7815168,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1210334
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31768576,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 36423250
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "diamond_shared",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 2,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 48,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 239917,
+          "p95_ns": 274667,
+          "p99_ns": 274667,
+          "mean_ns": 245933
+        },
+        "dynamic_latency": {
+          "p50_ns": 72791,
+          "p95_ns": 93292,
+          "p99_ns": 93292,
+          "mean_ns": 71622
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2363917,
+          "p95_ns": 3961208,
+          "p99_ns": 3961208,
+          "mean_ns": 2492580
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32817152,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 14974976,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 241182,
+            "intermediate_identities": 91482,
+            "elapsed_ns": 306505917
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31539200,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 39164375
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "chain_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.53,
+        "dynamic_leaf_pulls": 241182,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.80394,
+        "dynamic_intermediate_outputs": 91482,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.6086626746506986,
+        "certification_checks": 4341,
+        "cancelled_nodes": 39,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 236584,
+          "p95_ns": 255209,
+          "p99_ns": 255209,
+          "mean_ns": 238783
+        },
+        "dynamic_latency": {
+          "p50_ns": 19645500,
+          "p95_ns": 35090791,
+          "p99_ns": 35090791,
+          "mean_ns": 20815035
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2426667,
+          "p95_ns": 2995083,
+          "p99_ns": 2995083,
+          "mean_ns": 2499689
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32096256,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 9371648,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1500,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1484583
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31670272,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 41406291
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "diamond_unfolded",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 5,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1500,
+        "exhaustive_leaf_identities": 375000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 120,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 8,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 35020,
+        "peak_exhaustive_payload_bytes": 840480,
+        "plan_build_latency": {
+          "p50_ns": 311125,
+          "p95_ns": 377125,
+          "p99_ns": 377125,
+          "mean_ns": 324600
+        },
+        "dynamic_latency": {
+          "p50_ns": 67917,
+          "p95_ns": 101917,
+          "p99_ns": 101917,
+          "mean_ns": 73155
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2549041,
+          "p95_ns": 3440167,
+          "p99_ns": 3440167,
+          "mean_ns": 2651794
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32522240,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 14041088,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 900,
+            "elapsed_ns": 34734916
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31260672,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 43175125
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "balanced_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 1,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 720,
+        "cancelled_nodes": 45,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 231417,
+          "p95_ns": 241208,
+          "p99_ns": 241208,
+          "mean_ns": 232367
+        },
+        "dynamic_latency": {
+          "p50_ns": 2166833,
+          "p95_ns": 2418041,
+          "p99_ns": 2418041,
+          "mean_ns": 2191808
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2538917,
+          "p95_ns": 2838334,
+          "p99_ns": 2838334,
+          "mean_ns": 2549025
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32047104,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7880704,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 2178000
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31490048,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 41506083
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "diamond_shared",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 2,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 48,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 244667,
+          "p95_ns": 247750,
+          "p99_ns": 247750,
+          "mean_ns": 242025
+        },
+        "dynamic_latency": {
+          "p50_ns": 71209,
+          "p95_ns": 101417,
+          "p99_ns": 101417,
+          "mean_ns": 73091
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2358958,
+          "p95_ns": 2768708,
+          "p99_ns": 2768708,
+          "mean_ns": 2417702
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32374784,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 14909440,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 33992833
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 30244864,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 23631083
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "flat",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 1,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 300,
+        "exhaustive_intermediate_identities": 300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 165,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 5,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20020,
+        "peak_exhaustive_payload_bytes": 480480,
+        "plan_build_latency": {
+          "p50_ns": 231791,
+          "p95_ns": 251208,
+          "p99_ns": 251208,
+          "mean_ns": 233175
+        },
+        "dynamic_latency": {
+          "p50_ns": 2105250,
+          "p95_ns": 2254083,
+          "p99_ns": 2254083,
+          "mean_ns": 2106041
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1454584,
+          "p95_ns": 1963709,
+          "p99_ns": 1963709,
+          "mean_ns": 1487427
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32423936,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 12189696,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 607100041
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 30883840,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 38038667
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "balanced_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.7299999999999999,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 180,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 247291,
+          "p95_ns": 287125,
+          "p99_ns": 287125,
+          "mean_ns": 252575
+        },
+        "dynamic_latency": {
+          "p50_ns": 38534000,
+          "p95_ns": 42604000,
+          "p99_ns": 42604000,
+          "mean_ns": 37724772
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2409917,
+          "p95_ns": 2642250,
+          "p99_ns": 2642250,
+          "mean_ns": 2426308
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32997376,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 16990208,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 556622875
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31539200,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 42300792
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "diamond_unfolded",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 5,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 1,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 375000,
+        "exhaustive_leaf_identities": 375000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 4080,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 8,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 35020,
+        "peak_exhaustive_payload_bytes": 840480,
+        "plan_build_latency": {
+          "p50_ns": 304458,
+          "p95_ns": 310750,
+          "p99_ns": 310750,
+          "mean_ns": 298841
+        },
+        "dynamic_latency": {
+          "p50_ns": 37528041,
+          "p95_ns": 39876000,
+          "p99_ns": 39876000,
+          "mean_ns": 37567958
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2630125,
+          "p95_ns": 3241042,
+          "p99_ns": 3241042,
+          "mean_ns": 2676105
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32915456,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 12255232,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 34528750
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31260672,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 22817791
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "flat",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 1,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 300,
+        "exhaustive_intermediate_identities": 300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 177,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 5,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20020,
+        "peak_exhaustive_payload_bytes": 480480,
+        "plan_build_latency": {
+          "p50_ns": 246833,
+          "p95_ns": 294625,
+          "p99_ns": 294625,
+          "mean_ns": 254475
+        },
+        "dynamic_latency": {
+          "p50_ns": 2143333,
+          "p95_ns": 3573792,
+          "p99_ns": 3573792,
+          "mean_ns": 2350569
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1400667,
+          "p95_ns": 1822416,
+          "p99_ns": 1822416,
+          "mean_ns": 1448991
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 31965184,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7831552,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 300,
+            "elapsed_ns": 1668750
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 29556736,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 22510000
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "flat",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 1,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 300,
+        "exhaustive_intermediate_identities": 300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 600,
+        "cancelled_nodes": 75,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 5,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20020,
+        "peak_exhaustive_payload_bytes": 480480,
+        "plan_build_latency": {
+          "p50_ns": 238542,
+          "p95_ns": 247875,
+          "p99_ns": 247875,
+          "mean_ns": 240083
+        },
+        "dynamic_latency": {
+          "p50_ns": 36834,
+          "p95_ns": 49667,
+          "p99_ns": 49667,
+          "mean_ns": 38633
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1301959,
+          "p95_ns": 1521166,
+          "p99_ns": 1521166,
+          "mean_ns": 1326497
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32702464,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 15220736,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 598015666
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 18087936,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 38701458
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "balanced_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.7299999999999999,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 333,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 253083,
+          "p95_ns": 271500,
+          "p99_ns": 271500,
+          "mean_ns": 247791
+        },
+        "dynamic_latency": {
+          "p50_ns": 38443042,
+          "p95_ns": 43505375,
+          "p99_ns": 43505375,
+          "mean_ns": 38081424
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2437667,
+          "p95_ns": 2884125,
+          "p99_ns": 2884125,
+          "mean_ns": 2469122
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 33259520,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 16236544,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 593896708
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31031296,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 39337125
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "clustered",
+        "topology": "balanced_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 7797,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 235958,
+          "p95_ns": 254333,
+          "p99_ns": 254333,
+          "mean_ns": 238691
+        },
+        "dynamic_latency": {
+          "p50_ns": 36216083,
+          "p95_ns": 39235958,
+          "p99_ns": 39235958,
+          "mean_ns": 36073199
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2300292,
+          "p95_ns": 2973000,
+          "p99_ns": 2973000,
+          "mean_ns": 2388166
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 19431424,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7913472,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 900,
+            "elapsed_ns": 1207500
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 29032448,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 2700,
+            "elapsed_ns": 28348084
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "balanced_finite",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 2700,
+        "intermediate_work_ratio": 0.3333333333333333,
+        "certification_checks": 1800,
+        "cancelled_nodes": 105,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20180,
+        "peak_exhaustive_payload_bytes": 484320,
+        "plan_build_latency": {
+          "p50_ns": 231167,
+          "p95_ns": 235875,
+          "p99_ns": 235875,
+          "mean_ns": 231466
+        },
+        "dynamic_latency": {
+          "p50_ns": 64959,
+          "p95_ns": 83500,
+          "p99_ns": 83500,
+          "mean_ns": 66708
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1736625,
+          "p95_ns": 1866459,
+          "p99_ns": 1866459,
+          "mean_ns": 1743377
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32276480,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 13844480,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 33232500
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 28934144,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 22525375
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "flat",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 1,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 300,
+        "exhaustive_intermediate_identities": 300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 165,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 5,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20020,
+        "peak_exhaustive_payload_bytes": 480480,
+        "plan_build_latency": {
+          "p50_ns": 245708,
+          "p95_ns": 247041,
+          "p99_ns": 247041,
+          "mean_ns": 240091
+        },
+        "dynamic_latency": {
+          "p50_ns": 2069000,
+          "p95_ns": 2325708,
+          "p99_ns": 2325708,
+          "mean_ns": 2101638
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1296250,
+          "p95_ns": 1709250,
+          "p99_ns": 1709250,
+          "mean_ns": 1347099
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 19398656,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 7749632,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1200,
+            "intermediate_identities": 300,
+            "elapsed_ns": 763042
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 17596416,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 21793375
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "flat_ties",
+        "topology": "flat",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 1,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1200,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 300,
+        "exhaustive_intermediate_identities": 300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 600,
+        "cancelled_nodes": 75,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 5,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20020,
+        "peak_exhaustive_payload_bytes": 480480,
+        "plan_build_latency": {
+          "p50_ns": 247375,
+          "p95_ns": 261125,
+          "p99_ns": 261125,
+          "mean_ns": 248308
+        },
+        "dynamic_latency": {
+          "p50_ns": 36041,
+          "p95_ns": 54416,
+          "p99_ns": 54416,
+          "mean_ns": 38188
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1309416,
+          "p95_ns": 1393750,
+          "p99_ns": 1393750,
+          "mean_ns": 1303908
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32915456,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 16859136,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 562968417
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31211520,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 39388292
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "diamond_shared",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 1,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 4080,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 5001,
+        "sum_node_peak_replay_identities": 5006,
+        "peak_replay_payload_bytes": 120024,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 252041,
+          "p95_ns": 258292,
+          "p99_ns": 258292,
+          "mean_ns": 248641
+        },
+        "dynamic_latency": {
+          "p50_ns": 37144667,
+          "p95_ns": 41274542,
+          "p99_ns": 41274542,
+          "mean_ns": 36686041
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2474333,
+          "p95_ns": 2639500,
+          "p99_ns": 2639500,
+          "mean_ns": 2488430
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32342016,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 10944512,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 33403542
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 17580032,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 300,
+            "elapsed_ns": 22149833
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "independent",
+        "topology": "flat",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 1,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 32,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 300,
+        "exhaustive_intermediate_identities": 300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 75,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 5,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 20020,
+        "peak_exhaustive_payload_bytes": 480480,
+        "plan_build_latency": {
+          "p50_ns": 232083,
+          "p95_ns": 320125,
+          "p99_ns": 320125,
+          "mean_ns": 247633
+        },
+        "dynamic_latency": {
+          "p50_ns": 2119916,
+          "p95_ns": 2224125,
+          "p99_ns": 2224125,
+          "mean_ns": 2117108
+        },
+        "exhaustive_latency": {
+          "p50_ns": 1402083,
+          "p95_ns": 1661666,
+          "p99_ns": 1661666,
+          "mean_ns": 1417016
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32325632,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 9371648,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 1500,
+            "intermediate_identities": 900,
+            "elapsed_ns": 2477917
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 31817728,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 375000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 44184833
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "correlated",
+        "topology": "diamond_unfolded",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 5,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 0,
+        "mean_flat_overlap_at_k": 1.0,
+        "dynamic_leaf_pulls": 1500,
+        "exhaustive_leaf_identities": 375000,
+        "leaf_work_ratio": 0.004,
+        "dynamic_intermediate_outputs": 900,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 0.005988023952095809,
+        "certification_checks": 1800,
+        "cancelled_nodes": 120,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 8,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 35020,
+        "peak_exhaustive_payload_bytes": 840480,
+        "plan_build_latency": {
+          "p50_ns": 300000,
+          "p95_ns": 414750,
+          "p99_ns": 414750,
+          "mean_ns": 323899
+        },
+        "dynamic_latency": {
+          "p50_ns": 87542,
+          "p95_ns": 119750,
+          "p99_ns": 119750,
+          "mean_ns": 88119
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2548917,
+          "p95_ns": 3360708,
+          "p99_ns": 3360708,
+          "mean_ns": 2657619
+        }
+      }
+    },
+    {
+      "matrix_repeat": 0,
+      "process_max_rss_bytes": 32931840,
+      "isolated_execution": {
+        "dynamic": {
+          "process_max_rss_bytes": 15499264,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "dynamic",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 452921375
+          }
+        },
+        "exhaustive": {
+          "process_max_rss_bytes": 26804224,
+          "result": {
+            "schema_version": 1,
+            "experiment": "spectra-exact-composition-isolated-v1",
+            "execution_mode": "exhaustive",
+            "operations": 15,
+            "point_ids_returned": 300,
+            "leaf_identities_consumed": 300000,
+            "intermediate_identities": 150300,
+            "elapsed_ns": 40240375
+          }
+        }
+      },
+      "result": {
+        "schema_version": 1,
+        "experiment": "spectra-exact-composition-v1",
+        "build_profile": "release",
+        "scenario": "anti_correlated",
+        "topology": "chain_open",
+        "semantic_oracle": "full materialization of the same logical network",
+        "documents": 5000,
+        "queries": 5,
+        "repeats": 3,
+        "leaves": 4,
+        "physical_leaf_nodes": 4,
+        "fusion_nodes": 3,
+        "top_k": 20,
+        "rrf_k": 60,
+        "internal_limit": 80,
+        "exhaustive_after_pulls_per_input": 128,
+        "identity_payload_bytes": 24,
+        "ordered_top_k_mismatches": 0,
+        "flat_order_drift_queries": 5,
+        "mean_flat_overlap_at_k": 0.5,
+        "dynamic_leaf_pulls": 300000,
+        "exhaustive_leaf_identities": 300000,
+        "leaf_work_ratio": 1.0,
+        "dynamic_intermediate_outputs": 150300,
+        "exhaustive_intermediate_identities": 150300,
+        "intermediate_work_ratio": 1.0,
+        "certification_checks": 762,
+        "cancelled_nodes": 15,
+        "peak_replay_identities": 1,
+        "sum_node_peak_replay_identities": 7,
+        "peak_replay_payload_bytes": 24,
+        "peak_exhaustive_materialized_identities": 30020,
+        "peak_exhaustive_payload_bytes": 720480,
+        "plan_build_latency": {
+          "p50_ns": 230375,
+          "p95_ns": 253334,
+          "p99_ns": 253334,
+          "mean_ns": 236883
+        },
+        "dynamic_latency": {
+          "p50_ns": 30844666,
+          "p95_ns": 36972334,
+          "p99_ns": 36972334,
+          "mean_ns": 30556113
+        },
+        "exhaustive_latency": {
+          "p50_ns": 2484416,
+          "p95_ns": 3297125,
+          "p99_ns": 3297125,
+          "mean_ns": 2551583
+        }
+      }
+    }
+  ]
+}

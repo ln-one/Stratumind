@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-vector-snapshot-dynamic-exact-v1",
+  "status": "local-research-only",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "dataset": {
+    "name": "BEIR SciFact",
+    "license": "CC BY-NC 2.0; research-only, not bundled with Spectra",
+    "documents": 5183,
+    "queries": 1109,
+    "judged_queries": 300,
+    "snapshot_manifest": "/tmp/spectra-scifact-snapshot/manifest.json",
+    "corpus_snapshot_sha256": "d55fe1415ffde1c1c92bd1152fc3608db7483c5a66c263fa9739203b9d72dfde",
+    "sparse_dimensions": 26542
+  },
+  "configuration": {
+    "top_k": 20,
+    "rrf_k": 2,
+    "block_size": 128,
+    "dense_partition": "identity-contiguous",
+    "dense_clustering_iterations": 0
+  },
+  "correctness": {
+    "parity_mismatches": 0,
+    "fixed_before_exhaustion": 1106,
+    "all_sources_exhausted": 3
+  },
+  "quality": {
+    "mean_recall_at_k": 0.9068888888888889,
+    "mean_ndcg_at_k": 0.7535868620866516
+  },
+  "release_latency_ns": {
+    "dynamic": {
+      "p50": 2311084,
+      "p95": 3363083,
+      "p99": 3984875,
+      "mean": 2424781
+    },
+    "exhaustive": {
+      "p50": 2846459,
+      "p95": 3209541,
+      "p99": 3357750,
+      "mean": 2841217
+    }
+  },
+  "dynamic_physical": {
+    "sparse_documents_evaluated": 5741679,
+    "dense_documents_evaluated": 5747947
+  },
+  "exhaustive_physical": {
+    "sparse_documents_evaluated": 5743213,
+    "dense_documents_evaluated": 5747947
+  },
+  "dense_diagnostics_debug_100_queries": [
+    {
+      "partition": "hierarchical-balanced-kmeans",
+      "leaf_size": 8,
+      "branch_factor": 8,
+      "iterations": 3,
+      "nodes": 1473,
+      "parity_mismatches": 0,
+      "dynamic_dense_documents_evaluated": 518300,
+      "exhaustive_dense_documents_evaluated": 518300
+    },
+    {
+      "partition": "hierarchical-balanced-kmeans",
+      "leaf_size": 2,
+      "branch_factor": 8,
+      "iterations": 3,
+      "nodes": 3380,
+      "parity_mismatches": 0,
+      "dynamic_dense_documents_evaluated": 479307,
+      "exhaustive_dense_documents_evaluated": 518300,
+      "dynamic_dense_bound_evaluations": 338000
+    }
+  ],
+  "negative_finding": "Identity-contiguous and balanced k-means blocks both evaluate every dense document. Hierarchical Euclidean-plus-spherical-cap refinement starts pruning only near point-sized leaves: leaf size 2 skips about 7.5% of exact scores while evaluating every Node bound. This exact Dense structure is an oracle, not yet a production speedup over HNSW."
+}

@@ -1,0 +1,71 @@
+{
+  "status": "local_research_result_not_publication_result",
+  "environment": {
+    "os": "Darwin 25.5.0 arm64",
+    "rustc": "1.97.1 (8bab26f4f 2026-07-14)",
+    "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+    "build_profile": "release"
+  },
+  "configuration": {
+    "documents": 20000,
+    "queries_per_scenario": 100,
+    "top_k": 20,
+    "rrf_k": 2,
+    "block_size": 128,
+    "dense_dimension": 32
+  },
+  "runs": [
+    {
+      "scenario": "clustered",
+      "parity_mismatches": 0,
+      "fixed_before_exhaustion": 100,
+      "dynamic_source_pulls": [128016, 128015],
+      "certification_checks": 5984,
+      "dynamic_latency": {"p50_ns": 1048750, "p95_ns": 1228167, "p99_ns": 1324209, "mean_ns": 1055174},
+      "exhaustive_latency": {"p50_ns": 5862583, "p95_ns": 6834458, "p99_ns": 7485916, "mean_ns": 5990334},
+      "dynamic_sparse_documents_evaluated": 1065024,
+      "dynamic_dense_documents_evaluated": 1699424,
+      "exhaustive_sparse_documents_evaluated": 2000000,
+      "exhaustive_dense_documents_evaluated": 2000000
+    },
+    {
+      "scenario": "interleaved",
+      "parity_mismatches": 0,
+      "fixed_before_exhaustion": 100,
+      "dynamic_source_pulls": [139483, 139407],
+      "certification_checks": 5867,
+      "dynamic_latency": {"p50_ns": 1085375, "p95_ns": 3142875, "p99_ns": 3487917, "mean_ns": 1451723},
+      "exhaustive_latency": {"p50_ns": 6029958, "p95_ns": 7171916, "p99_ns": 8157000, "mean_ns": 6187177},
+      "dynamic_sparse_documents_evaluated": 1680640,
+      "dynamic_dense_documents_evaluated": 2000000,
+      "exhaustive_sparse_documents_evaluated": 2000000,
+      "exhaustive_dense_documents_evaluated": 2000000
+    },
+    {
+      "scenario": "anti_correlated",
+      "parity_mismatches": 0,
+      "fixed_before_exhaustion": 100,
+      "dynamic_source_pulls": [863768, 863768],
+      "certification_checks": 7743,
+      "dynamic_latency": {"p50_ns": 3364833, "p95_ns": 8617750, "p99_ns": 11733291, "mean_ns": 3891983},
+      "exhaustive_latency": {"p50_ns": 5804167, "p95_ns": 6786584, "p99_ns": 7586625, "mean_ns": 5947226},
+      "dynamic_sparse_documents_evaluated": 1434656,
+      "dynamic_dense_documents_evaluated": 2000000,
+      "exhaustive_sparse_documents_evaluated": 2000000,
+      "exhaustive_dense_documents_evaluated": 2000000
+    },
+    {
+      "scenario": "flat_ties",
+      "parity_mismatches": 0,
+      "fixed_before_exhaustion": 100,
+      "dynamic_source_pulls": [2000, 2000],
+      "certification_checks": 2100,
+      "dynamic_latency": {"p50_ns": 14666, "p95_ns": 19708, "p99_ns": 26917, "mean_ns": 15280},
+      "exhaustive_latency": {"p50_ns": 4223209, "p95_ns": 5180958, "p99_ns": 5558334, "mean_ns": 4332816},
+      "dynamic_sparse_documents_evaluated": 12800,
+      "dynamic_dense_documents_evaluated": 12800,
+      "exhaustive_sparse_documents_evaluated": 2000000,
+      "exhaustive_dense_documents_evaluated": 2000000
+    }
+  ]
+}

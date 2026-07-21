@@ -651,9 +651,95 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         false
     }
 
+    fn reliable_block_max() -> bool {
+        true
+    }
+
+    fn max_weight_till_id(&mut self, id: PointOffsetType) -> Option<DimWeight> {
+        // An absent sparse term contributes zero, so zero is part of every
+        // admissible envelope even when all stored impacts are negative.
+        let mut maximum = Some(0.0);
+        let chunk_count = self.list.chunks_len();
+        let current_chunk = self.pos.0 / CHUNK_SIZE;
+        if current_chunk < chunk_count {
+            let end_chunk = self
+                .list
+                .chunks
+                .partition_point(|chunk| chunk.initial <= id);
+            for chunk in &self.list.chunks[current_chunk..end_chunk] {
+                let chunk_max = decoded_chunk_max(chunk, self.list.multiplier);
+                maximum = Some(maximum.map_or(chunk_max, |value| value.max(chunk_max)));
+            }
+        }
+
+        let remainder_start = self.pos.0.saturating_sub(chunk_count * CHUNK_SIZE);
+        if self.pos.0 >= chunk_count * CHUNK_SIZE
+            || self
+                .list
+                .remainders
+                .first()
+                .is_some_and(|element| id >= element.record_id)
+        {
+            for element in self.list.remainders[remainder_start..]
+                .iter()
+                .take_while(|element| element.record_id <= id)
+            {
+                let weight = element.weight.to_f32(self.list.multiplier);
+                maximum = Some(maximum.map_or(weight, |value| value.max(weight)));
+            }
+        }
+        maximum
+    }
+
+    fn skip_till_id(&mut self, id: PointOffsetType) {
+        if let Some(element) = self.skip_to(id) {
+            self.next_from(element);
+        }
+    }
+
+    fn block_max_endpoints(&self) -> Option<(DimWeight, DimWeight)> {
+        let remainder_max = || {
+            (!self.list.remainders.is_empty()).then(|| {
+                self.list
+                    .remainders
+                    .iter()
+                    .map(|element| element.weight.to_f32(self.list.multiplier))
+                    .fold(0.0, f32::max)
+            })
+        };
+        let first = self
+            .list
+            .chunks
+            .first()
+            .map(|chunk| decoded_chunk_max(chunk, self.list.multiplier))
+            .or_else(remainder_max)?;
+        let last = remainder_max().or_else(|| {
+            self.list
+                .chunks
+                .last()
+                .map(|chunk| decoded_chunk_max(chunk, self.list.multiplier))
+        })?;
+        Some((first, last))
+    }
+
     fn into_std_iter(self) -> impl Iterator<Item = PostingElement> {
         CompressedPostingListStdIterator(self)
     }
+}
+
+/// Include zero because a document absent from a posting list contributes
+/// zero. This keeps the envelope admissible even if stored sparse impacts are
+/// negative, and computes metadata without changing Qdrant's persisted chunk
+/// layout.
+fn decoded_chunk_max<W: Weight>(
+    chunk: &CompressedPostingChunk<W>,
+    quantization_params: W::QuantizationParams,
+) -> DimWeight {
+    chunk
+        .weights
+        .iter()
+        .map(|weight| weight.to_f32(quantization_params))
+        .fold(0.0, f32::max)
 }
 
 #[derive(Clone)]
@@ -770,5 +856,29 @@ mod tests {
             assert!(data[..pos].iter().all(|&x| x <= val));
             assert!(data[pos..].iter().all(|&x| x > val));
         }
+    }
+
+    #[test]
+    fn compressed_chunk_layout_has_no_stratumind_metadata() {
+        let upstream_fields_size =
+            size_of::<PointOffsetType>() + size_of::<u32>() + CHUNK_SIZE * size_of::<f32>();
+
+        assert_eq!(
+            size_of::<CompressedPostingChunk<f32>>(),
+            upstream_fields_size
+        );
+    }
+
+    #[test]
+    fn block_max_includes_absent_term_zero() {
+        let records = (0..=CHUNK_SIZE)
+            .map(|index| (index as PointOffsetType, -1.0 - index as f32))
+            .collect();
+        let list = CompressedPostingList::<f32>::from(records);
+        let hw_counter = HardwareCounterCell::new();
+        let mut iter = list.iter(&hw_counter);
+
+        assert_eq!(iter.max_weight_till_id(PointOffsetType::MAX), Some(0.0));
+        assert_eq!(iter.block_max_endpoints(), Some((0.0, 0.0)));
     }
 }

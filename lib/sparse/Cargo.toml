@@ -42,6 +42,7 @@ fs-err = { workspace = true, features = ["debug"] }
 generic-tests = { workspace = true }
 indicatif = { workspace = true }
 sha2 = { workspace = true }
+proptest = { workspace = true }
 sparse = { path = ".", features = ["testing"] }
 zerocopy = { workspace = true }
 

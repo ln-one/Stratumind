@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "experiment": "spectra-n-channel-scifact-v1",
+  "qdrant_base_commit": "44ad62f8cd69642be5afa6441612525e24a0d063",
+  "dataset_dir": "/tmp/spectra-scifact-snapshot",
+  "documents": 5183,
+  "queries": 1109,
+  "dimension": 384,
+  "top_k": 20,
+  "rrf_k": 2,
+  "warmup_check_interval": 64,
+  "exhaustive_after_pulls_per_source": null,
+  "build_ns": 23805834,
+  "matrix": [
+    {
+      "channels": 2,
+      "ordered_top_k_mismatches": 0,
+      "top_k_fixed_queries": 1106,
+      "all_sources_exhausted_queries": 3,
+      "dynamic_source_pulls": [858367, 761747],
+      "exhaustive_source_pulls": [5747947, 2745476],
+      "source_pull_ratio": 0.1907492420900266,
+      "dynamic_dense_quantized_scores": 5747947,
+      "dynamic_dense_exact_scores": 1824964,
+      "dynamic_sparse_documents_evaluated": 5741679,
+      "dynamic_latency_ns": {"p50": 1568667, "p95": 3196708, "p99": 4103375, "mean": 1754477},
+      "exhaustive_latency_ns": {"p50": 2966583, "p95": 3420458, "p99": 3594959, "mean": 2978249}
+    },
+    {
+      "channels": 4,
+      "ordered_top_k_mismatches": 0,
+      "top_k_fixed_queries": 1109,
+      "all_sources_exhausted_queries": 0,
+      "dynamic_source_pulls": [989735, 917089, 989147, 792939],
+      "exhaustive_source_pulls": [5747947, 2745476, 5747947, 1739140],
+      "source_pull_ratio": 0.23083806461746215,
+      "dynamic_dense_quantized_scores": 11495894,
+      "dynamic_dense_exact_scores": 3867429,
+      "dynamic_sparse_documents_evaluated": 11432113,
+      "dynamic_latency_ns": {"p50": 3059583, "p95": 5777458, "p99": 6847792, "mean": 3292581},
+      "exhaustive_latency_ns": {"p50": 5192458, "p95": 5923125, "p99": 6374375, "mean": 5213052}
+    },
+    {
+      "channels": 8,
+      "ordered_top_k_mismatches": 0,
+      "top_k_fixed_queries": 1109,
+      "all_sources_exhausted_queries": 0,
+      "dynamic_source_pulls": [1134341, 1071244, 1134093, 894286, 1133919, 868290, 1133587, 1070446],
+      "exhaustive_source_pulls": [5747947, 2745476, 5747947, 1739140, 5747947, 1642807, 5747947, 2745476],
+      "source_pull_ratio": 0.2648764759559697,
+      "dynamic_dense_quantized_scores": 22991788,
+      "dynamic_dense_exact_scores": 9580889,
+      "dynamic_sparse_documents_evaluated": 22834725,
+      "dynamic_latency_ns": {"p50": 6473750, "p95": 11482708, "p99": 14281916, "mean": 6894940},
+      "exhaustive_latency_ns": {"p50": 9773959, "p95": 11033333, "p99": 11739166, "mean": 9825081}
+    }
+  ],
+  "negative_ablation": "Per-source drain-to-exhaustion budgets of 512, 1024, and 2048 increased N=4/8 tail latency by paying both prefix-state and full-completion costs.",
+  "limitations": [
+    "The Sparse stream in this control is document-block based, not the new compressed-posting executor.",
+    "Logical source pulls are not equivalent to physical score or posting accesses.",
+    "The four Dense and four Sparse views are deterministic query perturbations for execution research, not evaluated semantic rewrites.",
+    "N=8 p95 and p99 remain slower than full stream exhaustion on hard queries."
+  ]
+}
