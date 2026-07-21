@@ -6,7 +6,9 @@ use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use segment::common::reciprocal_rank_fusion::{DEFAULT_RRF_K, DynamicRrfPolicy, exact_rrf_scoring};
+use segment::common::reciprocal_rank_fusion::{
+    DEFAULT_RRF_K, DynamicRrfPolicy, DynamicRrfScheduler, exact_rrf_scoring,
+};
 use segment::index::dense_ball::DenseDocument;
 use segment::index::n_channel_exact::{
     DenseStreamStrategy, ExactChannelQuery, ExactChannelTelemetry, NChannelExactIndex,
@@ -73,6 +75,41 @@ impl Scenario {
 enum ChannelFamily {
     Sparse,
     Mixed,
+}
+
+#[derive(Clone, Copy)]
+enum SchedulerSelection {
+    MaxNext,
+    CompetitorCost,
+    SafeRouter,
+}
+
+impl SchedulerSelection {
+    fn from_env() -> Self {
+        match env::var("STRATUMIND_SCHEDULER").as_deref() {
+            Ok("max-next") => Self::MaxNext,
+            Ok("competitor-cost") | Err(_) => Self::CompetitorCost,
+            Ok("safe-router") => Self::SafeRouter,
+            Ok(value) => panic!(
+                "STRATUMIND_SCHEDULER must be max-next, competitor-cost, or safe-router; got {value}"
+            ),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::MaxNext => "max-next",
+            Self::CompetitorCost => "competitor-cost",
+            Self::SafeRouter => "safe-router",
+        }
+    }
+
+    fn policy_scheduler(self) -> DynamicRrfScheduler {
+        match self {
+            Self::MaxNext => DynamicRrfScheduler::MaxNextContribution,
+            Self::CompetitorCost | Self::SafeRouter => DynamicRrfScheduler::CompetitorCostAware,
+        }
+    }
 }
 
 impl ChannelFamily {
@@ -154,6 +191,10 @@ struct MatrixRow {
     dynamic_source_pulls: Vec<u64>,
     exhaustive_source_pulls: Vec<u64>,
     source_pull_ratio: f64,
+    certification_checks: u64,
+    safe_router_queries: usize,
+    safe_router_competitor_scheduler_queries: usize,
+    safe_router_shared_sparse_queries: usize,
     dense_quantized_scores: u64,
     dense_exact_scores: u64,
     dense_logical_dot_products: u64,
@@ -200,6 +241,7 @@ struct ExperimentResult {
     dense_stream_strategy: &'static str,
     batch_size: usize,
     sparse_stream_strategy: &'static str,
+    scheduler: &'static str,
     router_probe_depth: usize,
     router_minimum_overlap: f64,
     build_ns: u128,
@@ -271,6 +313,7 @@ fn main() {
     let router = PrefixAgreementRouter::new(router_minimum_overlap);
     let scenario = Scenario::from_env();
     let family = ChannelFamily::from_env();
+    let scheduler = SchedulerSelection::from_env();
     let channel_counts = env::var("SPECTRA_CHANNEL_COUNTS")
         .unwrap_or_else(|_| "2,4,8".to_owned())
         .split(',')
@@ -287,8 +330,9 @@ fn main() {
         .map(|query| QueryVariants::build(query, sparse_term_groups, dense_query_groups))
         .collect();
     let policy = DynamicRrfPolicy {
-        warmup_check_interval: Some(64),
+        scheduler: scheduler.policy_scheduler(),
         exhaustive_after_pulls_per_source: None,
+        ..DynamicRrfPolicy::default()
     };
     let mut matrix = Vec::new();
 
@@ -328,21 +372,36 @@ fn main() {
         let mut router_overlap_sum = 0.0;
         let mut router_minimum_overlap_sum = 0.0;
         let mut router_mismatches = 0usize;
+        let mut certification_checks = 0u64;
+        let mut safe_router_queries = 0usize;
+        let mut safe_router_competitor_scheduler_queries = 0usize;
+        let mut safe_router_shared_sparse_queries = 0usize;
 
         for (query_index, variants) in query_variants.iter().enumerate() {
             let run_dynamic = || {
                 let started = Instant::now();
-                let result = index
-                    .search_with_strategies(
-                        variants.channels(channels, family),
-                        top_k,
-                        DEFAULT_RRF_K,
-                        None,
-                        policy,
-                        dense_stream_strategy,
-                        sparse_stream_strategy,
-                    )
-                    .unwrap();
+                let result = match scheduler {
+                    SchedulerSelection::SafeRouter => index
+                        .search_with_safe_router_policy(
+                            variants.channels(channels, family),
+                            top_k,
+                            DEFAULT_RRF_K,
+                            None,
+                            policy,
+                        )
+                        .unwrap(),
+                    SchedulerSelection::MaxNext | SchedulerSelection::CompetitorCost => index
+                        .search_with_strategies(
+                            variants.channels(channels, family),
+                            top_k,
+                            DEFAULT_RRF_K,
+                            None,
+                            policy,
+                            dense_stream_strategy,
+                            sparse_stream_strategy,
+                        )
+                        .unwrap(),
+                };
                 (result, started.elapsed())
             };
             let run_exhaustive = || exhaustive(&index, variants, channels, family, top_k);
@@ -381,6 +440,14 @@ fn main() {
             {
                 *target += *value as u64;
             }
+            certification_checks += dynamic.execution.certification_checks as u64;
+            safe_router_queries += usize::from(dynamic.physical.safe_router_requested);
+            safe_router_competitor_scheduler_queries += usize::from(
+                dynamic.physical.safe_router_requested
+                    && dynamic.physical.scheduler == DynamicRrfScheduler::CompetitorCostAware,
+            );
+            safe_router_shared_sparse_queries +=
+                usize::from(dynamic.physical.safe_router_selected_shared_sparse);
             for (target, value) in exhaustive_pulls.iter_mut().zip(full_pulls) {
                 *target += value as u64;
             }
@@ -474,6 +541,10 @@ fn main() {
             dynamic_source_pulls: dynamic_pulls,
             exhaustive_source_pulls: exhaustive_pulls,
             source_pull_ratio: dynamic_total as f64 / exhaustive_total as f64,
+            certification_checks,
+            safe_router_queries,
+            safe_router_competitor_scheduler_queries,
+            safe_router_shared_sparse_queries,
             dense_quantized_scores,
             dense_exact_scores,
             dense_logical_dot_products,
@@ -524,6 +595,7 @@ fn main() {
         dense_stream_strategy: dense_stream_name,
         batch_size,
         sparse_stream_strategy: sparse_stream_name,
+        scheduler: scheduler.name(),
         router_probe_depth,
         router_minimum_overlap,
         build_ns,

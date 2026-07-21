@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::reciprocal_rank_fusion::{
-    DEFAULT_RRF_K, DynamicRrfPolicy, DynamicRrfStopReason, exact_rrf_scoring,
+    DEFAULT_RRF_K, DynamicRrfPolicy, DynamicRrfScheduler, DynamicRrfStopReason, exact_rrf_scoring,
 };
 use segment::index::dense_ball::DenseDocument;
 use segment::index::n_channel_exact::{
@@ -123,6 +123,41 @@ impl QueryVariants {
                 }
             })
             .collect()
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SchedulerSelection {
+    MaxNext,
+    CompetitorCost,
+    SafeRouter,
+}
+
+impl SchedulerSelection {
+    fn from_env() -> Self {
+        match env::var("STRATUMIND_SCHEDULER").as_deref() {
+            Ok("max-next") => Self::MaxNext,
+            Ok("competitor-cost") | Err(_) => Self::CompetitorCost,
+            Ok("safe-router") => Self::SafeRouter,
+            Ok(value) => panic!(
+                "STRATUMIND_SCHEDULER must be max-next, competitor-cost, or safe-router; got {value}"
+            ),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::MaxNext => "max-next",
+            Self::CompetitorCost => "competitor-cost",
+            Self::SafeRouter => "safe-router",
+        }
+    }
+
+    fn policy_scheduler(self) -> DynamicRrfScheduler {
+        match self {
+            Self::MaxNext => DynamicRrfScheduler::MaxNextContribution,
+            Self::CompetitorCost | Self::SafeRouter => DynamicRrfScheduler::CompetitorCostAware,
+        }
     }
 }
 
@@ -243,6 +278,7 @@ struct ExperimentResult {
     rrf_k: usize,
     warmup_check_interval: Option<usize>,
     exhaustive_after_pulls_per_source: Option<usize>,
+    scheduler: &'static str,
     sparse_stream_strategy: String,
     dense_stream_strategy: String,
     router_probe_depth: usize,
@@ -279,9 +315,12 @@ fn main() {
                 .parse::<usize>()
                 .expect("invalid exhaustive pull budget")
         });
+    let scheduler = SchedulerSelection::from_env();
     let policy = DynamicRrfPolicy {
         warmup_check_interval,
         exhaustive_after_pulls_per_source,
+        scheduler: scheduler.policy_scheduler(),
+        ..DynamicRrfPolicy::default()
     };
     let sparse_block_size = env_usize("SPECTRA_SPARSE_BLOCK_SIZE", DEFAULT_SPARSE_BLOCK_SIZE);
     let sparse_stream_name =
@@ -507,17 +546,28 @@ fn main() {
             let probe_elapsed = probe_started.elapsed();
             let run_dynamic = || {
                 let started = Instant::now();
-                let result = index
-                    .search_with_strategies(
-                        variants.channels(channels),
-                        top_k,
-                        DEFAULT_RRF_K,
-                        None,
-                        policy,
-                        dense_stream_strategy,
-                        sparse_stream_strategy,
-                    )
-                    .unwrap();
+                let result = match scheduler {
+                    SchedulerSelection::SafeRouter => index
+                        .search_with_safe_router_policy(
+                            variants.channels(channels),
+                            top_k,
+                            DEFAULT_RRF_K,
+                            None,
+                            policy,
+                        )
+                        .unwrap(),
+                    SchedulerSelection::MaxNext | SchedulerSelection::CompetitorCost => index
+                        .search_with_strategies(
+                            variants.channels(channels),
+                            top_k,
+                            DEFAULT_RRF_K,
+                            None,
+                            policy,
+                            dense_stream_strategy,
+                            sparse_stream_strategy,
+                        )
+                        .unwrap(),
+                };
                 (result, started.elapsed())
             };
             let run_exhaustive = || exhaustive(&index, variants, channels, top_k);
@@ -759,6 +809,7 @@ fn main() {
         rrf_k: DEFAULT_RRF_K,
         warmup_check_interval,
         exhaustive_after_pulls_per_source,
+        scheduler: scheduler.name(),
         sparse_stream_strategy: sparse_stream_name,
         dense_stream_strategy: dense_stream_name,
         router_probe_depth,

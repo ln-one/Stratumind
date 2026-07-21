@@ -5,7 +5,97 @@
 
 use std::collections::HashSet;
 
+use crate::common::reciprocal_rank_fusion::DynamicRrfScheduler;
 use crate::types::ExtendedPointId;
+
+/// Every variant names an exact-equivalent physical implementation. The
+/// router cannot select an approximate plan, so a bad estimate can only add
+/// work or latency.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ExactSparseDecodePlan {
+    #[default]
+    IndependentNative,
+    SharedNative,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SafeExactPlan {
+    pub scheduler: DynamicRrfScheduler,
+    pub sparse_decode: ExactSparseDecodePlan,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SafeExactRouter {
+    cost_ratio_for_competitor_scheduler: f64,
+    shared_sparse_max_unique_to_independent_milli: u16,
+}
+
+impl Default for SafeExactRouter {
+    fn default() -> Self {
+        Self {
+            cost_ratio_for_competitor_scheduler: 1.25,
+            shared_sparse_max_unique_to_independent_milli: 950,
+        }
+    }
+}
+
+impl SafeExactRouter {
+    pub fn new(
+        cost_ratio_for_competitor_scheduler: f64,
+        shared_sparse_max_unique_to_independent_milli: u16,
+    ) -> Self {
+        assert!(
+            cost_ratio_for_competitor_scheduler.is_finite()
+                && cost_ratio_for_competitor_scheduler >= 1.0,
+            "cost ratio threshold must be finite and at least one"
+        );
+        assert!(
+            shared_sparse_max_unique_to_independent_milli <= 1_000,
+            "Sparse sharing threshold must be in [0, 1000]"
+        );
+        Self {
+            cost_ratio_for_competitor_scheduler,
+            shared_sparse_max_unique_to_independent_milli,
+        }
+    }
+
+    pub fn decide(
+        &self,
+        source_costs: &[f64],
+        scheduler_costs_are_incremental: bool,
+        sparse_unique_posting_elements: usize,
+        sparse_independent_posting_elements: usize,
+    ) -> SafeExactPlan {
+        let (minimum_cost, maximum_cost) = source_costs
+            .iter()
+            .copied()
+            .filter(|cost| cost.is_finite() && *cost > 0.0)
+            .fold((f64::INFINITY, 0.0f64), |(minimum, maximum), cost| {
+                (minimum.min(cost), maximum.max(cost))
+            });
+        let heterogeneous_costs = scheduler_costs_are_incremental
+            && source_costs.len() > 1
+            && minimum_cost.is_finite()
+            && maximum_cost / minimum_cost >= self.cost_ratio_for_competitor_scheduler;
+        let share_sparse = sparse_independent_posting_elements > 0
+            && sparse_unique_posting_elements.saturating_mul(1_000)
+                <= sparse_independent_posting_elements
+                    .saturating_mul(self.shared_sparse_max_unique_to_independent_milli as usize);
+
+        SafeExactPlan {
+            scheduler: if heterogeneous_costs {
+                DynamicRrfScheduler::CompetitorCostAware
+            } else {
+                DynamicRrfScheduler::MaxNextContribution
+            },
+            sparse_decode: if share_sparse {
+                ExactSparseDecodePlan::SharedNative
+            } else {
+                ExactSparseDecodePlan::IndependentNative
+            },
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrefixExecutionChoice {
@@ -123,6 +213,35 @@ mod tests {
                 &[ids(&[1, 2, 3, 4]), ids(&[1, 2, 5, 6]), ids(&[1, 7, 8, 9]),]
             ),
             0.25
+        );
+    }
+
+    #[test]
+    fn safe_router_uses_cost_aware_schedule_for_heterogeneous_channels() {
+        let plan = SafeExactRouter::default().decide(&[768.0, 3.0], true, 100, 100);
+
+        assert_eq!(plan.scheduler, DynamicRrfScheduler::CompetitorCostAware);
+        assert_eq!(plan.sparse_decode, ExactSparseDecodePlan::IndependentNative);
+    }
+
+    #[test]
+    fn safe_router_does_not_treat_eager_preparation_as_marginal_pull_cost() {
+        let plan = SafeExactRouter::default().decide(&[768.0, 3.0], false, 100, 100);
+
+        assert_eq!(plan.scheduler, DynamicRrfScheduler::MaxNextContribution);
+    }
+
+    #[test]
+    fn safe_router_selects_shared_native_decode_only_for_material_savings() {
+        let router = SafeExactRouter::default();
+
+        assert_eq!(
+            router.decide(&[1.0, 1.0], true, 90, 100).sparse_decode,
+            ExactSparseDecodePlan::SharedNative
+        );
+        assert_eq!(
+            router.decide(&[1.0, 1.0], true, 99, 100).sparse_decode,
+            ExactSparseDecodePlan::IndependentNative
         );
     }
 }

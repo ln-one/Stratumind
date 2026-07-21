@@ -18,7 +18,7 @@ use std::rc::Rc;
 use common::types::PointOffsetType;
 use ordered_float::OrderedFloat;
 
-use crate::common::operation_error::OperationError;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::reciprocal_rank_fusion::{
     DynamicRrfExecution, ExactRrfStream, execute_dynamic_rrf,
 };
@@ -258,6 +258,7 @@ struct SharedExactStream<'a> {
     access: Rc<RefCell<SharedAccessState>>,
     telemetry: Rc<RefCell<SharedChannelTelemetry>>,
     failed: Rc<RefCell<Option<SharedNodeError>>>,
+    failure_emitted: bool,
 }
 
 impl<'a> SharedExactStream<'a> {
@@ -296,6 +297,7 @@ impl<'a> SharedExactStream<'a> {
             access,
             telemetry,
             failed,
+            failure_emitted: false,
         })
     }
 
@@ -354,11 +356,17 @@ impl<'a> SharedExactStream<'a> {
 }
 
 impl Iterator for SharedExactStream<'_> {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if self.failed.borrow().is_some() {
+            if let Some(error) = self.failed.borrow().as_ref() {
+                if !self.failure_emitted {
+                    self.failure_emitted = true;
+                    return Some(Err(OperationError::service_error_light(format!(
+                        "shared exact stream failed: {error}"
+                    ))));
+                }
                 return None;
             }
             if self.next_point_is_fixed() {
@@ -366,12 +374,12 @@ impl Iterator for SharedExactStream<'_> {
                 return self
                     .pending_points
                     .pop()
-                    .map(|point| ExtendedPointId::from(u64::from(point.id)));
+                    .map(|point| Ok(ExtendedPointId::from(u64::from(point.id))));
             }
             if self.pending_nodes.is_empty() {
                 let point = self.pending_points.pop()?;
                 self.telemetry.borrow_mut().points_emitted += 1;
-                return Some(ExtendedPointId::from(u64::from(point.id)));
+                return Some(Ok(ExtendedPointId::from(u64::from(point.id))));
             }
             self.expand_next_node();
         }
@@ -403,7 +411,15 @@ pub fn execute_shared_dynamic_rrf<'a>(
             Rc::clone(&failed),
         )?));
     }
-    let fusion = execute_dynamic_rrf(sources, top_k, rrf_k, weights)?;
+    let fusion = match execute_dynamic_rrf(sources, top_k, rrf_k, weights) {
+        Ok(fusion) => fusion,
+        Err(error) => {
+            if let Some(shared_error) = failed.borrow_mut().take() {
+                return Err(shared_error);
+            }
+            return Err(error.into());
+        }
+    };
     if let Some(error) = failed.borrow_mut().take() {
         return Err(error);
     }

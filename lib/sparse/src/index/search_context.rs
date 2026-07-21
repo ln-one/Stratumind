@@ -8,6 +8,7 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::Result;
 use serde::Serialize;
 
+use super::posting_batch::score_posting_batch;
 use super::posting_list_common::PostingListIter;
 use crate::SearchScratch;
 use crate::common::sparse_vector::{RemappedSparseVector, score_vectors};
@@ -212,26 +213,14 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         let batch_len = batch_last_id - batch_start_id + 1;
         self.telemetry.batch_count += 1;
         self.telemetry.scored_id_span += batch_len as usize;
-        self.scores.clear(); // keep underlying allocated memory
-        self.scores.resize(batch_len as usize, 0.0);
-
-        for posting in self.postings_iterators.iter_mut() {
-            let elements_before = posting.posting_list_iterator.len_to_end();
-            posting.posting_list_iterator.for_each_till_id(
-                batch_last_id,
-                self.scores.as_mut_slice(),
-                #[inline(always)]
-                |scores, id, weight| {
-                    let element_score = weight * posting.query_weight;
-                    let local_id = (id - batch_start_id) as usize;
-                    // SAFETY: `id` is within `batch_start_id..=batch_last_id`
-                    // Thus, `local_id` is within `0..batch_len`.
-                    *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
-                },
-            );
-            self.telemetry.posting_elements_visited +=
-                elements_before - posting.posting_list_iterator.len_to_end();
-        }
+        self.telemetry.posting_elements_visited += score_posting_batch(
+            self.postings_iterators
+                .iter_mut()
+                .map(|posting| (&mut posting.posting_list_iterator, posting.query_weight)),
+            batch_start_id,
+            batch_last_id,
+            self.scores,
+        );
 
         for (local_index, &score) in self.scores.iter().enumerate() {
             if score != 0.0 {

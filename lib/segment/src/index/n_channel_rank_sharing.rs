@@ -14,6 +14,7 @@ use std::rc::Rc;
 use sparse::common::sparse_vector::RemappedSparseVector;
 
 use super::n_channel_exact::ExactChannelQuery;
+use crate::common::operation_error::OperationError;
 use crate::common::reciprocal_rank_fusion::ExactRrfStream;
 use crate::types::ExtendedPointId;
 
@@ -32,7 +33,9 @@ struct Coordinator<'a> {
     buffer: VecDeque<ExtendedPointId>,
     base_position: usize,
     reader_positions: Vec<Option<usize>>,
+    reader_errors_delivered: Vec<bool>,
     exhausted: bool,
+    terminal_error: Option<OperationError>,
     cancelled: bool,
     physical_pulls: usize,
     peak_buffered_identities: usize,
@@ -56,7 +59,9 @@ impl<'a> SharedRankStream<'a> {
                 buffer: VecDeque::new(),
                 base_position: 0,
                 reader_positions: Vec::new(),
+                reader_errors_delivered: Vec::new(),
                 exhausted: false,
+                terminal_error: None,
                 cancelled: false,
                 physical_pulls: 0,
                 peak_buffered_identities: 0,
@@ -75,6 +80,7 @@ impl<'a> SharedRankStream<'a> {
         );
         let reader = coordinator.reader_positions.len();
         coordinator.reader_positions.push(Some(0));
+        coordinator.reader_errors_delivered.push(false);
         drop(coordinator);
         Box::new(Reader {
             coordinator: Rc::clone(&self.coordinator),
@@ -99,7 +105,7 @@ impl Coordinator<'_> {
 }
 
 impl Iterator for Reader<'_> {
-    type Item = ExtendedPointId;
+    type Item = Result<ExtendedPointId, OperationError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut coordinator = self.coordinator.borrow_mut();
@@ -113,12 +119,17 @@ impl Iterator for Reader<'_> {
                 .expect("an unfinished shared stream has a producer")
                 .next()
             {
-                Some(identity) => {
+                Some(Ok(identity)) => {
                     coordinator.buffer.push_back(identity);
                     coordinator.physical_pulls += 1;
                     coordinator.peak_buffered_identities = coordinator
                         .peak_buffered_identities
                         .max(coordinator.buffer.len());
+                }
+                Some(Err(error)) => {
+                    coordinator.terminal_error = Some(error);
+                    coordinator.exhausted = true;
+                    coordinator.inner = None;
                 }
                 None => {
                     coordinator.exhausted = true;
@@ -130,11 +141,18 @@ impl Iterator for Reader<'_> {
             .checked_sub(coordinator.base_position)
             .and_then(|offset| coordinator.buffer.get(offset))
             .copied();
-        if identity.is_some() {
+        if let Some(identity) = identity {
             coordinator.reader_positions[self.reader] = Some(position + 1);
             coordinator.prune_consumed();
+            return Some(Ok(identity));
         }
-        identity
+        if !coordinator.reader_errors_delivered[self.reader]
+            && let Some(error) = coordinator.terminal_error.clone()
+        {
+            coordinator.reader_errors_delivered[self.reader] = true;
+            return Some(Err(error));
+        }
+        None
     }
 }
 
@@ -339,6 +357,14 @@ mod tests {
 
     use super::*;
 
+    fn stream<const N: usize>(values: [u64; N]) -> ExactRrfStream<'static> {
+        Box::new(values.into_iter().map(ExtendedPointId::from).map(Ok))
+    }
+
+    fn collect(stream: &mut ExactRrfStream<'_>) -> Vec<ExtendedPointId> {
+        stream.by_ref().collect::<Result<Vec<_>, _>>().unwrap()
+    }
+
     #[test]
     fn identical_sources_share_physical_pulls_without_changing_logical_order() {
         let query = RemappedSparseVector {
@@ -349,14 +375,11 @@ mod tests {
             ExactChannelQuery::Sparse(query.clone()),
             ExactChannelQuery::Sparse(query),
         ];
-        let sources: Vec<ExactRrfStream<'_>> = vec![
-            Box::new([1_u64, 2, 3].into_iter().map(ExtendedPointId::from)),
-            Box::new([1_u64, 2, 3].into_iter().map(ExtendedPointId::from)),
-        ];
+        let sources: Vec<ExactRrfStream<'_>> = vec![stream([1, 2, 3]), stream([1, 2, 3])];
         let (mut sources, observer) =
             share_identical_rank_streams(&queries, sources, None, false, true);
-        let first: Vec<_> = sources[0].by_ref().collect();
-        let second: Vec<_> = sources[1].by_ref().collect();
+        let first = collect(&mut sources[0]);
+        let second = collect(&mut sources[1]);
         assert_eq!(first, second);
         let telemetry = observer.telemetry(&[3, 3]);
         assert_eq!(telemetry.logical_pulls, 6);
@@ -375,10 +398,7 @@ mod tests {
             ExactChannelQuery::Sparse(query.clone()),
             ExactChannelQuery::Sparse(query),
         ];
-        let sources: Vec<ExactRrfStream<'_>> = vec![
-            Box::new([1_u64].into_iter().map(ExtendedPointId::from)),
-            Box::new([1_u64].into_iter().map(ExtendedPointId::from)),
-        ];
+        let sources: Vec<ExactRrfStream<'_>> = vec![stream([1]), stream([1])];
         let weights = [1.0, 2.0];
         let (mut sources, observer) =
             share_identical_rank_streams(&queries, sources, Some(&weights), false, true);
@@ -398,19 +418,16 @@ mod tests {
             ExactChannelQuery::Dense(&query),
         ];
         assert_eq!(dense_representatives(&queries, None), vec![true, false]);
-        let sources: Vec<ExactRrfStream<'_>> = vec![
-            Box::new([1_u64, 3].into_iter().map(ExtendedPointId::from)),
-            Box::new(std::iter::empty()),
-        ];
+        let sources: Vec<ExactRrfStream<'_>> = vec![stream([1, 3]), Box::new(std::iter::empty())];
         let (mut sources, observer) =
             share_identical_rank_streams(&queries, sources, None, true, false);
         assert_eq!(
-            sources[0].by_ref().collect::<Vec<_>>(),
-            vec![1_u64.into(), 3_u64.into()]
+            collect(&mut sources[0]),
+            vec![ExtendedPointId::from(1_u64), ExtendedPointId::from(3_u64)]
         );
         assert_eq!(
-            sources[1].by_ref().collect::<Vec<_>>(),
-            vec![1_u64.into(), 3_u64.into()]
+            collect(&mut sources[1]),
+            vec![ExtendedPointId::from(1_u64), ExtendedPointId::from(3_u64)]
         );
         let telemetry = observer.telemetry(&[2, 2]);
         assert_eq!(telemetry.physical_streams, 1);
@@ -427,16 +444,20 @@ mod tests {
             ExactChannelQuery::Sparse(query.clone()),
             ExactChannelQuery::Sparse(query),
         ];
-        let sources: Vec<ExactRrfStream<'_>> = vec![
-            Box::new([1_u64, 2, 3].into_iter().map(ExtendedPointId::from)),
-            Box::new(std::iter::empty()),
-        ];
+        let sources: Vec<ExactRrfStream<'_>> =
+            vec![stream([1, 2, 3]), Box::new(std::iter::empty())];
         let (mut sources, observer) =
             share_identical_rank_streams(&queries, sources, None, false, true);
 
         for expected in [1_u64, 2, 3] {
-            assert_eq!(sources[0].next(), Some(expected.into()));
-            assert_eq!(sources[1].next(), Some(expected.into()));
+            assert_eq!(
+                sources[0].next().transpose().unwrap(),
+                Some(expected.into())
+            );
+            assert_eq!(
+                sources[1].next().transpose().unwrap(),
+                Some(expected.into())
+            );
         }
 
         let coordinator = observer.shared[0].1.borrow();

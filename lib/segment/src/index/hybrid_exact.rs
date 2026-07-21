@@ -14,7 +14,7 @@ use sparse::index::block_max::{
 use super::dense_ball::{
     DenseBallError, DenseBallIndex, DenseBallStream, DenseBallTelemetry, DenseDocument,
 };
-use crate::common::operation_error::OperationError;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::reciprocal_rank_fusion::{
     DynamicRrfExecution, ExactRrfStream, execute_dynamic_rrf,
 };
@@ -220,12 +220,12 @@ struct SparseIdentityStream<'a> {
 }
 
 impl Iterator for SparseIdentityStream<'_> {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let point = self.inner.next();
         self.telemetry.set(self.inner.telemetry());
-        point.map(|point| ExtendedPointId::from(u64::from(point.idx)))
+        point.map(|point| Ok(ExtendedPointId::from(u64::from(point.idx))))
     }
 }
 
@@ -235,12 +235,12 @@ struct DenseIdentityStream<'a> {
 }
 
 impl Iterator for DenseIdentityStream<'_> {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let point = self.inner.next();
         self.telemetry.set(self.inner.telemetry());
-        point.map(|point| ExtendedPointId::from(u64::from(point.id)))
+        point.map(|point| Ok(ExtendedPointId::from(u64::from(point.id))))
     }
 }
 

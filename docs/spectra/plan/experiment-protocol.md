@@ -70,6 +70,40 @@ versus Qdrant native hybrid at matched quality. Broad superiority is allowed onl
 if the routed portfolio is Pareto-competitive across every declared workload
 region; otherwise the paper states conditional regions and fallback rules.
 
+### Stratumind V0 scheduler matrix
+
+Build the native synthetic executor once, then run the counterbalanced two-channel matrix:
+
+```bash
+cargo build --release -p segment --example spectra_n_channel_synthetic
+python3 tools/spectra/run_stratumind_v0_executor_matrix.py \
+  --binary target/release/examples/spectra_n_channel_synthetic \
+  --output docs/spectra/results/generated/stratumind-v0-executor-matrix-100k-v3.local.json
+```
+
+The runner fixes one Dense and one Sparse-impact channel and compares `max-next`,
+`competitor-cost`, and `safe-router` on correlated, independent, anti-correlated, and flat-tie
+inputs. Every arm is rejected on any deterministic ordered Top-K mismatch. The primary comparison
+is source pulls and native physical counters; latency is secondary. A reduction in logical pulls is
+not described as a physical speedup when Dense still scores every quantized row or Sparse expands a
+whole posting batch.
+
+The current frozen 100K/20-query/five-repetition result is
+`docs/spectra/results/generated/stratumind-v0-executor-matrix-100k-v3.local.json`. All 12 arms and
+both the dynamic executor and prefix Router have zero ordered Top-K mismatches. Median dynamic pull
+ratios for `max-next` are 0.00020/0.803676/1.0/0.00020 on
+correlated/independent/anti-correlated/flat-tie input. `competitor-cost` is strictly worse in this
+mixed Dense+Sparse profile (0.00022/0.9028465/1.0/0.00022), so it remains an all-incremental-stream
+research option rather than the V0 default.
+
+The Safe Router now distinguishes marginal pull cost from already-paid stream preparation. It
+selects `max-next` for all mixed V0 queries and exactly matches its pull ratios. The independent
+prefix Router selects Dynamic for every correlated and flat-tie query and Exhaustive for every
+independent and anti-correlated query, again with zero mismatch. Its median p50 is about
+0.66/42.3/34.3/14.8 ms respectively, including probe cost. Dense still performs all physical
+quantized dot products in every arm; these numbers prove exact plan selection and consumption
+behavior, not yet a native Dense physical speedup.
+
 ## Efficiency and ablations
 
 - Channel count: 1/2/4/8.

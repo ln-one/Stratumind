@@ -374,9 +374,9 @@ fn materialized_streams(
     built
         .physical_leaf_sources
         .iter()
-        .map(
-            |&source| Some(Box::new(orders[source].clone().into_iter()) as ExactRrfStream<'static>),
-        )
+        .map(|&source| {
+            Some(Box::new(orders[source].clone().into_iter().map(Ok)) as ExactRrfStream<'static>)
+        })
         .chain(std::iter::repeat_with(|| None).take(built.fusion_nodes))
         .collect()
 }

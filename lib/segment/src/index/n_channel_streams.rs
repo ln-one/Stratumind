@@ -11,11 +11,12 @@ use std::sync::atomic::Ordering::Relaxed;
 use sparse::index::adaptive_top_k_stream::AdaptiveTopKStream;
 use sparse::index::block_max::BlockMaxStream;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
-use sparse::index::posting_block_stream::PostingBlockStream;
+use sparse::index::posting_block_stream::{NativeCertifiedSparseCursor, NativeSparseCursorError};
 use sparse::index::shared_posting_block_stream::SharedPostingBlockStream;
 
 use super::dense_quantized::DenseQuantizedStream;
 use super::n_channel_exact::{ExactChannelTelemetry, SharedSparseChannelTelemetry};
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::reciprocal_rank_fusion::ExactRrfStream;
 use crate::types::ExtendedPointId;
 
@@ -25,12 +26,15 @@ pub(super) struct CancellableIdentityStream<'a> {
 }
 
 impl Iterator for CancellableIdentityStream<'_> {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        (!self.stopped.load(Relaxed))
-            .then(|| self.inner.next())
-            .flatten()
+        if self.stopped.load(Relaxed) {
+            return Some(Err(OperationError::cancelled(
+                "exact rank stream cancelled before the next pull",
+            )));
+        }
+        self.inner.next()
     }
 }
 
@@ -40,7 +44,7 @@ pub(super) struct SharedPostingIdentityStream<'a> {
 }
 
 impl Iterator for SharedPostingIdentityStream<'_> {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let point = self.inner.next();
@@ -48,7 +52,7 @@ impl Iterator for SharedPostingIdentityStream<'_> {
             .set(ExactChannelTelemetry::SparseSharedPosting(
                 self.inner.telemetry(),
             ));
-        point.map(|point| ExtendedPointId::from(u64::from(point.idx)))
+        point.map(|point| Ok(ExtendedPointId::from(u64::from(point.idx))))
     }
 }
 
@@ -58,7 +62,7 @@ pub(super) struct SharedSparseIdentityStream {
 }
 
 impl Iterator for SharedSparseIdentityStream {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let point = self.inner.next();
@@ -72,7 +76,7 @@ impl Iterator for SharedSparseIdentityStream {
                 },
             ));
         }
-        point.map(|point| ExtendedPointId::from(u64::from(point.idx)))
+        point.map(|point| Ok(ExtendedPointId::from(u64::from(point.idx))))
     }
 }
 
@@ -82,13 +86,13 @@ pub(super) struct DenseIdentityStream<'a> {
 }
 
 impl Iterator for DenseIdentityStream<'_> {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let point = self.inner.next();
         self.telemetry
             .set(ExactChannelTelemetry::Dense(self.inner.telemetry()));
-        point.map(|point| ExtendedPointId::from(u64::from(point.id)))
+        point.map(|point| Ok(ExtendedPointId::from(u64::from(point.id))))
     }
 }
 
@@ -98,29 +102,37 @@ pub(super) struct SparseIdentityStream<'a> {
 }
 
 impl Iterator for SparseIdentityStream<'_> {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let point = self.inner.next();
         self.telemetry
             .set(ExactChannelTelemetry::Sparse(self.inner.telemetry()));
-        point.map(|point| ExtendedPointId::from(u64::from(point.idx)))
+        point.map(|point| Ok(ExtendedPointId::from(u64::from(point.idx))))
     }
 }
 
 pub(super) struct PostingSparseIdentityStream<'a> {
-    pub(super) inner: PostingBlockStream<'a, InvertedIndexCompressedImmutableRam<f32>>,
+    pub(super) inner: NativeCertifiedSparseCursor<'a, InvertedIndexCompressedImmutableRam<f32>>,
     pub(super) telemetry: Rc<Cell<ExactChannelTelemetry>>,
+    pub(super) stopped: &'a AtomicBool,
 }
 
 impl Iterator for PostingSparseIdentityStream<'_> {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let point = self.inner.next();
+        let point = self.inner.next_result(self.stopped);
         self.telemetry
             .set(ExactChannelTelemetry::SparsePosting(self.inner.telemetry()));
-        point.map(|point| ExtendedPointId::from(u64::from(point.idx)))
+        match point {
+            Ok(Some(point)) => Some(Ok(ExtendedPointId::from(u64::from(point.idx)))),
+            Ok(None) => None,
+            Err(NativeSparseCursorError::Cancelled) => Some(Err(OperationError::cancelled(
+                "native Sparse cursor cancelled before exact EOF",
+            ))),
+            Err(error) => Some(Err(OperationError::service_error_light(error.to_string()))),
+        }
     }
 }
 
@@ -130,14 +142,14 @@ pub(super) struct AdaptiveSparseIdentityStream<'a> {
 }
 
 impl Iterator for AdaptiveSparseIdentityStream<'_> {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let point = self.inner.next();
         self.telemetry.set(ExactChannelTelemetry::SparseAdaptive(
             self.inner.telemetry(),
         ));
-        point.map(|point| ExtendedPointId::from(u64::from(point.idx)))
+        point.map(|point| Ok(ExtendedPointId::from(u64::from(point.idx))))
     }
 }
 
@@ -149,7 +161,7 @@ mod cancellation_tests {
     fn cancellation_stops_identity_stream_before_the_next_pull() {
         let stopped = AtomicBool::new(false);
         let point = ExtendedPointId::from(7_u64);
-        let inner = Box::new(std::iter::once(point)) as ExactRrfStream<'_>;
+        let inner = Box::new(std::iter::once(Ok(point))) as ExactRrfStream<'_>;
         let mut stream = CancellableIdentityStream {
             inner,
             stopped: &stopped,
@@ -157,6 +169,9 @@ mod cancellation_tests {
 
         stopped.store(true, Relaxed);
 
-        assert_eq!(stream.next(), None);
+        assert!(matches!(
+            stream.next(),
+            Some(Err(OperationError::Cancelled { .. }))
+        ));
     }
 }

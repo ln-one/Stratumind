@@ -4,6 +4,7 @@ pub mod dense_quantized;
 pub mod dense_scalar_certified;
 pub mod dense_threshold;
 pub mod exact_composition;
+pub mod exact_score_stream;
 pub mod field_index;
 pub mod hnsw_index;
 pub mod hybrid_exact;

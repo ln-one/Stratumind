@@ -1,7 +1,11 @@
 // Copyright 2026 Stratumind contributors.
 // Licensed under the Apache License, Version 2.0.
 
-//! Exact resumable Sparse stream backed by geometrically growing native Top-K queries.
+//! Legacy exact Sparse baseline backed by geometrically growing native Top-K queries.
+//!
+//! Each refill reruns `SearchContext` at a larger limit. Production V0 uses
+//! `NativeCertifiedSparseCursor`; this module remains as an exact experiment
+//! oracle and cost comparison.
 
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;

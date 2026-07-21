@@ -9,6 +9,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::reciprocal_rank_fusion::{
     DynamicRrfPolicy, DynamicRrfSession, ExactRrfStream, exact_rrf_scoring,
 };
@@ -218,11 +219,11 @@ struct FallibleLeafAdapter<'a> {
 }
 
 impl Iterator for FallibleLeafAdapter<'_> {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.as_mut()?.next() {
-            Some(Ok(identity)) if self.seen.insert(identity) => Some(identity),
+            Some(Ok(identity)) if self.seen.insert(identity) => Some(Ok(identity)),
             Some(Ok(identity)) => {
                 let mut failure = self.failure.borrow_mut();
                 if failure.is_none() {
@@ -232,18 +233,38 @@ impl Iterator for FallibleLeafAdapter<'_> {
                     });
                 }
                 self.inner = None;
-                None
+                Some(Err(OperationError::validation_error(format!(
+                    "composition leaf {} contains duplicate identity {identity}",
+                    self.node
+                ))))
             }
             Some(Err(source_failure)) => {
                 let mut failure = self.failure.borrow_mut();
                 if failure.is_none() {
                     *failure = Some(ExactCompositionError::Leaf {
                         node: self.node,
-                        failure: source_failure,
+                        failure: source_failure.clone(),
                     });
                 }
                 self.inner = None;
-                None
+                Some(Err(match source_failure {
+                    ExactCompositionStreamFailure::Cancelled => OperationError::cancelled(format!(
+                        "composition leaf {} was cancelled",
+                        self.node
+                    )),
+                    ExactCompositionStreamFailure::SnapshotChanged => {
+                        OperationError::service_error_light(format!(
+                            "composition leaf {} snapshot changed",
+                            self.node
+                        ))
+                    }
+                    ExactCompositionStreamFailure::Source(message) => {
+                        OperationError::service_error_light(format!(
+                            "composition leaf {} failed: {message}",
+                            self.node
+                        ))
+                    }
+                }))
             }
             None => {
                 self.inner = None;
@@ -254,7 +275,7 @@ impl Iterator for FallibleLeafAdapter<'_> {
 }
 
 impl Iterator for LazyFusionStream<'_> {
-    type Item = ExtendedPointId;
+    type Item = OperationResult<ExtendedPointId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self
@@ -281,7 +302,7 @@ impl Iterator for LazyFusionStream<'_> {
                     });
                 }
                 self.session = None;
-                return None;
+                return Some(Err(error));
             }
         };
         {
@@ -298,7 +319,7 @@ impl Iterator for LazyFusionStream<'_> {
         if self.output_limit == Some(self.emitted) {
             self.session = None;
         }
-        Some(identity)
+        Some(Ok(identity))
     }
 }
 
@@ -414,7 +435,13 @@ impl ExactCompositionPlan {
         let leaf_streams = leaf_streams
             .into_iter()
             .map(|stream| {
-                stream.map(|stream| Box::new(stream.map(Ok)) as FallibleExactCompositionStream<'a>)
+                stream.map(|stream| {
+                    Box::new(stream.map(|item| {
+                        item.map_err(|error| {
+                            ExactCompositionStreamFailure::Source(error.to_string())
+                        })
+                    })) as FallibleExactCompositionStream<'a>
+                })
             })
             .collect();
         self.execute_with_fallible_leaf_streams_and_policy(root_top_k, leaf_streams, policy)
@@ -538,11 +565,18 @@ impl ExactCompositionPlan {
             .expect("the root runtime is built")
             .shared
             .subscribe();
-        let point_ids: Vec<_> = root.by_ref().take(root_top_k).collect();
+        let point_ids = root
+            .by_ref()
+            .take(root_top_k)
+            .collect::<OperationResult<Vec<_>>>();
         drop(root);
         if let Some(error) = failure.borrow_mut().take() {
             return Err(error);
         }
+        let point_ids = point_ids.map_err(|error| ExactCompositionError::Fusion {
+            node: self.root,
+            message: error.to_string(),
+        })?;
 
         let mut telemetry = Vec::with_capacity(runtime.len());
         let mut leaf_physical_pulls = 0;
@@ -628,7 +662,13 @@ impl ExactCompositionPlan {
         let leaf_streams = leaf_streams
             .into_iter()
             .map(|stream| {
-                stream.map(|stream| Box::new(stream.map(Ok)) as FallibleExactCompositionStream<'a>)
+                stream.map(|stream| {
+                    Box::new(stream.map(|item| {
+                        item.map_err(|error| {
+                            ExactCompositionStreamFailure::Source(error.to_string())
+                        })
+                    })) as FallibleExactCompositionStream<'a>
+                })
             })
             .collect();
         self.exhaustive_with_fallible_leaf_streams(root_top_k, leaf_streams)
@@ -959,14 +999,11 @@ mod tests {
                 dense
                     .stream(&dense_query)
                     .unwrap()
-                    .map(|point| ExtendedPointId::from(u64::from(point.id))),
+                    .map(|point| Ok(ExtendedPointId::from(u64::from(point.id)))),
             )),
-            Some(Box::new(
-                sparse
-                    .stream(sparse_query)
-                    .unwrap()
-                    .map(|point| ExtendedPointId::from(u64::from(point.idx))),
-            )),
+            Some(Box::new(sparse.stream(sparse_query).unwrap().map(
+                |point| Ok(ExtendedPointId::from(u64::from(point.idx))),
+            ))),
             None,
         ];
 
@@ -1327,10 +1364,10 @@ mod tests {
             ExactCompositionError::MissingLeafStream(0)
         );
         let actual = plan
-            .execute_with_leaf_streams(2, vec![Some(Box::new(ids([3, 1]).into_iter()))])
+            .execute_with_leaf_streams(2, vec![Some(Box::new(ids([3, 1]).into_iter().map(Ok)))])
             .unwrap();
         let exhaustive = plan
-            .exhaustive_with_leaf_streams(2, vec![Some(Box::new(ids([3, 1]).into_iter()))])
+            .exhaustive_with_leaf_streams(2, vec![Some(Box::new(ids([3, 1]).into_iter().map(Ok)))])
             .unwrap();
 
         assert_eq!(actual.point_ids, ids([3, 1]));

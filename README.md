@@ -6,8 +6,9 @@ work while preserving the same deterministic Top-K as exhaustive WRRF
 composition.
 
 The current implementation is a research prototype, not an official Qdrant
-release. The generic composition model and reproducible experiments are
-documented in [`docs/spectra/exact-composition-research.md`](docs/spectra/exact-composition-research.md).
+release. The V0 service contract is documented in
+[`docs/STRATUMIND.md`](docs/STRATUMIND.md); the generic composition model and reproducible experiments
+are documented in [`docs/spectra/exact-composition-research.md`](docs/spectra/exact-composition-research.md).
 Historical `spectra_*` paths are retained as experiment provenance and do not
 denote the fork's current project identity.
 

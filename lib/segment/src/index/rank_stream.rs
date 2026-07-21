@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
+use crate::common::operation_error::OperationError;
 use crate::common::reciprocal_rank_fusion::ExactRrfStream;
 use crate::types::ExtendedPointId;
 
@@ -16,7 +17,9 @@ struct Coordinator<'a> {
     memory: Option<ReplayBufferTracker>,
     base_position: usize,
     reader_positions: Vec<Option<usize>>,
+    reader_errors_delivered: Vec<bool>,
     exhausted: bool,
+    terminal_error: Option<OperationError>,
     cancelled: bool,
     physical_pulls: usize,
     peak_buffered_identities: usize,
@@ -90,7 +93,9 @@ impl<'a> SharedRankStream<'a> {
                 memory,
                 base_position: 0,
                 reader_positions: Vec::new(),
+                reader_errors_delivered: Vec::new(),
                 exhausted: false,
+                terminal_error: None,
                 cancelled: false,
                 physical_pulls: 0,
                 peak_buffered_identities: 0,
@@ -109,6 +114,7 @@ impl<'a> SharedRankStream<'a> {
         );
         let reader = coordinator.reader_positions.len();
         coordinator.reader_positions.push(Some(0));
+        coordinator.reader_errors_delivered.push(false);
         drop(coordinator);
         Box::new(Reader {
             coordinator: Rc::clone(&self.coordinator),
@@ -148,7 +154,7 @@ impl Coordinator<'_> {
 }
 
 impl Iterator for Reader<'_> {
-    type Item = ExtendedPointId;
+    type Item = Result<ExtendedPointId, OperationError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut coordinator = self.coordinator.borrow_mut();
@@ -162,7 +168,7 @@ impl Iterator for Reader<'_> {
                 .expect("an unfinished shared stream has a producer")
                 .next()
             {
-                Some(identity) => {
+                Some(Ok(identity)) => {
                     coordinator.buffer.push_back(identity);
                     if let Some(memory) = &coordinator.memory {
                         memory.grow(1);
@@ -171,6 +177,11 @@ impl Iterator for Reader<'_> {
                     coordinator.peak_buffered_identities = coordinator
                         .peak_buffered_identities
                         .max(coordinator.buffer.len());
+                }
+                Some(Err(error)) => {
+                    coordinator.terminal_error = Some(error);
+                    coordinator.exhausted = true;
+                    coordinator.inner = None;
                 }
                 None => {
                     coordinator.exhausted = true;
@@ -182,11 +193,18 @@ impl Iterator for Reader<'_> {
             .checked_sub(coordinator.base_position)
             .and_then(|offset| coordinator.buffer.get(offset))
             .copied();
-        if identity.is_some() {
+        if let Some(identity) = identity {
             coordinator.reader_positions[self.reader] = Some(position + 1);
             coordinator.prune_consumed();
+            return Some(Ok(identity));
         }
-        identity
+        if !coordinator.reader_errors_delivered[self.reader]
+            && let Some(error) = coordinator.terminal_error.clone()
+        {
+            coordinator.reader_errors_delivered[self.reader] = true;
+            return Some(Err(error));
+        }
+        None
     }
 }
 
@@ -212,7 +230,7 @@ mod tests {
         I: IntoIterator<Item = u64>,
         I::IntoIter: 'static,
     {
-        Box::new(values.into_iter().map(ExtendedPointId::from))
+        Box::new(values.into_iter().map(ExtendedPointId::from).map(Ok))
     }
 
     #[test]
@@ -221,12 +239,12 @@ mod tests {
         let mut first = shared.subscribe();
         let mut second = shared.subscribe();
 
-        assert_eq!(first.next(), Some(1.into()));
-        assert_eq!(first.next(), Some(2.into()));
-        assert_eq!(second.next(), Some(1.into()));
-        assert_eq!(second.next(), Some(2.into()));
-        assert_eq!(second.next(), Some(3.into()));
-        assert_eq!(first.next(), Some(3.into()));
+        assert_eq!(first.next().transpose().unwrap(), Some(1.into()));
+        assert_eq!(first.next().transpose().unwrap(), Some(2.into()));
+        assert_eq!(second.next().transpose().unwrap(), Some(1.into()));
+        assert_eq!(second.next().transpose().unwrap(), Some(2.into()));
+        assert_eq!(second.next().transpose().unwrap(), Some(3.into()));
+        assert_eq!(first.next().transpose().unwrap(), Some(3.into()));
 
         let telemetry = shared.telemetry();
         assert_eq!(telemetry.physical_pulls, 3);
@@ -238,7 +256,7 @@ mod tests {
     fn dropping_the_last_reader_cancels_the_producer() {
         let shared = SharedRankStream::new(stream(0..100));
         let mut reader = shared.subscribe();
-        assert_eq!(reader.next(), Some(0.into()));
+        assert_eq!(reader.next().transpose().unwrap(), Some(0.into()));
 
         drop(reader);
 
@@ -246,5 +264,36 @@ mod tests {
         assert!(telemetry.cancelled);
         assert!(telemetry.exhausted);
         assert_eq!(telemetry.active_readers, 0);
+    }
+
+    #[test]
+    fn producer_failure_is_replayed_to_every_logical_reader() {
+        let producer: ExactRrfStream<'_> = Box::new(
+            vec![
+                Ok(ExtendedPointId::from(7_u64)),
+                Err(OperationError::cancelled("test producer stopped")),
+            ]
+            .into_iter(),
+        );
+        let shared = SharedRankStream::new(producer);
+        let mut first = shared.subscribe();
+        let mut second = shared.subscribe();
+
+        assert_eq!(first.next().transpose().unwrap(), Some(7.into()));
+        assert!(matches!(
+            first.next(),
+            Some(Err(OperationError::Cancelled { .. }))
+        ));
+        assert_eq!(second.next().transpose().unwrap(), Some(7.into()));
+        assert!(matches!(
+            second.next(),
+            Some(Err(OperationError::Cancelled { .. }))
+        ));
+        assert_eq!(first.next(), None);
+        assert_eq!(second.next(), None);
+
+        let telemetry = shared.telemetry();
+        assert!(telemetry.exhausted);
+        assert_eq!(telemetry.physical_pulls, 1);
     }
 }

@@ -61,7 +61,21 @@ pub struct DynamicRrfState {
     points: AHashMap<ExtendedPointId, PartialRrfPoint>,
 }
 
-pub type ExactRrfStream<'a> = Box<dyn Iterator<Item = ExtendedPointId> + 'a>;
+/// Recoverable exact rank stream.
+///
+/// `None` is the only successful end-of-stream signal. Producer failures stay
+/// distinct from exhaustion so a partial prefix can never be certified after
+/// an I/O, snapshot, or cancellation error.
+pub type ExactRrfStream<'a> = Box<dyn Iterator<Item = OperationResult<ExtendedPointId>> + 'a>;
+
+/// Adapts an in-memory or otherwise infallible ordered identity iterator to
+/// the production exact-stream contract.
+pub fn infallible_exact_rrf_stream<'a, I>(source: I) -> ExactRrfStream<'a>
+where
+    I: Iterator<Item = ExtendedPointId> + 'a,
+{
+    Box::new(source.map(Ok))
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DynamicRrfStopReason {
@@ -85,12 +99,40 @@ pub enum DynamicRrfAdvance {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DynamicRrfScheduler {
+    /// Legacy exact baseline: advance the source with the largest next RRF
+    /// contribution.
+    MaxNextContribution,
+    /// Prefer the source expected to remove the most live Top-K uncertainty
+    /// per unit of physical work. This changes only pull order; certification
+    /// remains the responsibility of [`DynamicRrfState::fixed_top_k`].
+    #[default]
+    CompetitorCostAware,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DynamicRrfPolicy {
     /// `None` preserves the original one-check-per-source-round schedule.
     pub warmup_check_interval: Option<usize>,
     /// Drain already-open streams after the aggregate pull count reaches this
     /// value multiplied by the source count (a normalized per-source budget).
     pub exhaustive_after_pulls_per_source: Option<usize>,
+    /// Selects an exact-equivalent source pull schedule.
+    pub scheduler: DynamicRrfScheduler,
+    /// Maximum scheduling actions a relevant unfinished source may wait,
+    /// expressed as a multiple of the source count. `None` disables fairness.
+    pub fairness_after_actions_per_source: Option<usize>,
+}
+
+impl Default for DynamicRrfPolicy {
+    fn default() -> Self {
+        Self {
+            warmup_check_interval: None,
+            exhaustive_after_pulls_per_source: None,
+            scheduler: DynamicRrfScheduler::CompetitorCostAware,
+            fairness_after_actions_per_source: Some(8),
+        }
+    }
 }
 
 /// Recoverable exact fusion session. Streams may be paused, replaced by an
@@ -102,9 +144,14 @@ pub struct DynamicRrfSession<'a> {
     state: DynamicRrfState,
     source_pulls: Vec<usize>,
     source_history: Vec<Vec<ExtendedPointId>>,
+    source_costs: Vec<f64>,
+    source_last_advanced: Vec<usize>,
+    source_schedule: Vec<usize>,
+    competitive_missing: Vec<usize>,
     policy: DynamicRrfPolicy,
     warmup_pulls: usize,
     total_pulls: usize,
+    advance_actions: usize,
     pulls_since_check: usize,
     certification_checks: usize,
     force_check: bool,
@@ -119,6 +166,18 @@ impl<'a> DynamicRrfSession<'a> {
         weights: Option<&[f32]>,
         policy: DynamicRrfPolicy,
     ) -> OperationResult<Self> {
+        let source_costs = vec![1.0; sources.len()];
+        Self::new_with_source_costs(sources, top_k, rrf_k, weights, &source_costs, policy)
+    }
+
+    pub fn new_with_source_costs(
+        sources: Vec<ExactRrfStream<'a>>,
+        top_k: usize,
+        rrf_k: usize,
+        weights: Option<&[f32]>,
+        source_costs: &[f64],
+        policy: DynamicRrfPolicy,
+    ) -> OperationResult<Self> {
         if policy.warmup_check_interval == Some(0) {
             return Err(OperationError::validation_error(
                 "Dynamic RRF warmup check interval must be positive",
@@ -130,14 +189,38 @@ impl<'a> DynamicRrfSession<'a> {
             ));
         }
         let source_count = sources.len();
+        if policy.fairness_after_actions_per_source == Some(0) {
+            return Err(OperationError::validation_error(
+                "Dynamic RRF fairness interval must be positive",
+            ));
+        }
+        if source_costs.len() != source_count {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF source costs have length {}; expected {source_count}",
+                source_costs.len()
+            )));
+        }
+        if source_costs
+            .iter()
+            .any(|cost| !cost.is_finite() || *cost <= 0.0)
+        {
+            return Err(OperationError::validation_error(
+                "Dynamic RRF source costs must be finite and positive",
+            ));
+        }
         Ok(Self {
             sources,
             state: DynamicRrfState::new(source_count, top_k, rrf_k, weights)?,
             source_pulls: vec![0; source_count],
             source_history: vec![Vec::new(); source_count],
+            source_costs: source_costs.to_vec(),
+            source_last_advanced: vec![0; source_count],
+            source_schedule: Vec::new(),
+            competitive_missing: vec![top_k.max(1); source_count],
             policy,
             warmup_pulls: top_k.saturating_mul(source_count).saturating_mul(2),
             total_pulls: 0,
+            advance_actions: 0,
             pulls_since_check: 0,
             certification_checks: 0,
             force_check: true,
@@ -151,6 +234,10 @@ impl<'a> DynamicRrfSession<'a> {
 
     pub fn source_history(&self, source: usize) -> Option<&[ExtendedPointId]> {
         self.source_history.get(source).map(Vec::as_slice)
+    }
+
+    pub fn source_schedule(&self) -> &[usize] {
+        &self.source_schedule
     }
 
     pub fn source_is_exhausted(&self, source: usize) -> Option<bool> {
@@ -215,7 +302,7 @@ impl<'a> DynamicRrfSession<'a> {
             )));
         }
         for (rank, expected) in history.iter().enumerate() {
-            let actual = replacement.next().ok_or_else(|| {
+            let actual = replacement.next().transpose()?.ok_or_else(|| {
                 OperationError::validation_error(format!(
                     "Dynamic RRF replacement source {source} ended before observed rank {rank}"
                 ))
@@ -277,6 +364,15 @@ impl<'a> DynamicRrfSession<'a> {
                         stop_reason,
                     }));
                 }
+                // The competitor snapshot is advisory and costs O(observed identities).
+                // Refresh on a doubling schedule so an exact certification check does not
+                // acquire a second full-state scan every time.
+                if self.policy.scheduler == DynamicRrfScheduler::CompetitorCostAware
+                    && (self.certification_checks <= 4
+                        || self.certification_checks.is_power_of_two())
+                {
+                    self.competitive_missing = self.state.competitive_missing_counts();
+                }
                 self.pulls_since_check = 0;
                 self.force_check = false;
             }
@@ -305,24 +401,21 @@ impl<'a> DynamicRrfSession<'a> {
                         stop_reason,
                     }));
                 }
+                if self.policy.scheduler == DynamicRrfScheduler::CompetitorCostAware
+                    && (self.certification_checks <= 4
+                        || self.certification_checks.is_power_of_two())
+                {
+                    self.competitive_missing = self.state.competitive_missing_counts();
+                }
                 return Ok(DynamicRrfAdvance::Paused);
             }
 
-            let source = (0..self.sources.len())
-                .filter_map(|source| {
-                    self.state
-                        .next_possible_contribution(source)
-                        .map(|bound| (source, OrderedFloat(bound)))
-                })
-                .max_by(|(left_source, left_bound), (right_source, right_bound)| {
-                    left_bound
-                        .cmp(right_bound)
-                        .then_with(|| right_source.cmp(left_source))
-                })
-                .map(|(source, _)| source)
-                .expect("unfinished Dynamic RRF must have a source to advance");
+            let source = self.select_source_to_advance();
+            self.source_schedule.push(source);
+            self.advance_actions += 1;
+            self.source_last_advanced[source] = self.advance_actions;
 
-            match self.sources[source].next() {
+            match self.sources[source].next().transpose()? {
                 Some(id) => {
                     self.state.observe(source, id)?;
                     self.source_pulls[source] += 1;
@@ -345,6 +438,62 @@ impl<'a> DynamicRrfSession<'a> {
                 unreachable!("a session without pause targets cannot pause")
             }
         }
+    }
+
+    fn select_source_to_advance(&self) -> usize {
+        if let Some(fairness) = self.policy.fairness_after_actions_per_source {
+            let fairness_window = fairness.saturating_mul(self.sources.len());
+            if let Some(source) = (0..self.sources.len())
+                .filter(|source| {
+                    self.state.next_possible_contribution(*source).is_some()
+                        && self
+                            .advance_actions
+                            .saturating_sub(self.source_last_advanced[*source])
+                            >= fairness_window
+                })
+                .max_by(|left, right| {
+                    let left_wait = self
+                        .advance_actions
+                        .saturating_sub(self.source_last_advanced[*left]);
+                    let right_wait = self
+                        .advance_actions
+                        .saturating_sub(self.source_last_advanced[*right]);
+                    left_wait.cmp(&right_wait).then_with(|| right.cmp(left))
+                })
+            {
+                return source;
+            }
+        }
+
+        (0..self.sources.len())
+            .filter_map(|source| {
+                let bound = self.state.next_possible_contribution(source)?;
+                let priority = match self.policy.scheduler {
+                    DynamicRrfScheduler::MaxNextContribution => f64::from(bound),
+                    DynamicRrfScheduler::CompetitorCostAware => {
+                        let next_bound = position_score(
+                            self.state.next_positions[source].saturating_add(1),
+                            self.state.rrf_k,
+                            self.state.weights[source],
+                        );
+                        let bound_reduction = f64::from((bound - next_bound).max(0.0));
+                        let live_competitors = self.competitive_missing[source].max(1) as f64;
+                        bound_reduction * live_competitors / self.source_costs[source]
+                    }
+                };
+                Some((source, OrderedFloat(priority), OrderedFloat(bound)))
+            })
+            .max_by(
+                |(left_source, left_priority, left_bound),
+                 (right_source, right_priority, right_bound)| {
+                    left_priority
+                        .cmp(right_priority)
+                        .then_with(|| left_bound.cmp(right_bound))
+                        .then_with(|| right_source.cmp(left_source))
+                },
+            )
+            .map(|(source, _, _)| source)
+            .expect("unfinished Dynamic RRF must have a source to advance")
     }
 }
 
@@ -449,6 +598,70 @@ impl DynamicRrfState {
 
     pub fn all_sources_exhausted(&self) -> bool {
         self.exhausted.iter().all(|exhausted| *exhausted)
+    }
+
+    /// Approximate how many still-competitive identities are missing each
+    /// source contribution. The scheduler may use this snapshot, but the exact
+    /// stop decision never does.
+    fn competitive_missing_counts(&self) -> Vec<usize> {
+        let source_count = self.weights.len();
+        let mut counts = vec![0; source_count];
+        if self.all_sources_exhausted() {
+            return counts;
+        }
+        if self.points.len() < self.top_k {
+            let demand = self.top_k.saturating_sub(self.points.len()).max(1);
+            for (source, count) in counts.iter_mut().enumerate() {
+                if !self.exhausted[source] {
+                    *count = demand;
+                }
+            }
+            return counts;
+        }
+
+        let next_contributions: Vec<_> = (0..source_count)
+            .map(|source| self.next_possible_contribution(source).unwrap_or(0.0))
+            .collect();
+        let mut lower_bounds: Vec<_> = self
+            .points
+            .values()
+            .map(|point| {
+                point
+                    .contributions
+                    .iter()
+                    .map(|contribution| contribution.unwrap_or(0.0))
+                    .sum::<f32>()
+            })
+            .collect();
+        lower_bounds.sort_unstable_by(|left, right| OrderedFloat(*right).cmp(&OrderedFloat(*left)));
+        let threshold = lower_bounds[self.top_k - 1];
+
+        for point in self.points.values() {
+            let upper_bound = point
+                .contributions
+                .iter()
+                .zip(&next_contributions)
+                .map(|(contribution, next)| contribution.unwrap_or(*next))
+                .sum::<f32>();
+            if upper_bound < threshold {
+                continue;
+            }
+            for (source, contribution) in point.contributions.iter().enumerate() {
+                if contribution.is_none() && !self.exhausted[source] {
+                    counts[source] += 1;
+                }
+            }
+        }
+
+        let unseen_upper_bound: f32 = next_contributions.iter().sum();
+        if unseen_upper_bound >= threshold {
+            for (source, count) in counts.iter_mut().enumerate() {
+                if !self.exhausted[source] {
+                    *count += 1;
+                }
+            }
+        }
+        counts
     }
 
     /// Returns the exact fused identity order once it is fixed, regardless of
@@ -995,8 +1208,8 @@ mod tests {
     fn executor_stops_early_for_identical_sources() {
         let source: Vec<_> = (0..100).map(ExtendedPointId::from).collect();
         let sources: Vec<ExactRrfStream<'_>> = vec![
-            Box::new(source.clone().into_iter()),
-            Box::new(source.clone().into_iter()),
+            infallible_exact_rrf_stream(source.clone().into_iter()),
+            infallible_exact_rrf_stream(source.clone().into_iter()),
         ];
 
         let execution = execute_dynamic_rrf(sources, 3, DEFAULT_RRF_K, None).unwrap();
@@ -1012,8 +1225,10 @@ mod tests {
         let first: Vec<_> = (0..100).map(ExtendedPointId::from).collect();
         let second: Vec<_> = (0..100).rev().map(ExtendedPointId::from).collect();
         let expected = exhaustive_top_k(&[first.clone(), second.clone()], 12, DEFAULT_RRF_K, None);
-        let sources: Vec<ExactRrfStream<'_>> =
-            vec![Box::new(first.into_iter()), Box::new(second.into_iter())];
+        let sources: Vec<ExactRrfStream<'_>> = vec![
+            infallible_exact_rrf_stream(first.into_iter()),
+            infallible_exact_rrf_stream(second.into_iter()),
+        ];
         let mut session =
             DynamicRrfSession::new(sources, 1, DEFAULT_RRF_K, None, DynamicRrfPolicy::default())
                 .unwrap();
@@ -1039,8 +1254,10 @@ mod tests {
         let first = vec![ExtendedPointId::from(1)];
         let second = vec![ExtendedPointId::from(1)];
         let expected = exhaustive_top_k(&[first.clone(), second.clone()], 3, DEFAULT_RRF_K, None);
-        let sources: Vec<ExactRrfStream<'_>> =
-            vec![Box::new(first.into_iter()), Box::new(second.into_iter())];
+        let sources: Vec<ExactRrfStream<'_>> = vec![
+            infallible_exact_rrf_stream(first.into_iter()),
+            infallible_exact_rrf_stream(second.into_iter()),
+        ];
         let mut session =
             DynamicRrfSession::new(sources, 1, DEFAULT_RRF_K, None, DynamicRrfPolicy::default())
                 .unwrap();
@@ -1060,8 +1277,8 @@ mod tests {
         let second: Vec<_> = (0..100).map(ExtendedPointId::from).collect();
         let expected = exhaustive_top_k(&[first.clone(), second.clone()], 5, DEFAULT_RRF_K, None);
         let sources: Vec<ExactRrfStream<'_>> = vec![
-            Box::new(first.clone().into_iter()),
-            Box::new(second.clone().into_iter()),
+            infallible_exact_rrf_stream(first.clone().into_iter()),
+            infallible_exact_rrf_stream(second.clone().into_iter()),
         ];
         let mut session =
             DynamicRrfSession::new(sources, 5, DEFAULT_RRF_K, None, DynamicRrfPolicy::default())
@@ -1072,10 +1289,10 @@ mod tests {
         assert_eq!(progress, DynamicRrfAdvance::Paused);
         assert_eq!(session.source_pulls(), &[2, 2]);
         session
-            .replace_source(0, Box::new(first.into_iter()))
+            .replace_source(0, infallible_exact_rrf_stream(first.into_iter()))
             .unwrap();
         session
-            .replace_source(1, Box::new(second.into_iter()))
+            .replace_source(1, infallible_exact_rrf_stream(second.into_iter()))
             .unwrap();
         assert_eq!(session.run_to_completion().unwrap().point_ids, expected);
     }
@@ -1083,7 +1300,8 @@ mod tests {
     #[test]
     fn resumable_session_rejects_replacement_prefix_mismatch() {
         let source: Vec<_> = (0..100).map(ExtendedPointId::from).collect();
-        let sources: Vec<ExactRrfStream<'_>> = vec![Box::new(source.into_iter())];
+        let sources: Vec<ExactRrfStream<'_>> =
+            vec![infallible_exact_rrf_stream(source.into_iter())];
         let mut session =
             DynamicRrfSession::new(sources, 5, DEFAULT_RRF_K, None, DynamicRrfPolicy::default())
                 .unwrap();
@@ -1097,10 +1315,86 @@ mod tests {
             .collect();
 
         let error = session
-            .replace_source(0, Box::new(invalid.into_iter()))
+            .replace_source(0, infallible_exact_rrf_stream(invalid.into_iter()))
             .unwrap_err();
 
         assert!(error.to_string().contains("disagrees at rank 1"));
+    }
+
+    #[test]
+    fn producer_failure_is_not_treated_as_exact_exhaustion() {
+        let source: ExactRrfStream<'_> = Box::new(
+            vec![
+                Ok(ExtendedPointId::from(1_u64)),
+                Err(OperationError::cancelled("test producer stopped")),
+            ]
+            .into_iter(),
+        );
+        let mut session = DynamicRrfSession::new(
+            vec![source],
+            2,
+            DEFAULT_RRF_K,
+            None,
+            DynamicRrfPolicy::default(),
+        )
+        .unwrap();
+
+        let error = session.run_to_completion().unwrap_err();
+
+        assert!(matches!(error, OperationError::Cancelled { .. }));
+        assert_eq!(session.source_pulls(), &[1]);
+        assert_eq!(session.source_is_exhausted(0), Some(false));
+    }
+
+    #[test]
+    fn competitor_scheduler_prefers_equal_progress_at_lower_cost() {
+        let source: Vec<_> = (0..100).map(ExtendedPointId::from).collect();
+        let streams: Vec<ExactRrfStream<'_>> = vec![
+            infallible_exact_rrf_stream(source.clone().into_iter()),
+            infallible_exact_rrf_stream(source.clone().into_iter()),
+        ];
+        let mut session = DynamicRrfSession::new_with_source_costs(
+            streams,
+            3,
+            DEFAULT_RRF_K,
+            None,
+            &[100.0, 1.0],
+            DynamicRrfPolicy::default(),
+        )
+        .unwrap();
+
+        let execution = session.run_to_completion().unwrap();
+
+        assert_eq!(execution.point_ids, source[..3]);
+        assert_eq!(session.source_schedule().first(), Some(&1));
+    }
+
+    #[test]
+    fn source_costs_are_validated_at_the_exact_boundary() {
+        let stream = || infallible_exact_rrf_stream(std::iter::once(ExtendedPointId::from(1_u64)));
+
+        assert!(
+            DynamicRrfSession::new_with_source_costs(
+                vec![stream()],
+                1,
+                DEFAULT_RRF_K,
+                None,
+                &[],
+                DynamicRrfPolicy::default(),
+            )
+            .is_err()
+        );
+        assert!(
+            DynamicRrfSession::new_with_source_costs(
+                vec![stream()],
+                1,
+                DEFAULT_RRF_K,
+                None,
+                &[0.0],
+                DynamicRrfPolicy::default(),
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1140,13 +1434,13 @@ mod tests {
                 index
                     .stream(first_query)
                     .unwrap()
-                    .map(|point| ExtendedPointId::from(u64::from(point.idx))),
+                    .map(|point| Ok(ExtendedPointId::from(u64::from(point.idx)))),
             ),
             Box::new(
                 index
                     .stream(second_query)
                     .unwrap()
-                    .map(|point| ExtendedPointId::from(u64::from(point.idx))),
+                    .map(|point| Ok(ExtendedPointId::from(u64::from(point.idx)))),
             ),
         ];
 
@@ -1227,9 +1521,36 @@ mod tests {
             let expected = exhaustive_top_k(&sources, top_k, rrf_k, Some(&weights));
             let streams: Vec<ExactRrfStream<'static>> = sources
                 .into_iter()
-                .map(|source| Box::new(source.into_iter()) as ExactRrfStream<'static>)
+                .map(|source| infallible_exact_rrf_stream(source.into_iter()))
                 .collect();
             let actual = execute_dynamic_rrf(streams, top_k, rrf_k, Some(&weights)).unwrap();
+
+            prop_assert_eq!(actual.point_ids, expected);
+        }
+
+        #[test]
+        fn cost_aware_dynamic_rrf_matches_exhaustive_for_varied_costs(
+            (sources, weights, top_k, rrf_k) in random_rankings(true),
+        ) {
+            let expected = exhaustive_top_k(&sources, top_k, rrf_k, Some(&weights));
+            let costs: Vec<_> = (0..sources.len())
+                .map(|source| 1.0 + ((source * 7_919 + top_k * 97 + rrf_k * 53) % 999) as f64)
+                .collect();
+            let streams: Vec<ExactRrfStream<'static>> = sources
+                .into_iter()
+                .map(|source| infallible_exact_rrf_stream(source.into_iter()))
+                .collect();
+            let actual = DynamicRrfSession::new_with_source_costs(
+                streams,
+                top_k,
+                rrf_k,
+                Some(&weights),
+                &costs,
+                DynamicRrfPolicy::default(),
+            )
+            .unwrap()
+            .run_to_completion()
+            .unwrap();
 
             prop_assert_eq!(actual.point_ids, expected);
         }

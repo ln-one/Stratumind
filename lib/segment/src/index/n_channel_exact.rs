@@ -19,7 +19,9 @@ use sparse::index::block_max::{BlockMaxError, BlockMaxIndex, BlockMaxTelemetry, 
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-use sparse::index::posting_block_stream::{PostingBlockStream, PostingBlockStreamTelemetry};
+use sparse::index::posting_block_stream::{
+    NativeCertifiedSparseCursor, PostingBlockStreamTelemetry,
+};
 use sparse::index::shared_multi_query::{
     SharedSparseTelemetry, estimate_shared_sparse_cost, estimate_shared_sparse_cost_pair,
     evaluate_shared_sparse,
@@ -35,6 +37,7 @@ use super::dense_quantized::{DenseQuantizedError, DenseQuantizedIndex, DenseQuan
 use super::n_channel_rank_sharing::{
     dense_representatives, share_identical_rank_streams, unique_sparse_queries,
 };
+use super::n_channel_router::{ExactSparseDecodePlan, SafeExactRouter};
 use super::n_channel_streams::{
     AdaptiveSparseIdentityStream, CancellableIdentityStream, DenseIdentityStream,
     PostingSparseIdentityStream, SharedPostingIdentityStream, SharedSparseIdentityStream,
@@ -42,7 +45,8 @@ use super::n_channel_streams::{
 };
 use crate::common::operation_error::OperationError;
 use crate::common::reciprocal_rank_fusion::{
-    DynamicRrfAdvance, DynamicRrfExecution, DynamicRrfPolicy, DynamicRrfSession, ExactRrfStream,
+    DynamicRrfAdvance, DynamicRrfExecution, DynamicRrfPolicy, DynamicRrfScheduler,
+    DynamicRrfSession, ExactRrfStream,
 };
 use crate::types::ExtendedPointId;
 
@@ -135,12 +139,7 @@ pub enum SparseStreamStrategy {
 
 impl Default for SparseStreamStrategy {
     fn default() -> Self {
-        Self::AdaptiveNative {
-            initial_limit: 4096,
-            growth_factor: 2,
-            batch_size: 4096,
-            endpoint_trend_router: false,
-        }
+        Self::PostingBlock { batch_size: 4096 }
     }
 }
 
@@ -175,6 +174,9 @@ pub struct NChannelExactSearchResult {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct NChannelPhysicalTelemetry {
+    pub safe_router_requested: bool,
+    pub safe_router_selected_shared_sparse: bool,
+    pub scheduler: DynamicRrfScheduler,
     pub logical_rank_streams: usize,
     pub physical_rank_streams: usize,
     pub shared_rank_stream_groups: usize,
@@ -259,6 +261,39 @@ impl NChannelExactIndex {
         &self.sparse_postings
     }
 
+    /// Deterministic work proxies for the next exact identity from each
+    /// channel. Dense exact rescoring scales with dimension; Sparse batch
+    /// scoring scales with average posting density. These values guide pull
+    /// order only and never participate in exactness certification.
+    fn estimate_source_pull_costs(
+        &self,
+        queries: &[ExactChannelQuery<'_>],
+    ) -> Result<Vec<f64>, NChannelExactError> {
+        let hardware_counter = HardwareCounterCell::disposable();
+        let document_count = self.document_count().max(1) as f64;
+        queries
+            .iter()
+            .map(|query| match query {
+                ExactChannelQuery::Dense(query) => Ok(query.len().max(1) as f64),
+                ExactChannelQuery::Sparse(query) => {
+                    let posting_elements = query.indices.iter().try_fold(
+                        0usize,
+                        |total, &dimension| -> Result<_, NChannelExactError> {
+                            let length = self
+                                .sparse_postings
+                                .posting_list_len(dimension, &hardware_counter)
+                                .map_err(|error| {
+                                    NChannelExactError::SparsePosting(error.to_string())
+                                })?;
+                            Ok(total.saturating_add(length))
+                        },
+                    )?;
+                    Ok((posting_elements as f64 / document_count).max(1.0))
+                }
+            })
+            .collect()
+    }
+
     pub fn search<'a>(
         &'a self,
         queries: Vec<ExactChannelQuery<'a>>,
@@ -266,7 +301,71 @@ impl NChannelExactIndex {
         rrf_k: usize,
         weights: Option<&[f32]>,
     ) -> Result<NChannelExactSearchResult, NChannelExactError> {
-        self.search_with_policy(queries, top_k, rrf_k, weights, DynamicRrfPolicy::default())
+        self.search_with_safe_router_policy(
+            queries,
+            top_k,
+            rrf_k,
+            weights,
+            DynamicRrfPolicy::default(),
+        )
+    }
+
+    pub fn search_with_safe_router_policy<'a>(
+        &'a self,
+        queries: Vec<ExactChannelQuery<'a>>,
+        top_k: usize,
+        rrf_k: usize,
+        weights: Option<&[f32]>,
+        mut policy: DynamicRrfPolicy,
+    ) -> Result<NChannelExactSearchResult, NChannelExactError> {
+        let source_costs = self.estimate_source_pull_costs(&queries)?;
+        // Dense certificate construction scores every quantized row before the
+        // first pull. Its preparation cost is already sunk at the scheduling
+        // boundary, so the dimension proxy is not a marginal next-action cost.
+        // Cost-aware ordering remains eligible for all-Sparse incremental plans.
+        let scheduler_costs_are_incremental = queries
+            .iter()
+            .all(|query| matches!(query, ExactChannelQuery::Sparse(_)));
+        let sparse_queries: Vec<_> = queries
+            .iter()
+            .filter_map(|query| match query {
+                ExactChannelQuery::Dense(_) => None,
+                ExactChannelQuery::Sparse(query) => Some(query.clone()),
+            })
+            .collect();
+        let deduplicated_sparse_queries = unique_sparse_queries(&queries, weights);
+        let (logical_sparse, independent_sparse) = estimate_shared_sparse_cost_pair(
+            &self.sparse_postings,
+            &sparse_queries,
+            &deduplicated_sparse_queries,
+            &HardwareCounterCell::disposable(),
+        )
+        .map_err(NChannelExactError::SparsePosting)?;
+        let plan = SafeExactRouter::default().decide(
+            &source_costs,
+            scheduler_costs_are_incremental,
+            logical_sparse.unique_posting_elements,
+            independent_sparse.logical_posting_elements,
+        );
+        policy.scheduler = plan.scheduler;
+        let sparse_strategy = match plan.sparse_decode {
+            ExactSparseDecodePlan::IndependentNative => SparseStreamStrategy::default(),
+            ExactSparseDecodePlan::SharedNative => {
+                SparseStreamStrategy::SharedLazy { batch_size: 4096 }
+            }
+        };
+        let mut result = self.search_with_sparse_strategy(
+            queries,
+            top_k,
+            rrf_k,
+            weights,
+            policy,
+            sparse_strategy,
+        )?;
+        result.physical.safe_router_requested = true;
+        result.physical.safe_router_selected_shared_sparse =
+            plan.sparse_decode == ExactSparseDecodePlan::SharedNative;
+        Ok(result)
     }
 
     pub fn search_with_policy<'a>(
@@ -372,6 +471,7 @@ impl NChannelExactIndex {
         if queries.is_empty() {
             return Err(NChannelExactError::EmptyChannels);
         }
+        let source_costs = self.estimate_source_pull_costs(&queries)?;
         let sparse_queries: Vec<_> = queries
             .iter()
             .filter_map(|query| match query {
@@ -514,6 +614,7 @@ impl NChannelExactIndex {
             (_, DenseStreamStrategy::SharedDocumentMajor) => 1,
         };
         let physical = NChannelPhysicalTelemetry {
+            scheduler: policy.scheduler,
             dense_channels,
             dense_physical_channels,
             dense_document_major_passes,
@@ -679,7 +780,7 @@ impl NChannelExactIndex {
                         }));
                     }
                     SparseStreamStrategy::PostingBlock { batch_size } => {
-                        let stream = PostingBlockStream::new(
+                        let stream = NativeCertifiedSparseCursor::new(
                             &self.sparse_postings,
                             query,
                             batch_size,
@@ -690,10 +791,11 @@ impl NChannelExactIndex {
                         sources.push(Box::new(PostingSparseIdentityStream {
                             inner: stream,
                             telemetry: Rc::clone(progress),
+                            stopped,
                         }));
                     }
                     SparseStreamStrategy::ProbeThenShared { batch_size, .. } => {
-                        let stream = PostingBlockStream::new(
+                        let stream = NativeCertifiedSparseCursor::new(
                             &self.sparse_postings,
                             query,
                             batch_size,
@@ -704,6 +806,7 @@ impl NChannelExactIndex {
                         sources.push(Box::new(PostingSparseIdentityStream {
                             inner: stream,
                             telemetry: Rc::clone(progress),
+                            stopped,
                         }));
                     }
                     SparseStreamStrategy::SharedLazy { .. } => {
@@ -777,7 +880,14 @@ impl NChannelExactIndex {
                 Box::new(CancellableIdentityStream { inner, stopped }) as ExactRrfStream<'_>
             })
             .collect();
-        let mut session = DynamicRrfSession::new(sources, top_k, rrf_k, weights, policy)?;
+        let mut session = DynamicRrfSession::new_with_source_costs(
+            sources,
+            top_k,
+            rrf_k,
+            weights,
+            &source_costs,
+            policy,
+        )?;
         let mut physical = physical;
         let execution = match sparse_strategy {
             SparseStreamStrategy::ProbeThenShared { probe_depth, .. } => {
@@ -824,7 +934,7 @@ impl NChannelExactIndex {
                                     source,
                                     Box::new(CancellableIdentityStream {
                                         inner: Box::new(ranking.into_iter().map(|point| {
-                                            ExtendedPointId::from(u64::from(point.idx))
+                                            Ok(ExtendedPointId::from(u64::from(point.idx)))
                                         })),
                                         stopped,
                                     }),
@@ -1109,6 +1219,29 @@ mod tests {
             assert_eq!(
                 actual.execution.point_ids, expected,
                 "channels={channel_count}"
+            );
+            assert_eq!(
+                actual
+                    .channels
+                    .iter()
+                    .filter(|channel| {
+                        matches!(
+                            channel,
+                            ExactChannelTelemetry::SparsePosting(_)
+                                | ExactChannelTelemetry::SparseSharedPosting(_)
+                        )
+                    })
+                    .count(),
+                channel_count / 2,
+                "the default path must use an exact native Sparse cursor per Sparse channel"
+            );
+            assert!(actual.physical.safe_router_requested);
+            assert_eq!(
+                actual.physical.safe_router_selected_shared_sparse,
+                actual.channels.iter().any(|channel| matches!(
+                    channel,
+                    ExactChannelTelemetry::SparseSharedPosting(_)
+                ))
             );
             assert_eq!(
                 posting_actual.execution.point_ids, expected,

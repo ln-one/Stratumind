@@ -434,25 +434,25 @@ fn physical_streams<'a>(
                 dense
                     .stream(&query.dense)
                     .unwrap()
-                    .map(|point| ExtendedPointId::from(u64::from(point.id))),
+                    .map(|point| Ok(ExtendedPointId::from(u64::from(point.id)))),
             ),
             1 => Box::new(
                 sparse
                     .stream(query.sparse())
                     .unwrap()
-                    .map(|point| ExtendedPointId::from(u64::from(point.idx))),
+                    .map(|point| Ok(ExtendedPointId::from(u64::from(point.idx)))),
             ),
             2 => Box::new(
                 dense
                     .stream(&rewrite.dense)
                     .unwrap()
-                    .map(|point| ExtendedPointId::from(u64::from(point.id))),
+                    .map(|point| Ok(ExtendedPointId::from(u64::from(point.id)))),
             ),
             3 => Box::new(
                 sparse
                     .stream(rewrite.sparse())
                     .unwrap()
-                    .map(|point| ExtendedPointId::from(u64::from(point.idx))),
+                    .map(|point| Ok(ExtendedPointId::from(u64::from(point.idx)))),
             ),
             _ => unreachable!("the real snapshot defines four base leaf streams"),
         };

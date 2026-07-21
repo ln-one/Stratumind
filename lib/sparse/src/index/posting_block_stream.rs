@@ -1,18 +1,23 @@
 // Copyright 2026 Stratumind contributors.
 // Licensed under the Apache License, Version 2.0.
 
-//! Resumable exact score-ordered stream over compressed Sparse postings.
+//! Native resumable exact score-ordered cursor over compressed Sparse postings.
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::Result;
 use ordered_float::OrderedFloat;
 use serde::Serialize;
 
 use super::inverted_index::InvertedIndex;
+use super::posting_batch::score_posting_batch;
 use super::posting_list_common::PostingListIter;
 use crate::SearchScratchArena;
 use crate::common::sparse_vector::RemappedSparseVector;
@@ -103,16 +108,49 @@ struct WeightedPosting<T> {
     query_weight: DimWeight,
 }
 
-pub struct PostingBlockStream<'a, I: InvertedIndex> {
+pub struct NativeCertifiedSparseCursor<'a, I: InvertedIndex> {
     postings: Vec<WeightedPosting<I::Iter<'a>>>,
     pending_batches: BinaryHeap<PendingBatch>,
     pending_points: BinaryHeap<PendingPoint>,
     active_batches: Vec<BinaryHeap<PendingBlockPoint>>,
+    scores: Vec<ScoreType>,
     buffered_points: usize,
     telemetry: PostingBlockStreamTelemetry,
+    terminal_error: Option<NativeSparseCursorError>,
 }
 
-impl<'a, I: InvertedIndex> PostingBlockStream<'a, I> {
+/// Legacy research name retained for source compatibility.
+pub type PostingBlockStream<'a, I> = NativeCertifiedSparseCursor<'a, I>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum NativeSparseCursorError {
+    Cancelled,
+    CertificateViolation {
+        point: PointOffsetType,
+        score: f32,
+        upper_bound: f32,
+    },
+}
+
+impl Display for NativeSparseCursorError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cancelled => formatter.write_str("native Sparse cursor was cancelled"),
+            Self::CertificateViolation {
+                point,
+                score,
+                upper_bound,
+            } => write!(
+                formatter,
+                "native Sparse certificate violated for point {point}: score {score}, bound {upper_bound}"
+            ),
+        }
+    }
+}
+
+impl Error for NativeSparseCursorError {}
+
+impl<'a, I: InvertedIndex> NativeCertifiedSparseCursor<'a, I> {
     pub fn new(
         index: &'a I,
         query: RemappedSparseVector,
@@ -185,8 +223,10 @@ impl<'a, I: InvertedIndex> PostingBlockStream<'a, I> {
             pending_batches: BinaryHeap::from(batches),
             pending_points: BinaryHeap::new(),
             active_batches: Vec::new(),
+            scores: Vec::new(),
             buffered_points: 0,
             telemetry,
+            terminal_error: None,
         })
     }
 
@@ -205,38 +245,42 @@ impl<'a, I: InvertedIndex> PostingBlockStream<'a, I> {
             || (point.point.score == batch.upper_bound && point.point.idx < batch.start)
     }
 
-    fn expand_next_batch(&mut self) {
+    fn expand_next_batch(
+        &mut self,
+        stopped: &AtomicBool,
+    ) -> std::result::Result<(), NativeSparseCursorError> {
+        if stopped.load(Relaxed) {
+            return Err(NativeSparseCursorError::Cancelled);
+        }
         let Some(batch) = self.pending_batches.pop() else {
-            return;
+            return Ok(());
         };
         self.telemetry.batches_expanded += 1;
         let mut postings = self.postings.clone();
-        let mut scores = vec![0.0; (batch.end - batch.start + 1) as usize];
-        for posting in &mut postings {
-            posting.iterator.skip_to(batch.start);
-            let elements_before = posting.iterator.len_to_end();
-            let query_weight = posting.query_weight;
-            posting.iterator.for_each_till_id(
-                batch.end,
-                scores.as_mut_slice(),
-                |scores, id, weight| {
-                    scores[(id - batch.start) as usize] += weight * query_weight;
-                },
-            );
-            self.telemetry.posting_elements_visited +=
-                elements_before - posting.iterator.len_to_end();
-        }
+        self.telemetry.posting_elements_visited += score_posting_batch(
+            postings
+                .iter_mut()
+                .map(|posting| (&mut posting.iterator, posting.query_weight)),
+            batch.start,
+            batch.end,
+            &mut self.scores,
+        );
         let mut points = Vec::new();
-        for (offset, score) in scores.into_iter().enumerate() {
+        for (offset, &score) in self.scores.iter().enumerate() {
+            if stopped.load(Relaxed) {
+                return Err(NativeSparseCursorError::Cancelled);
+            }
             if score == 0.0 {
                 continue;
             }
             let id = batch.start + offset as PointOffsetType;
-            assert!(
-                score <= batch.upper_bound,
-                "posting block certificate violated for point {id}: score {score}, bound {}",
-                batch.upper_bound
-            );
+            if score > batch.upper_bound {
+                return Err(NativeSparseCursorError::CertificateViolation {
+                    point: id,
+                    score,
+                    upper_bound: batch.upper_bound,
+                });
+            }
             self.telemetry.nonzero_documents_scored += 1;
             points.push(ScoredPointOffset { idx: id, score });
         }
@@ -259,6 +303,7 @@ impl<'a, I: InvertedIndex> PostingBlockStream<'a, I> {
             .max(self.pending_points.len());
         self.telemetry.max_buffered_points =
             self.telemetry.max_buffered_points.max(self.buffered_points);
+        Ok(())
     }
 
     fn pop_next_point(&mut self) -> Option<ScoredPointOffset> {
@@ -276,21 +321,50 @@ impl<'a, I: InvertedIndex> PostingBlockStream<'a, I> {
         self.telemetry.points_emitted += 1;
         Some(pending.point)
     }
+
+    /// Produces the next exact score-ranked point.
+    ///
+    /// `Ok(None)` is the only exhaustion signal. Cancellation and certificate
+    /// failures are sticky, so a failed partial prefix cannot be mistaken for
+    /// a complete ranking.
+    pub fn next_result(
+        &mut self,
+        stopped: &AtomicBool,
+    ) -> std::result::Result<Option<ScoredPointOffset>, NativeSparseCursorError> {
+        if let Some(error) = &self.terminal_error {
+            return Err(error.clone());
+        }
+        if stopped.load(Relaxed) {
+            let error = NativeSparseCursorError::Cancelled;
+            self.terminal_error = Some(error.clone());
+            return Err(error);
+        }
+        loop {
+            if self.next_point_is_fixed() {
+                return Ok(self.pop_next_point());
+            }
+            if self.pending_batches.is_empty() {
+                return Ok(self.pop_next_point());
+            }
+            if let Err(error) = self.expand_next_batch(stopped) {
+                self.pending_batches.clear();
+                self.pending_points.clear();
+                self.active_batches.clear();
+                self.buffered_points = 0;
+                self.terminal_error = Some(error.clone());
+                return Err(error);
+            }
+        }
+    }
 }
 
-impl<I: InvertedIndex> Iterator for PostingBlockStream<'_, I> {
+impl<I: InvertedIndex> Iterator for NativeCertifiedSparseCursor<'_, I> {
     type Item = ScoredPointOffset;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.next_point_is_fixed() {
-                return self.pop_next_point();
-            }
-            if self.pending_batches.is_empty() {
-                return self.pop_next_point();
-            }
-            self.expand_next_batch();
-        }
+        let stopped = AtomicBool::new(false);
+        self.next_result(&stopped)
+            .expect("infallible PostingBlockStream adapter failed")
     }
 }
 
@@ -316,6 +390,7 @@ fn open_postings<'a, I: InvertedIndex>(
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
+    use std::sync::atomic::Ordering::Relaxed;
 
     use super::*;
     use crate::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
@@ -373,5 +448,61 @@ mod tests {
         let actual_top: Vec<_> = top_stream.by_ref().take(20).collect();
         assert_eq!(actual_top, expected[..20]);
         assert!(top_stream.telemetry().batches_expanded < top_stream.telemetry().batches);
+    }
+
+    #[test]
+    fn native_cursor_distinguishes_cancellation_from_exact_eof() {
+        let mut builder = InvertedIndexBuilder::new();
+        for id in 0..128u32 {
+            builder.add(
+                id,
+                RemappedSparseVector {
+                    indices: vec![0],
+                    values: vec![1.0 + id as f32],
+                },
+            );
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let index = InvertedIndexCompressedImmutableRam::<f32>::from_ram_index(
+            Cow::Owned(builder.build()),
+            temp.path(),
+        )
+        .unwrap();
+        let arena = SearchScratchArena::new_slow();
+        let hardware_counter = HardwareCounterCell::disposable();
+        let stopped = AtomicBool::new(false);
+        let mut cursor: NativeCertifiedSparseCursor<'_, _> = PostingBlockStream::new(
+            &index,
+            RemappedSparseVector {
+                indices: vec![0],
+                values: vec![1.0],
+            },
+            16,
+            &arena,
+            &hardware_counter,
+        )
+        .unwrap();
+
+        assert!(cursor.next_result(&stopped).unwrap().is_some());
+        stopped.store(true, Relaxed);
+        assert_eq!(
+            cursor.next_result(&stopped),
+            Err(NativeSparseCursorError::Cancelled)
+        );
+        assert_eq!(
+            cursor.next_result(&stopped),
+            Err(NativeSparseCursorError::Cancelled)
+        );
+
+        let active = AtomicBool::new(false);
+        let mut empty = PostingBlockStream::new(
+            &index,
+            RemappedSparseVector::default(),
+            16,
+            &arena,
+            &hardware_counter,
+        )
+        .unwrap();
+        assert_eq!(empty.next_result(&active).unwrap(), None);
     }
 }
