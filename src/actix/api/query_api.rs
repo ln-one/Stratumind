@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::models::InferenceUsage;
@@ -6,6 +8,7 @@ use collection::collection::native_exact_rrf::{
     DEFAULT_NATIVE_EXACT_BATCH_SIZE, DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE,
     NativeExactRrfRequest,
 };
+use collection::operations::point_ops::VectorPersisted;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::CountRequestInternal;
 use collection::operations::universal_query::collection_query::{
@@ -36,6 +39,8 @@ use super::read_params::ReadParams;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, get_request_hardware_counter};
 use crate::common::inference::api_keys::InferenceApiKeys;
+use crate::common::inference::bm25_inference::Bm25;
+use crate::common::inference::inference_input::InferenceInput;
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::query_requests_rest::{
     CollectionQueryGroupsRequestWithUsage, CollectionQueryRequestWithUsage,
@@ -57,9 +62,39 @@ struct ExactRrfDenseChannel {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExactRrfSparseChannel {
-    query: SparseVector,
+    query: ExactRrfSparseQuery,
     using: VectorNameBuf,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ExactRrfSparseQuery {
+    Vector(SparseVector),
+    Document(ExactRrfBm25Document),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExactRrfBm25Document {
+    text: String,
+    model: String,
+    #[serde(default)]
+    options: Option<HashMap<String, serde_json::Value>>,
+}
+
+const EXACT_RRF_BM25_OPTION_KEYS: &[&str] = &[
+    "k",
+    "b",
+    "avg_len",
+    "tokenizer",
+    "language",
+    "lowercase",
+    "ascii_folding",
+    "stopwords",
+    "stemmer",
+    "min_token_len",
+    "max_token_len",
+];
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -207,17 +242,36 @@ fn validate_exact_rrf_request(request: &ExactRrfQueryRequest) -> Result<(), Stor
             "exact_rrf Dense query must be non-empty and finite",
         ));
     }
-    let sparse = &request.exact_rrf.sparse.query;
-    if sparse.indices.len() != sparse.values.len()
-        || sparse.indices.windows(2).any(|pair| pair[0] >= pair[1])
-        || sparse
-            .values
-            .iter()
-            .any(|value| !value.is_finite() || *value < 0.0)
-    {
-        return Err(StorageError::bad_input(
-            "exact_rrf Sparse query requires sorted unique indices and finite non-negative impacts",
-        ));
+    match &request.exact_rrf.sparse.query {
+        ExactRrfSparseQuery::Vector(sparse) => {
+            if sparse.indices.len() != sparse.values.len()
+                || sparse.indices.windows(2).any(|pair| pair[0] >= pair[1])
+                || sparse
+                    .values
+                    .iter()
+                    .any(|value| !value.is_finite() || *value < 0.0)
+            {
+                return Err(StorageError::bad_input(
+                    "exact_rrf Sparse query requires sorted unique indices and finite non-negative impacts",
+                ));
+            }
+        }
+        ExactRrfSparseQuery::Document(document) => {
+            if document.model != "qdrant/bm25" {
+                return Err(StorageError::bad_input(
+                    "exact_rrf Sparse document supports only qdrant/bm25",
+                ));
+            }
+            if document.options.as_ref().is_some_and(|options| {
+                options
+                    .keys()
+                    .any(|key| !EXACT_RRF_BM25_OPTION_KEYS.contains(&key.as_str()))
+            }) {
+                return Err(StorageError::bad_input(
+                    "exact_rrf Sparse document contains an unknown BM25 option",
+                ));
+            }
+        }
     }
     if request
         .exact_rrf
@@ -231,6 +285,24 @@ fn validate_exact_rrf_request(request: &ExactRrfQueryRequest) -> Result<(), Stor
         ));
     }
     Ok(())
+}
+
+fn resolve_exact_sparse_query(query: ExactRrfSparseQuery) -> Result<SparseVector, StorageError> {
+    match query {
+        ExactRrfSparseQuery::Vector(vector) => Ok(vector),
+        ExactRrfSparseQuery::Document(document) => {
+            let config = InferenceInput::parse_bm25_config(document.options)?;
+            let vector = Bm25::new(config)?.search_embed(&document.text);
+            match vector {
+                VectorPersisted::Sparse(vector) => Ok(vector),
+                VectorPersisted::Dense(_) | VectorPersisted::MultiDense(_) => {
+                    Err(StorageError::service_error(
+                        "exact_rrf local BM25 inference returned a non-Sparse vector",
+                    ))
+                }
+            }
+        }
+    }
 }
 
 #[post("/collections/{collection_name}/points/query")]
@@ -348,10 +420,11 @@ async fn query_points_exact_rrf(
             k: rrf_k,
             weights,
         } = request.exact_rrf;
+        let sparse_query = resolve_exact_sparse_query(sparse.query)?;
         let native_request = NativeExactRrfRequest {
             dense_query: dense.query.clone(),
             dense_using: dense.using.clone(),
-            sparse_query: sparse.query.clone(),
+            sparse_query: sparse_query.clone(),
             sparse_using: sparse.using.clone(),
             filter: request.filter.clone(),
             limit: request.limit,
@@ -369,7 +442,7 @@ async fn query_points_exact_rrf(
                 request.limit,
             ),
             exact_channel_request(
-                VectorInternal::Sparse(sparse.query),
+                VectorInternal::Sparse(sparse_query),
                 sparse.using,
                 request.filter.clone(),
                 request.limit,
@@ -897,6 +970,13 @@ pub fn config_query_api(cfg: &mut web::ServiceConfig) {
 mod exact_rrf_tests {
     use super::*;
 
+    fn sparse_vector_mut(request: &mut ExactRrfQueryRequest) -> &mut SparseVector {
+        match &mut request.exact_rrf.sparse.query {
+            ExactRrfSparseQuery::Vector(vector) => vector,
+            ExactRrfSparseQuery::Document(_) => panic!("expected an explicit Sparse vector"),
+        }
+    }
+
     fn valid_request() -> ExactRrfQueryRequest {
         serde_json::from_value(serde_json::json!({
             "exact_rrf": {
@@ -982,19 +1062,141 @@ mod exact_rrf_tests {
     #[test]
     fn exact_rrf_rejects_invalid_sparse_shape_and_order() {
         let mut request = valid_request();
-        request.exact_rrf.sparse.query.values.pop();
+        sparse_vector_mut(&mut request).values.pop();
         assert!(validate_exact_rrf_request(&request).is_err());
 
         request = valid_request();
-        request.exact_rrf.sparse.query.indices = vec![12, 12];
+        sparse_vector_mut(&mut request).indices = vec![12, 12];
         assert!(validate_exact_rrf_request(&request).is_err());
 
-        request.exact_rrf.sparse.query.indices = vec![99, 12];
+        sparse_vector_mut(&mut request).indices = vec![99, 12];
         assert!(validate_exact_rrf_request(&request).is_err());
 
         request = valid_request();
-        request.exact_rrf.sparse.query.values[0] = f32::NAN;
+        sparse_vector_mut(&mut request).values[0] = f32::NAN;
         assert!(validate_exact_rrf_request(&request).is_err());
+    }
+
+    #[test]
+    fn exact_rrf_accepts_and_resolves_local_bm25_documents() {
+        let request: ExactRrfQueryRequest = serde_json::from_value(serde_json::json!({
+            "exact_rrf": {
+                "dense": { "query": [0.1, 0.2], "using": "dense" },
+                "sparse": {
+                    "query": {
+                        "text": "hybrid retrieval retrieval",
+                        "model": "qdrant/bm25"
+                    },
+                    "using": "sparse"
+                },
+                "k": 60
+            },
+            "limit": 20
+        }))
+        .unwrap();
+
+        validate_exact_rrf_request(&request).unwrap();
+        let ExactRrfSparseQuery::Document(document) = request.exact_rrf.sparse.query else {
+            panic!("expected a BM25 document");
+        };
+        let sparse = resolve_exact_sparse_query(ExactRrfSparseQuery::Document(document)).unwrap();
+        assert!(!sparse.indices.is_empty());
+        assert_eq!(sparse.indices.len(), sparse.values.len());
+        assert!(sparse.indices.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(
+            sparse
+                .values
+                .iter()
+                .all(|value| value.is_finite() && *value >= 0.0)
+        );
+    }
+
+    #[test]
+    fn exact_rrf_accepts_an_empty_bm25_document_as_an_empty_channel() {
+        let request: ExactRrfQueryRequest = serde_json::from_value(serde_json::json!({
+            "exact_rrf": {
+                "dense": { "query": [0.1], "using": "dense" },
+                "sparse": {
+                    "query": { "text": "", "model": "qdrant/bm25" },
+                    "using": "sparse"
+                },
+                "k": 60
+            },
+            "limit": 20
+        }))
+        .unwrap();
+
+        validate_exact_rrf_request(&request).unwrap();
+        let sparse = resolve_exact_sparse_query(request.exact_rrf.sparse.query).unwrap();
+        assert!(sparse.indices.is_empty());
+        assert!(sparse.values.is_empty());
+    }
+
+    #[test]
+    fn exact_rrf_bm25_document_rejects_non_local_models_and_unknown_options() {
+        for query in [
+            serde_json::json!({ "text": "query", "model": "remote/bm25" }),
+            serde_json::json!({
+                "text": "query",
+                "model": "qdrant/bm25",
+                "options": { "unrecognized": true }
+            }),
+        ] {
+            let request: ExactRrfQueryRequest = serde_json::from_value(serde_json::json!({
+                "exact_rrf": {
+                    "dense": { "query": [0.1], "using": "dense" },
+                    "sparse": { "query": query, "using": "sparse" },
+                    "k": 60
+                },
+                "limit": 20
+            }))
+            .unwrap();
+            assert!(validate_exact_rrf_request(&request).is_err());
+        }
+    }
+
+    #[test]
+    fn exact_rrf_bm25_document_rejects_invalid_native_options() {
+        let request: ExactRrfQueryRequest = serde_json::from_value(serde_json::json!({
+            "exact_rrf": {
+                "dense": { "query": [0.1], "using": "dense" },
+                "sparse": {
+                    "query": {
+                        "text": "query",
+                        "model": "qdrant/bm25",
+                        "options": { "k": -1 }
+                    },
+                    "using": "sparse"
+                },
+                "k": 60
+            },
+            "limit": 20
+        }))
+        .unwrap();
+
+        validate_exact_rrf_request(&request).unwrap();
+        assert!(resolve_exact_sparse_query(request.exact_rrf.sparse.query).is_err());
+    }
+
+    #[test]
+    fn exact_rrf_bm25_document_rejects_unknown_document_fields() {
+        let request = serde_json::json!({
+            "exact_rrf": {
+                "dense": { "query": [0.1], "using": "dense" },
+                "sparse": {
+                    "query": {
+                        "text": "query",
+                        "model": "qdrant/bm25",
+                        "remote": true
+                    },
+                    "using": "sparse"
+                },
+                "k": 60
+            },
+            "limit": 20
+        });
+
+        assert!(serde_json::from_value::<ExactRrfQueryRequest>(request).is_err());
     }
 
     #[test]

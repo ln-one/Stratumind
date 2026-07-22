@@ -1,7 +1,8 @@
 # Stratumind Production API V1
 
 This document is the authoritative frozen contract for the Stratumind production retrieval API.
-It describes the external behavior of `stratumind-api-v1.0.0`, based on Qdrant v1.18.2. Research
+It describes the external behavior of `stratumind-api-v1.1.0`, based on Qdrant v1.18.2. V1.1 is a
+backward-compatible input extension of V1.0. Research
 servers, N-channel experiments, and physical execution plans are not part of this contract.
 
 ## Endpoint
@@ -11,8 +12,9 @@ POST /collections/{collection_name}/points/query/exact-rrf
 Content-Type: application/json
 ```
 
-V1 accepts exactly one externally encoded Dense channel and one externally encoded non-negative
-Sparse impact channel. Query rewriting and encoder inference remain outside Stratumind.
+V1 accepts exactly one externally encoded Dense channel and one Sparse channel. The Sparse query
+is either an externally encoded non-negative impact vector or a local Qdrant BM25 document. Query
+rewriting and Dense inference remain outside Stratumind.
 
 ```json
 {
@@ -31,6 +33,28 @@ Sparse impact channel. Query rewriting and encoder inference remain outside Stra
 }
 ```
 
+V1.1 additionally accepts this Sparse query shape without changing any response field or ranking
+rule:
+
+```json
+{
+  "exact_rrf": {
+    "dense": { "query": [0.1, 0.2], "using": "dense" },
+    "sparse": {
+      "query": {
+        "text": "exact hybrid retrieval",
+        "model": "qdrant/bm25",
+        "options": {}
+      },
+      "using": "sparse"
+    },
+    "k": 60,
+    "weights": [1.0, 1.0]
+  },
+  "limit": 20
+}
+```
+
 `k` is the WRRF rank constant. `limit` is the final rerank-candidate count, never a per-channel
 candidate window. `weights` defaults to `[1.0, 1.0]`; every weight must be finite and
 non-negative, and at least one must be positive.
@@ -40,6 +64,13 @@ validated by Qdrant. Sparse indices and values must have equal length, indices m
 increasing, and values must be finite and non-negative. An empty Sparse vector is valid and denotes
 an empty exact channel. A point whose exact Sparse score is zero is absent from the Sparse rank
 stream, matching Qdrant Sparse query semantics. Unknown request fields are rejected.
+
+The document form permits only the exact model name `qdrant/bm25`. Stratumind parses its options
+with Qdrant's native BM25 configuration, runs the local deterministic search encoder, and passes the
+resulting Sparse vector into the same exact rank stream as the explicit-vector form. Remote
+inference and other models are rejected. An empty document is valid and has Qdrant's native BM25
+empty-query behavior. Unknown document fields, unknown BM25 options, and invalid option values are
+errors.
 
 Standard Qdrant read query parameters, including timeout and consistency, retain their existing
 meaning. `filter` and `shard_key` restrict the visible retrieval universe before ranking.
@@ -102,5 +133,7 @@ without changing this API. Stock Qdrant endpoints and storage formats retain the
 semantics.
 
 This endpoint and its Dense-plus-Sparse meaning remain backward compatible for the lifetime of V1.
+Every valid V1.0 explicit-Sparse request has identical V1.1 behavior. BM25 document inference is
+only an input normalization step and does not weaken the exhaustive ordered Top-K guarantee.
 An incompatible request shape, including a general N-channel production API, must use a new API
 version or endpoint. Research results do not silently alter V1 behavior.

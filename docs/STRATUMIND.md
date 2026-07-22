@@ -47,9 +47,11 @@ Content-Type: application/json
 }
 ```
 
-The request accepts one externally frozen finite Dense vector and one externally frozen,
-non-negative Sparse impact vector. Sparse indices must be strictly increasing. `limit` is the final
-WRRF result count; it is not a per-channel candidate window.
+The request accepts one externally frozen finite Dense vector and either an externally frozen,
+non-negative Sparse impact vector or a local `{ "text": "...", "model": "qdrant/bm25" }`
+document. Sparse indices must be strictly increasing. The BM25 form uses Qdrant's native local
+search encoder and then enters the same exact Sparse rank stream. `limit` is the final WRRF result
+count; it is not a per-channel candidate window.
 
 The response returns identities and ranks plus an explicit guarantee and execution record:
 
