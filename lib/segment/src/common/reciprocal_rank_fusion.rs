@@ -410,7 +410,7 @@ impl<'a> DynamicRrfSession<'a> {
                 return Ok(DynamicRrfAdvance::Paused);
             }
 
-            let source = self.select_source_to_advance();
+            let source = self.select_source_to_advance(minimum_pulls);
             self.source_schedule.push(source);
             self.advance_actions += 1;
             self.source_last_advanced[source] = self.advance_actions;
@@ -440,12 +440,16 @@ impl<'a> DynamicRrfSession<'a> {
         }
     }
 
-    fn select_source_to_advance(&self) -> usize {
+    fn select_source_to_advance(&self, minimum_pulls: &[Option<usize>]) -> usize {
+        let below_pause_target = |source: usize| {
+            minimum_pulls[source].is_none_or(|target| self.source_pulls[source] < target)
+        };
         if let Some(fairness) = self.policy.fairness_after_actions_per_source {
             let fairness_window = fairness.saturating_mul(self.sources.len());
             if let Some(source) = (0..self.sources.len())
                 .filter(|source| {
                     self.state.next_possible_contribution(*source).is_some()
+                        && below_pause_target(*source)
                         && self
                             .advance_actions
                             .saturating_sub(self.source_last_advanced[*source])
@@ -467,6 +471,9 @@ impl<'a> DynamicRrfSession<'a> {
 
         (0..self.sources.len())
             .filter_map(|source| {
+                if !below_pause_target(source) {
+                    return None;
+                }
                 let bound = self.state.next_possible_contribution(source)?;
                 let priority = match self.policy.scheduler {
                     DynamicRrfScheduler::MaxNextContribution => f64::from(bound),
@@ -1218,6 +1225,36 @@ mod tests {
         assert_eq!(execution.source_pulls, vec![3, 3]);
         assert_eq!(execution.source_exhausted, vec![false, false]);
         assert_eq!(execution.stop_reason, DynamicRrfStopReason::TopKFixed);
+    }
+
+    #[test]
+    fn pause_target_does_not_turn_an_incomplete_prefix_into_exact_eof() {
+        let sources: Vec<ExactRrfStream<'_>> = vec![
+            infallible_exact_rrf_stream([ExtendedPointId::from(1)].into_iter()),
+            infallible_exact_rrf_stream(
+                [
+                    ExtendedPointId::from(2),
+                    ExtendedPointId::from(3),
+                    ExtendedPointId::from(4),
+                ]
+                .into_iter(),
+            ),
+        ];
+        let mut session = DynamicRrfSession::new(
+            sources,
+            10,
+            DEFAULT_RRF_K,
+            None,
+            DynamicRrfPolicy::default(),
+        )
+        .unwrap();
+
+        let advance = session.advance_until_each(&[Some(1), Some(3)]).unwrap();
+
+        assert!(matches!(advance, DynamicRrfAdvance::Paused));
+        assert_eq!(session.source_pulls(), &[1, 3]);
+        assert_eq!(session.source_is_exhausted(0), Some(false));
+        assert_eq!(session.source_is_exhausted(1), Some(false));
     }
 
     #[test]
