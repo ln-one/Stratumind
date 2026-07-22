@@ -54,13 +54,13 @@ The response returns identities and ranks plus an explicit guarantee and executi
   "result": {
     "points": [{ "id": 42, "rank": 1, "version": 7 }],
     "guarantee": {
-      "scope": "selected-shards-request-view",
+      "scope": "selected-local-shards-frozen-segment-view",
       "orderedTopKExact": true,
       "tieBreak": "point-identity-ascending",
-      "channelInput": "tie-complete-exact-prefixes"
+      "channelInput": "native-exact-rank-streams"
     },
     "execution": {
-      "plan": "adaptive-exact-prefix-v0",
+      "plan": "native-local-dense-sparse-v1",
       "stopReason": "top-k-fixed",
       "sourcePulls": [31, 28],
       "sourceExhausted": [false, false],
@@ -77,37 +77,61 @@ The response returns identities and ranks plus an explicit guarantee and executi
 
 ## V0 correctness boundary
 
-The current HTTP physical plan asks Qdrant for exact Dense and Sparse prefixes over the same
-selected-shard request view, restores each channel's global order, and runs the dynamic WRRF
-certificate over tie-complete prefixes. A one-point probe detects when a score tie crosses a prefix
-boundary; that incomplete tie group is withheld and the prefix is deepened geometrically. If the
-result is still not certified after three adaptive rounds, execution reads exact EOF. This is an
-unbounded exact strategy, not a fixed Dense or Sparse candidate window, and it never fuses
-shard-local RRF results.
+For default-consistency reads whose selected Shards all have a local readable replica, the current
+HTTP plan pins the same Segment identities for both channels, opens Segment-owned exact rank
+producers, merges every channel globally across Segments and Shards, and only then runs dynamic
+WRRF. It never fuses shard-local RRF results. Remote replicas and explicit consistency requests use
+the older exact adaptive-prefix plan; Router choice may change cost but not ordered Top-K.
+
+Dense uses an exact, metadata-only Router over three Segment-owned plans. Low-dimensional
+Segments use one lazy `B+1` Qdrant exact prefix; high-dimensional Segments with at most 16,384
+eligible points use the persisted compact signed-int8 residual certificate; larger
+high-dimensional Segments use Qdrant Scalar reconstruction bounds. Every plan computes an
+outward-safe upper bound and full-precision-rescores unresolved competitors. A strict prefix
+boundary, or exact EOF, is required before a prefix is exposed. Tied boundaries and unsupported
+storage fall back before emitting anything. Exact scan remains the universal fallback.
+
+The compact certificate is built only below its 16,384-point production limit; large Segments do
+not pay its storage cost. Router thresholds are implementation profile values, not correctness
+assumptions: selecting a slower exact plan changes cost only, never ordered Top-K.
+
+Sparse uses a two-stage exact producer. It first asks Qdrant `SearchContext` for `B+1` points. The
+first `B` are exposed only when the extra point proves a strict score boundary, so internal tie
+order cannot leak past the frozen external-identity rule. If fusion asks for more, or the boundary
+is tied, a persisted Posting-Block cursor starts lazily and resumes from its exact certificate
+state; identities already emitted by the prefix are suppressed. This is one native prefix plus one
+resumable fallback, not repeated geometric Top-N queries.
 
 `sourcePulls` counts identities consumed by the WRRF state machine. `sourcePointsMaterialized`
-counts all result points returned by the repeated native queries and can be larger than the corpus
-when prefixes are rerun. `exhaustiveFallback` makes the worst-case path explicit. These fields must
-not be confused with Dense dot products or Sparse posting decodes: the V0 HTTP plan can reduce
-fusion consumption and returned prefix size, but Dense `exact=true` may still score every visible
-point internally.
+counts identities delivered to the fusion layer and `exhaustiveFallback` reports an internal
+one-shot Qdrant fallback, including an IDF-configured Sparse source. These fields must not be
+confused with Dense quantized dots, exact rescoring, Sparse posting visits, or prefix overfetch;
+kernel experiments report those counters separately.
 
-The handler checks the exact visible point count before and after execution. A count change or any
-producer failure is an error, not an exact success. The scope is intentionally named
-`selected-shards-request-view`: this prototype does not yet expose a cross-shard MVCC snapshot token,
-so a same-count concurrent replacement is outside the present guarantee. Production callers should
-pin an immutable index generation in the filter.
+The local-native plan holds Segment read views for the stream lifetime. Producer failure and
+cancellation are errors, never exact EOF. The remote adaptive plan still checks visible point count
+before and after execution. A cross-replica MVCC snapshot token remains outside the current scope.
 
-The native resumable Sparse cursor, fallible exact EOF stream, cost-aware scheduler, safe exact
-Router, and Segment/Shard k-way merge primitives are implemented below the API. They are not yet
-wired into the Collection request hot path. Replacing adaptive reruns with lazy Segment/Shard
-cursors is the next physical optimization; it must not change this endpoint's result contract.
+The native Dense/Sparse producers, fallible exact EOF streams, safe Router, Segment/Shard/global
+k-way merges, and dynamic WRRF certificate are wired into the Collection request hot path.
 
 The named Sparse vector used here must store document impacts compatible with the caller's frozen
-Sparse Query profile. In particular, a Query vector that already contains IDF-weighted impacts must
-not be sent to a vector configured to apply Qdrant's `modifier: idf` again. Spectra therefore treats
-the vector name and Sparse profile hash as explicit adapter configuration rather than silently
-reusing its text-generated BM25 vector.
+Sparse Query profile. External non-negative impacts use `modifier: none`. A collection configured
+with `modifier: idf` is detected from Segment configuration and routed through Qdrant's one-shot
+exact path after official IDF QueryContext initialization; it is never silently double-weighted.
+
+## Reproducible HTTP gate
+
+`tools/spectra/run_exact_rrf_http_smoke.py` builds a two-Shard synthetic collection and compares the
+endpoint against an independent full-corpus Dense/Sparse WRRF implementation. Its two phases cover
+payload filtering, overwrite updates, deletes, and restart persistence. Both phases require the
+native plan and reject the run on the first ordered Top-K mismatch.
+
+```bash
+python3 tools/spectra/run_exact_rrf_http_smoke.py --phase seed-and-verify
+# Restart the same container and storage volume.
+python3 tools/spectra/run_exact_rrf_http_smoke.py --phase verify-existing
+```
 
 ## Compatibility rule
 

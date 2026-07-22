@@ -233,8 +233,18 @@ impl PostingListIter for PostingListIterator<'_> {
         false
     }
 
-    fn max_weight_till_id(&mut self, _id: PointOffsetType) -> Option<DimWeight> {
-        None
+    fn max_weight_till_id(&mut self, id: PointOffsetType) -> Option<DimWeight> {
+        // Mutable RAM postings do not have persisted block maxima. Compute the
+        // exact envelope for the requested range so certified consumers remain
+        // correct; `reliable_block_max()` stays false because this is a linear
+        // fallback, not a physical block-max optimization.
+        Some(
+            self.elements[self.current_index..]
+                .iter()
+                .take_while(|element| element.record_id <= id)
+                .map(|element| element.weight)
+                .fold(0.0, f32::max),
+        )
     }
 
     fn skip_till_id(&mut self, id: PointOffsetType) {

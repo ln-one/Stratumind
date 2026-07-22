@@ -2,6 +2,10 @@ use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::models::InferenceUsage;
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
+use collection::collection::native_exact_rrf::{
+    DEFAULT_NATIVE_EXACT_BATCH_SIZE, DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE,
+    NativeExactRrfRequest,
+};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::CountRequestInternal;
 use collection::operations::universal_query::collection_query::{
@@ -13,6 +17,7 @@ use segment::common::reciprocal_rank_fusion::{
     DynamicRrfStopReason, ExactRrfStream, infallible_exact_rrf_stream,
 };
 use segment::data_types::vectors::VectorInternal;
+use segment::index::native_dense_stream::NativeDensePolicy;
 use segment::types::{
     ExtendedPointId, Filter, SearchParams, VectorNameBuf, WithPayloadInterface, WithVector,
 };
@@ -23,6 +28,7 @@ use storage::content_manager::collection_verification::{
 };
 use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::AccessRequirements;
 use tokio::time::Instant;
 
 use super::CollectionPath;
@@ -305,13 +311,12 @@ async fn query_points(
     )
 }
 
-/// Stratumind V0 exact hybrid endpoint.
+/// Stratumind exact hybrid endpoint.
 ///
-/// The production-safe V0 plan repeatedly asks Qdrant for exact, tie-complete
-/// channel prefixes and deepens them until dynamic WRRF certifies the final
-/// Top-K. It falls back to exact EOF rather than weakening the result contract.
-/// Native resumable producers can later replace this repeated-query physical
-/// plan without changing the request or guarantee contract.
+/// A safe router uses native resumable Dense/Sparse streams when every selected
+/// Shard has a readable local replica. Distributed/consistency-constrained
+/// requests retain the exact adaptive-prefix fallback. Both plans implement
+/// the same exhaustive-channel WRRF Top-K contract.
 #[post("/collections/{collection_name}/points/query/exact-rrf")]
 async fn query_points_exact_rrf(
     dispatcher: web::Data<Dispatcher>,
@@ -343,6 +348,19 @@ async fn query_points_exact_rrf(
             k: rrf_k,
             weights,
         } = request.exact_rrf;
+        let native_request = NativeExactRrfRequest {
+            dense_query: dense.query.clone(),
+            dense_using: dense.using.clone(),
+            sparse_query: sparse.query.clone(),
+            sparse_using: sparse.using.clone(),
+            filter: request.filter.clone(),
+            limit: request.limit,
+            rrf_k,
+            weights,
+            batch_size: DEFAULT_NATIVE_EXACT_BATCH_SIZE,
+            sparse_posting_batch_size: DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE,
+            dense_policy: NativeDensePolicy::default(),
+        };
         let channel_requests = vec![
             exact_channel_request(
                 VectorInternal::Dense(dense.query),
@@ -427,6 +445,67 @@ async fn query_points_exact_rrf(
                     exhaustive_fallback: false,
                 },
             });
+        }
+
+        // One local replica is sufficient only for the default consistency
+        // mode. Explicit replica consistency keeps using Qdrant's ordinary
+        // replica resolver below.
+        if params.consistency.is_none() {
+            let collection_pass = auth.check_collection_access(
+                &collection.collection_name,
+                AccessRequirements::new(),
+                "query_points_exact_rrf_native",
+            )?;
+            let collection_ref = dispatcher
+                .toc(&auth, &pass)
+                .get_collection(&collection_pass)
+                .await?;
+            if let Some(execution) = collection_ref
+                .native_exact_rrf(native_request, &shard_selection, params.timeout())
+                .await?
+            {
+                let stop_reason = match execution.stop_reason {
+                    DynamicRrfStopReason::TopKFixed => "top-k-fixed",
+                    DynamicRrfStopReason::AllSourcesExhausted => "all-sources-exhausted",
+                };
+                let points = execution
+                    .point_ids
+                    .iter()
+                    .enumerate()
+                    .map(|(rank, &id)| {
+                        let version = execution.versions.get(&id).copied().ok_or_else(|| {
+                            StorageError::service_error(format!(
+                                "exact_rrf lost the native authoritative version for point {id}"
+                            ))
+                        })?;
+                        Ok(ExactRrfHit {
+                            id,
+                            rank: rank + 1,
+                            version,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, StorageError>>()?;
+                return Ok(ExactRrfQueryResponse {
+                    points,
+                    guarantee: ExactRrfGuarantee {
+                        scope: "selected-local-shards-frozen-segment-view",
+                        ordered_top_k_exact: true,
+                        tie_break: "point-identity-ascending",
+                        channel_input: "native-exact-rank-streams",
+                    },
+                    execution: ExactRrfExecutionResponse {
+                        plan: "native-local-dense-sparse-v1",
+                        stop_reason,
+                        source_pulls: execution.source_pulls,
+                        source_exhausted: execution.source_exhausted,
+                        certification_checks: execution.certification_checks,
+                        corpus_points_observed: count_before,
+                        query_rounds: 1,
+                        source_points_materialized: execution.source_points_materialized,
+                        exhaustive_fallback: execution.exhaustive_fallback_sources > 0,
+                    },
+                });
+            }
         }
 
         const INITIAL_EXACT_PREFIX: usize = 64;

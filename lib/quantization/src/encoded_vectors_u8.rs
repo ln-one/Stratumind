@@ -41,7 +41,7 @@ pub struct EncodedQueryU8 {
 
 /// Norm metadata needed to turn an approximate scalar-quantized dot product
 /// into an admissible interval around the original full-precision score.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ScalarReconstructionStats {
     pub original_norm: f64,
     pub reconstructed_norm: f64,

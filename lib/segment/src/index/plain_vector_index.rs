@@ -54,6 +54,10 @@ impl PlainVectorIndex {
         }
     }
 
+    pub fn get_quantized_vectors(&self) -> Arc<AtomicRefCell<Option<QuantizedVectors>>> {
+        self.quantized_vectors.clone()
+    }
+
     pub fn is_small_enough_for_unindexed_search(
         &self,
         search_optimized_threshold_kb: usize,

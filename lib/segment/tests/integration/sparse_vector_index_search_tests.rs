@@ -9,12 +9,14 @@ use common::types::{PointOffsetType, TelemetryDetail};
 use common::universal_io::MmapFile;
 use fs_err as fs;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
-use segment::entry::{SegmentEntry, StorageSegmentEntry as _};
+use segment::entry::{ReadSegmentEntry, SegmentEntry, StorageSegmentEntry as _};
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_sparse_index, fixture_sparse_index_from_iter};
 use segment::id_tracker::{IdTracker, IdTrackerRead};
@@ -32,12 +34,13 @@ use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
-    Condition, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, FieldCondition, Filter, ScoredPoint,
-    SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType, VectorName,
-    VectorStorageDatatype,
+    Condition, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, ExtendedPointId, FieldCondition, Filter,
+    ScoredPoint, SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType,
+    VectorName, VectorStorageDatatype,
 };
 use segment::vector_storage::{VectorStorage, VectorStorageRead};
 use segment::{fixture_for_all_indices, payload_json};
+use sparse::SearchScratchArena;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
 use sparse::common::types::DimId;
@@ -63,6 +66,184 @@ const LOW_FULL_SCAN_THRESHOLD: usize = 1;
 const LARGE_FULL_SCAN_THRESHOLD: usize = 10 * NUM_VECTORS;
 
 const SPARSE_VECTOR_NAME: &VectorName = "sparse_vector";
+
+#[test]
+fn persisted_sparse_index_native_cursor_is_resumable_and_exact() {
+    fixture_for_all_indices!(check_persisted_native_sparse_cursor::<_>());
+}
+
+fn check_persisted_native_sparse_cursor<I: InvertedIndex>() {
+    let data_dir = Builder::new().prefix("native_cursor").tempdir().unwrap();
+    let vectors = (0..4_096).map(|id| SparseVector {
+        indices: vec![10, 20, 30],
+        values: vec![
+            1.0 + id as f32 / 8_192.0,
+            (id % 97) as f32 / 97.0,
+            (id % 13) as f32 / 13.0,
+        ],
+    });
+    let index = fixture_sparse_index_from_iter::<I>(
+        data_dir.path(),
+        vectors,
+        LOW_FULL_SCAN_THRESHOLD,
+        SparseIndexType::ImmutableRam,
+    )
+    .unwrap();
+    let query = SparseVector {
+        indices: vec![10, 20, 30],
+        values: vec![0.5, 2.0, 0.25],
+    };
+    let query_vector: QueryVector = query.clone().into();
+    let exhaustive = index
+        .search(&[&query_vector], None, 4_096, None, &Default::default())
+        .unwrap()
+        .pop()
+        .unwrap();
+
+    let arena = SearchScratchArena::new_slow();
+    let hardware_counter = HardwareCounterCell::disposable();
+    let stopped = AtomicBool::new(false);
+    let mut cursor = index
+        .native_exact_cursor(&query, 128, &arena, &hardware_counter)
+        .unwrap();
+
+    let first_prefix: Vec<_> = (0..37)
+        .map(|_| cursor.next_result(&stopped).unwrap().unwrap())
+        .collect();
+    let prefix_telemetry = cursor.telemetry();
+    assert!(prefix_telemetry.batches_expanded < prefix_telemetry.batches);
+
+    let mut resumed = first_prefix;
+    while let Some(point) = cursor.next_result(&stopped).unwrap() {
+        resumed.push(point);
+    }
+
+    assert_eq!(resumed, exhaustive);
+    assert_eq!(cursor.next_result(&stopped).unwrap(), None);
+}
+
+#[test]
+fn segment_native_sparse_stream_applies_filter_and_external_identity_ties() {
+    let dir = Builder::new()
+        .prefix("segment_native_sparse_stream")
+        .tempdir()
+        .unwrap();
+    let config = SegmentConfig {
+        vector_data: Default::default(),
+        sparse_vector_data: HashMap::from([(
+            SPARSE_VECTOR_NAME.to_owned(),
+            SparseVectorDataConfig {
+                index: SparseIndexConfig {
+                    full_scan_threshold: Some(LOW_FULL_SCAN_THRESHOLD),
+                    index_type: SparseIndexType::MutableRam,
+                    datatype: Some(VectorStorageDatatype::Float32),
+                },
+                storage_type: SparseVectorStorageType::Mmap,
+                modifier: None,
+            },
+        )]),
+        payload_storage_type: Default::default(),
+    };
+    let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
+    let hardware_counter = HardwareCounterCell::new();
+    let mut expected: Vec<(ExtendedPointId, f32)> = Vec::new();
+
+    for insertion in 0..512u64 {
+        let external_id = 10_000 - insertion;
+        let score = 1.0 + (insertion % 4) as f32;
+        let mut vectors = NamedVectors::default();
+        vectors.insert(
+            SPARSE_VECTOR_NAME.to_owned(),
+            SparseVector {
+                indices: vec![7],
+                values: vec![score],
+            }
+            .into(),
+        );
+        segment
+            .upsert_point(insertion, external_id.into(), vectors, &hardware_counter)
+            .unwrap();
+        let group = if insertion % 2 == 0 { "keep" } else { "drop" };
+        segment
+            .set_full_payload(
+                insertion,
+                external_id.into(),
+                &payload_json! {"group": group},
+                &hardware_counter,
+            )
+            .unwrap();
+        if group == "keep" {
+            expected.push((external_id.into(), score));
+        }
+    }
+    expected.sort_unstable_by(|left, right| {
+        OrderedFloat(right.1)
+            .cmp(&OrderedFloat(left.1))
+            .then_with(|| left.0.cmp(&right.0))
+    });
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::new("group"),
+        "keep".to_owned().into(),
+    )));
+    let query = SparseVector {
+        indices: vec![7],
+        values: vec![1.0],
+    };
+    let query_vector: QueryVector = query.clone().into();
+    let mut exhaustive = segment
+        .search(
+            SPARSE_VECTOR_NAME,
+            &query_vector,
+            &Default::default(),
+            &Default::default(),
+            Some(&filter),
+            expected.len(),
+            None,
+        )
+        .unwrap();
+    assert_eq!(exhaustive.len(), expected.len());
+    exhaustive.sort_unstable_by(|left, right| {
+        OrderedFloat(right.score)
+            .cmp(&OrderedFloat(left.score))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    let mut query_context = QueryContext::default();
+    segment.fill_query_context(&mut query_context).unwrap();
+    let segment_query_context = query_context.get_segment_query_context();
+
+    let actual = segment
+        .with_view(|view| {
+            view.with_native_sparse_stream(
+                SPARSE_VECTOR_NAME,
+                &query,
+                Some(&filter),
+                32,
+                4_096,
+                &segment_query_context,
+                |next| {
+                    let mut points = Vec::new();
+                    for _ in 0..11 {
+                        points.push(next()?.expect("prefix must contain eleven points"));
+                    }
+                    while let Some(point) = next()? {
+                        points.push(point);
+                    }
+                    Ok(points)
+                },
+            )
+        })
+        .unwrap();
+
+    assert_eq!(
+        actual
+            .iter()
+            .map(|point| (point.id, point.score))
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(actual, exhaustive);
+}
 
 /// Expects the filter to match ALL points in order to compare the results with/without filter
 fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize) {

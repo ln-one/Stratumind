@@ -7,11 +7,11 @@
 //! `NativeCertifiedSparseCursor`; this module remains as an exact experiment
 //! oracle and cost comparison.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::ScoredPointOffset;
+use common::types::{PointOffsetType, ScoredPointOffset};
 
 use super::inverted_index::InvertedIndex;
 use super::search_context::SearchContext;
@@ -43,7 +43,7 @@ pub struct AdaptiveTopKStream<'a, I: InvertedIndex> {
     stopped: &'a AtomicBool,
     hardware_counter: &'a HardwareCounterCell,
     buffer: VecDeque<ScoredPointOffset>,
-    emitted: usize,
+    emitted_ids: HashSet<PointOffsetType>,
     exhausted: bool,
     telemetry: AdaptiveTopKStreamTelemetry,
 }
@@ -81,7 +81,7 @@ impl<'a, I: InvertedIndex> AdaptiveTopKStream<'a, I> {
             stopped,
             hardware_counter,
             buffer: VecDeque::new(),
-            emitted: 0,
+            emitted_ids: HashSet::new(),
             exhausted: false,
             telemetry: AdaptiveTopKStreamTelemetry::default(),
         }
@@ -118,7 +118,7 @@ impl<'a, I: InvertedIndex> AdaptiveTopKStream<'a, I> {
         if context.block_pruning_enabled() {
             context.set_batch_size(self.block_batch_size);
         }
-        let points = context.search(&|_| true);
+        let mut points = context.search(&|_| true);
         let progress = context.telemetry();
         self.telemetry.refills += 1;
         self.telemetry.final_requested_limit = requested_limit;
@@ -129,12 +129,28 @@ impl<'a, I: InvertedIndex> AdaptiveTopKStream<'a, I> {
         self.telemetry.batches += progress.batch_count;
 
         let returned = points.len();
-        if returned <= self.emitted {
-            self.exhausted = true;
-            return;
-        }
-        self.buffer.extend(points.into_iter().skip(self.emitted));
         self.exhausted = returned < requested_limit || requested_limit >= corpus_limit;
+        points.sort_unstable_by(|left, right| {
+            right
+                .score
+                .total_cmp(&left.score)
+                .then_with(|| left.idx.cmp(&right.idx))
+        });
+
+        // Qdrant's hot Top-K heap deliberately does not promise prefix
+        // stability inside an equal-score group. A larger refill can therefore
+        // replace identities at the previous boundary. Emit only score groups
+        // proven complete by a strict boundary; exact EOF closes the last tie.
+        if !self.exhausted
+            && let Some(boundary_score) = points.last().map(|point| point.score)
+        {
+            points.retain(|point| point.score > boundary_score);
+        }
+        self.buffer.extend(
+            points
+                .into_iter()
+                .filter(|point| self.emitted_ids.insert(point.idx)),
+        );
         if !self.exhausted {
             self.next_limit = requested_limit
                 .saturating_mul(self.growth_factor)
@@ -147,11 +163,10 @@ impl<I: InvertedIndex> Iterator for AdaptiveTopKStream<'_, I> {
     type Item = ScoredPointOffset;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.buffer.is_empty() {
+        while self.buffer.is_empty() && !self.exhausted {
             self.refill();
         }
         let point = self.buffer.pop_front()?;
-        self.emitted += 1;
         self.telemetry.points_emitted += 1;
         Some(point)
     }
@@ -201,7 +216,13 @@ mod tests {
             &hardware_counter,
         )
         .unwrap();
-        let expected = exhaustive.search(&|_| true);
+        let mut expected = exhaustive.search(&|_| true);
+        expected.sort_unstable_by(|left, right| {
+            right
+                .score
+                .total_cmp(&left.score)
+                .then_with(|| left.idx.cmp(&right.idx))
+        });
         drop(scratch);
 
         let mut stream = AdaptiveTopKStream::new(
@@ -219,6 +240,53 @@ mod tests {
         let actual: Vec<_> = stream.by_ref().collect();
 
         assert_eq!(actual, expected);
+        assert!(stream.telemetry().refills > 1);
+    }
+
+    #[test]
+    fn adaptive_stream_withholds_an_open_flat_tie_until_exact_eof() {
+        let mut builder = InvertedIndexBuilder::new();
+        for id in 0..257u32 {
+            builder.add(
+                id,
+                RemappedSparseVector {
+                    indices: vec![0],
+                    values: vec![1.0],
+                },
+            );
+        }
+        let ram = builder.build();
+        let temp = tempfile::tempdir().unwrap();
+        let index = InvertedIndexCompressedImmutableRam::<f32>::from_ram_index(
+            Cow::Owned(ram),
+            temp.path(),
+        )
+        .unwrap();
+        let pool = SearchScratchPool::new();
+        let stopped = AtomicBool::new(false);
+        let hardware_counter = HardwareCounterCell::disposable();
+        let mut stream = AdaptiveTopKStream::new(
+            &index,
+            RemappedSparseVector {
+                indices: vec![0],
+                values: vec![1.0],
+            },
+            7,
+            2,
+            false,
+            4096,
+            false,
+            &pool,
+            &stopped,
+            &hardware_counter,
+        );
+
+        let actual: Vec<_> = stream.by_ref().collect();
+        assert_eq!(
+            actual.iter().map(|point| point.idx).collect::<Vec<_>>(),
+            (0..257).collect::<Vec<_>>()
+        );
+        assert_eq!(stream.telemetry().points_emitted, 257);
         assert!(stream.telemetry().refills > 1);
     }
 }

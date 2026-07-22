@@ -1,24 +1,294 @@
+use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, ScoredPointOffset};
+use sparse::SearchScratchArena;
+use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::{check_query_vectors, check_stopped};
+use crate::data_types::modifier::Modifier;
 use crate::data_types::query_context::{QueryContext, QueryIdfStats, SegmentQueryContext};
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
-use crate::data_types::vectors::{QueryVector, VectorStructInternal};
+use crate::data_types::vectors::{QueryVector, VectorInternal, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
+use crate::index::native_dense_stream::{
+    NativeDenseIndexCursor, NativeDensePolicy, NativeDenseTelemetry,
+};
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
-use crate::segment::read_view::SegmentReadView;
+use crate::segment::read_view::{SegmentReadView, SegmentReadViewFor};
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SearchParams, VectorName, VectorNameBuf,
     WithPayload, WithVector,
 };
+use crate::vector_storage::{VectorStorageRead, check_deleted_condition};
+
+impl SegmentReadViewFor<'_> {
+    /// Drives one exact Dense stream over the Segment's frozen read view.
+    /// The physical router selects an exact prefix, Compact certificate,
+    /// Scalar certificate, or exact scan from frozen Segment metadata.
+    pub fn with_native_dense_stream<R>(
+        &self,
+        vector_name: &VectorName,
+        query: &[f32],
+        filter: Option<&Filter>,
+        initial_limit: usize,
+        policy: NativeDensePolicy,
+        query_context: &SegmentQueryContext,
+        consume: impl FnOnce(
+            &mut dyn FnMut() -> OperationResult<Option<ScoredPoint>>,
+        ) -> OperationResult<R>,
+    ) -> OperationResult<(R, NativeDenseTelemetry)> {
+        if query.is_empty() || query.iter().any(|coordinate| !coordinate.is_finite()) {
+            return Err(OperationError::validation_error(
+                "native Dense stream requires a non-empty finite Query",
+            ));
+        }
+        let vector_data = self
+            .vector_data
+            .get(vector_name)
+            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
+        let vector_query_context = query_context.get_vector_context(vector_name);
+        let hardware_counter = vector_query_context.hardware_counter();
+        let stopped = vector_query_context.is_stopped();
+        let vector_index = vector_data.vector_index();
+        let quantized = vector_index.quantized_vectors();
+        let quantized = quantized.as_ref().map(|quantized| quantized.borrow());
+        let quantized = quantized.as_ref().and_then(|quantized| quantized.as_ref());
+        let vector_storage = vector_data.vector_storage();
+        let deleted_vectors = vector_storage.deleted_vector_bitslice();
+        let deleted_points = self.id_tracker.deleted_point_bitslice();
+        let deferred_from = self.id_tracker.deferred_internal_id();
+        let collect_eligible = || -> OperationResult<Vec<_>> {
+            let filter_context = filter
+                .map(|filter| self.payload_index.filter_context(filter, &hardware_counter))
+                .transpose()?;
+            Ok((0..vector_storage.total_vector_count() as u32)
+                .filter(|&point| {
+                    check_deleted_condition(point, deleted_vectors, deleted_points)
+                        && deferred_from.is_none_or(|deferred| point < deferred)
+                        && filter_context
+                            .as_ref()
+                            .is_none_or(|context| context.check(point))
+                })
+                .collect::<Vec<_>>())
+        };
+
+        if initial_limit > 0
+            && !policy.force_exact_scan
+            && query.len() <= policy.exact_prefix_max_dimension
+        {
+            let query_vector: QueryVector = VectorInternal::Dense(query.to_vec()).into();
+            let prefix_top = initial_limit.checked_add(1).ok_or_else(|| {
+                OperationError::validation_error("native Dense initial limit is too large")
+            })?;
+            let params = SearchParams {
+                exact: true,
+                ..Default::default()
+            };
+            let mut prefix = self
+                .search_batch(
+                    vector_name,
+                    &[&query_vector],
+                    &WithPayload::default(),
+                    &WithVector::Bool(false),
+                    filter,
+                    prefix_top,
+                    Some(&params),
+                    query_context,
+                )?
+                .pop()
+                .expect("one Dense query returns one result list");
+            prefix.sort_unstable_by(|left, right| {
+                right
+                    .score
+                    .total_cmp(&left.score)
+                    .then_with(|| left.id.cmp(&right.id))
+            });
+            let prefix_eof = prefix.len() <= initial_limit;
+            if !prefix_eof {
+                if prefix[initial_limit - 1].score > prefix[initial_limit].score {
+                    prefix.truncate(initial_limit);
+                } else {
+                    prefix.clear();
+                }
+            }
+            let accepted_prefix_points = prefix.len();
+            let emitted_prefix: HashSet<_> = prefix.iter().map(|point| point.id).collect();
+            let mut prefix = VecDeque::from(prefix);
+            let mut cursor = None;
+
+            let mut pull_visible = || -> OperationResult<Option<ScoredPoint>> {
+                if let Some(point) = prefix.pop_front() {
+                    return Ok(Some(point));
+                }
+                if prefix_eof {
+                    return Ok(None);
+                }
+                loop {
+                    check_stopped(&stopped)?;
+                    let cursor = match cursor.as_mut() {
+                        Some(cursor) => cursor,
+                        None => cursor.insert(NativeDenseIndexCursor::new(
+                            &vector_storage,
+                            quantized,
+                            collect_eligible()?,
+                            query,
+                            policy,
+                            &hardware_counter,
+                        )?),
+                    };
+                    let Some(point) = cursor.next_result()? else {
+                        return Ok(None);
+                    };
+                    let id = self.id_tracker.external_id(point.idx).ok_or_else(|| {
+                        OperationError::inconsistent_storage(format!(
+                            "native Dense cursor returned unmapped internal point {}",
+                            point.idx
+                        ))
+                    })?;
+                    if emitted_prefix.contains(&id) {
+                        continue;
+                    }
+                    let version = self.id_tracker.internal_version(point.idx).ok_or_else(|| {
+                        OperationError::inconsistent_storage(format!(
+                            "native Dense cursor returned unversioned point {id}"
+                        ))
+                    })?;
+                    return Ok(Some(ScoredPoint {
+                        id,
+                        version,
+                        score: point.score,
+                        payload: None,
+                        vector: None,
+                        shard_key: None,
+                        order_value: None,
+                    }));
+                }
+            };
+
+            let mut buffered = VecDeque::new();
+            let mut lookahead = None;
+            let mut next = || {
+                if let Some(point) = buffered.pop_front() {
+                    return Ok(Some(point));
+                }
+                let Some(first) = lookahead
+                    .take()
+                    .map_or_else(&mut pull_visible, |point| Ok(Some(point)))?
+                else {
+                    return Ok(None);
+                };
+                let score = first.score;
+                let mut group = vec![first];
+                loop {
+                    match pull_visible()? {
+                        Some(point) if point.score == score => group.push(point),
+                        Some(point) => {
+                            lookahead = Some(point);
+                            break;
+                        }
+                        None => break,
+                    }
+                }
+                group.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+                buffered = VecDeque::from(group);
+                Ok(buffered.pop_front())
+            };
+
+            let result = consume(&mut next)?;
+            drop(next);
+            drop(pull_visible);
+            let used_fallback = cursor.is_some();
+            let mut telemetry = cursor
+                .as_ref()
+                .map_or_else(NativeDenseTelemetry::default, |cursor| cursor.telemetry());
+            if !used_fallback {
+                telemetry.plan =
+                    Some(crate::index::native_dense_stream::NativeDensePlan::ExactPrefix);
+                telemetry.eligible_points = usize::from(prefix_eof) * accepted_prefix_points;
+            }
+            telemetry.accepted_prefix_points = accepted_prefix_points;
+            telemetry.exact_prefix_fallbacks = usize::from(used_fallback);
+            return Ok((result, telemetry));
+        }
+
+        let eligible = collect_eligible()?;
+        let mut cursor = NativeDenseIndexCursor::new(
+            &vector_storage,
+            quantized,
+            eligible,
+            query,
+            policy,
+            &hardware_counter,
+        )?;
+
+        let mut pull_visible = || -> OperationResult<Option<ScoredPoint>> {
+            check_stopped(&stopped)?;
+            let Some(point) = cursor.next_result()? else {
+                return Ok(None);
+            };
+            let id = self.id_tracker.external_id(point.idx).ok_or_else(|| {
+                OperationError::inconsistent_storage(format!(
+                    "native Dense cursor returned unmapped internal point {}",
+                    point.idx
+                ))
+            })?;
+            let version = self.id_tracker.internal_version(point.idx).ok_or_else(|| {
+                OperationError::inconsistent_storage(format!(
+                    "native Dense cursor returned unversioned point {id}"
+                ))
+            })?;
+            Ok(Some(ScoredPoint {
+                id,
+                version,
+                score: point.score,
+                payload: None,
+                vector: None,
+                shard_key: None,
+                order_value: None,
+            }))
+        };
+
+        let mut buffered = VecDeque::new();
+        let mut lookahead = None;
+        let mut next = || {
+            if let Some(point) = buffered.pop_front() {
+                return Ok(Some(point));
+            }
+            let Some(first) = lookahead
+                .take()
+                .map_or_else(&mut pull_visible, |point| Ok(Some(point)))?
+            else {
+                return Ok(None);
+            };
+            let score = first.score;
+            let mut group = vec![first];
+            loop {
+                match pull_visible()? {
+                    Some(point) if point.score == score => group.push(point),
+                    Some(point) => {
+                        lookahead = Some(point);
+                        break;
+                    }
+                    None => break,
+                }
+            }
+            group.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+            buffered = VecDeque::from(group);
+            Ok(buffered.pop_front())
+        };
+
+        let result = consume(&mut next)?;
+        drop(next);
+        Ok((result, cursor.telemetry()))
+    }
+}
 
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
 where
@@ -27,6 +297,186 @@ where
     TPS: PayloadStorageRead,
     TVD: VectorDataRead,
 {
+    /// Drives a native exact Sparse stream while the Segment read view and all
+    /// borrowed index/filter state remain pinned.
+    ///
+    /// The callback may block between calls to `next`, which lets a Shard
+    /// worker implement pull-based pause/resume without moving a borrowing
+    /// cursor out of the Segment lock. Returned points use external identities
+    /// and exclude deleted, deferred, and filter-invisible records.
+    pub fn with_native_sparse_stream<R>(
+        &self,
+        vector_name: &VectorName,
+        query: &SparseVector,
+        filter: Option<&Filter>,
+        initial_limit: usize,
+        posting_batch_size: usize,
+        query_context: &SegmentQueryContext,
+        consume: impl FnOnce(
+            &mut dyn FnMut() -> OperationResult<Option<ScoredPoint>>,
+        ) -> OperationResult<R>,
+    ) -> OperationResult<R> {
+        if initial_limit == 0 || posting_batch_size == 0 {
+            return Err(OperationError::validation_error(
+                "native Sparse limits must be positive",
+            ));
+        }
+        let vector_data = self
+            .vector_data
+            .get(vector_name)
+            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
+        let vector_query_context = query_context.get_vector_context(vector_name);
+        let configured_idf = self
+            .segment_config
+            .sparse_vector_data
+            .get(vector_name)
+            .is_some_and(|config| config.modifier == Some(Modifier::Idf));
+        if configured_idf || vector_query_context.is_require_idf() {
+            // IDF-modified collections do not satisfy the frozen external
+            // impact contract. Signal an unsupported native representation so
+            // the Shard router can use its one-shot exact Qdrant fallback.
+            return Err(OperationError::WrongSparse);
+        }
+
+        let hardware_counter = vector_query_context.hardware_counter();
+        let stopped = vector_query_context.is_stopped();
+
+        // Fast exact prefix: one ordinary Qdrant Sparse search. Request one
+        // extra point so a strict score boundary certifies that the prefix is
+        // independent of Qdrant's internal tie order. A tied boundary falls
+        // through to the resumable posting plan without emitting anything.
+        let query_vector: QueryVector = query.clone().into();
+        let prefix_top = initial_limit.checked_add(1).ok_or_else(|| {
+            OperationError::validation_error("native Sparse initial limit is too large")
+        })?;
+        let mut prefix = self
+            .search_batch(
+                vector_name,
+                &[&query_vector],
+                &WithPayload::default(),
+                &WithVector::Bool(false),
+                filter,
+                prefix_top,
+                None,
+                query_context,
+            )?
+            .pop()
+            .expect("one Sparse query returns one result list");
+        prefix.sort_unstable_by(|left, right| {
+            right
+                .score
+                .total_cmp(&left.score)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        let prefix_eof = prefix.len() <= initial_limit;
+        if !prefix_eof {
+            if prefix[initial_limit - 1].score > prefix[initial_limit].score {
+                prefix.truncate(initial_limit);
+            } else {
+                prefix.clear();
+            }
+        }
+        let emitted_prefix: HashSet<_> = prefix.iter().map(|point| point.id).collect();
+
+        let arena = SearchScratchArena::new_slow();
+        let vector_index = vector_data.vector_index();
+        let vector_storage = vector_data.vector_storage();
+        let mut cursor = None;
+        let deleted_vectors = vector_storage.deleted_vector_bitslice();
+        let deleted_points = self.id_tracker.deleted_point_bitslice();
+        let not_deleted = |point| check_deleted_condition(point, deleted_vectors, deleted_points);
+        let filter_context = filter
+            .map(|filter| self.payload_index.filter_context(filter, &hardware_counter))
+            .transpose()?;
+        let deferred_from = self.id_tracker.deferred_internal_id();
+
+        let mut pull_visible = || -> OperationResult<Option<ScoredPoint>> {
+            if prefix_eof {
+                return Ok(None);
+            }
+            loop {
+                check_stopped(&stopped)?;
+                let cursor = match cursor.as_mut() {
+                    Some(cursor) => cursor,
+                    None => cursor.insert(vector_index.native_sparse_cursor(
+                        query,
+                        posting_batch_size,
+                        &arena,
+                        &hardware_counter,
+                    )?),
+                };
+                let Some(point) = cursor.next_result(&stopped)? else {
+                    return Ok(None);
+                };
+                if !not_deleted(point.idx)
+                    || deferred_from.is_some_and(|deferred| point.idx >= deferred)
+                    || filter_context
+                        .as_ref()
+                        .is_some_and(|context| !context.check(point.idx))
+                {
+                    continue;
+                }
+                let id = self.id_tracker.external_id(point.idx).ok_or_else(|| {
+                    OperationError::inconsistent_storage(format!(
+                        "native Sparse cursor returned unmapped internal point {}",
+                        point.idx
+                    ))
+                })?;
+                if emitted_prefix.contains(&id) {
+                    continue;
+                }
+                let version = self.id_tracker.internal_version(point.idx).ok_or_else(|| {
+                    OperationError::inconsistent_storage(format!(
+                        "native Sparse cursor returned unversioned point {id}"
+                    ))
+                })?;
+                return Ok(Some(ScoredPoint {
+                    id,
+                    version,
+                    score: point.score,
+                    payload: None,
+                    vector: None,
+                    shard_key: None,
+                    order_value: None,
+                }));
+            }
+        };
+
+        // The posting cursor's local tie-break is Segment offset. Complete one
+        // equal-score group before exposing it so the public stream uses the
+        // frozen external identity order required by cross-Segment merging.
+        let mut buffered = VecDeque::from(prefix);
+        let mut lookahead = None;
+        let mut next = || {
+            if let Some(point) = buffered.pop_front() {
+                return Ok(Some(point));
+            }
+            let Some(first) = lookahead
+                .take()
+                .map_or_else(&mut pull_visible, |point| Ok(Some(point)))?
+            else {
+                return Ok(None);
+            };
+            let score = first.score;
+            let mut group = vec![first];
+            loop {
+                match pull_visible()? {
+                    Some(point) if point.score == score => group.push(point),
+                    Some(point) => {
+                        lookahead = Some(point);
+                        break;
+                    }
+                    None => break,
+                }
+            }
+            group.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+            buffered = VecDeque::from(group);
+            Ok(buffered.pop_front())
+        };
+
+        consume(&mut next)
+    }
+
     /// Reads records from the segment for the given external point IDs,
     /// optionally enriched with vectors and payload.
     pub fn retrieve(

@@ -8,7 +8,6 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::Result;
 use serde::Serialize;
 
-use super::posting_batch::score_posting_batch;
 use super::posting_list_common::PostingListIter;
 use crate::SearchScratch;
 use crate::common::sparse_vector::{RemappedSparseVector, score_vectors};
@@ -213,31 +212,34 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         let batch_len = batch_last_id - batch_start_id + 1;
         self.telemetry.batch_count += 1;
         self.telemetry.scored_id_span += batch_len as usize;
-        self.telemetry.posting_elements_visited += score_posting_batch(
-            self.postings_iterators
-                .iter_mut()
-                .map(|posting| (&mut posting.posting_list_iterator, posting.query_weight)),
-            batch_start_id,
-            batch_last_id,
-            self.scores,
-        );
+        self.scores.clear();
+        self.scores.resize(batch_len as usize, 0.0);
+        for posting in &mut self.postings_iterators {
+            let elements_before = posting.posting_list_iterator.len_to_end();
+            posting.posting_list_iterator.for_each_till_id(
+                batch_last_id,
+                self.scores.as_mut_slice(),
+                #[inline(always)]
+                |scores, id, weight| {
+                    let local_id = (id - batch_start_id) as usize;
+                    *unsafe { scores.get_unchecked_mut(local_id) } += weight * posting.query_weight;
+                },
+            );
+            self.telemetry.posting_elements_visited +=
+                elements_before - posting.posting_list_iterator.len_to_end();
+        }
 
         for (local_index, &score) in self.scores.iter().enumerate() {
-            if score != 0.0 {
-                let score_point_offset = ScoredPointOffset {
-                    score,
-                    idx: batch_start_id + local_index as PointOffsetType,
-                };
-                // Publish only points that can beat the current complete
-                // score-and-identity threshold.
-                if !self.top_results.would_accept(score_point_offset) {
-                    continue;
-                }
+            if score != 0.0 && score > self.top_results.threshold() {
+                let real_id = batch_start_id + local_index as PointOffsetType;
                 // do not score if filter condition is not satisfied
-                if !filter_condition(score_point_offset.idx) {
+                if !filter_condition(real_id) {
                     continue;
                 }
-                self.top_results.push(score_point_offset);
+                self.top_results.push(ScoredPointOffset {
+                    score,
+                    idx: real_id,
+                });
             }
         }
     }
@@ -417,7 +419,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
 
     fn prune_batch_if_safe(
         &mut self,
-        start_batch_id: PointOffsetType,
+        _start_batch_id: PointOffsetType,
         last_batch_id: PointOffsetType,
     ) -> bool {
         if !self.use_block_pruning || self.top_results.len() < self.top {
@@ -433,10 +435,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                 upper_bound += max_weight * posting.query_weight;
             }
         }
-        if self.top_results.would_accept(ScoredPointOffset {
-            score: upper_bound,
-            idx: start_batch_id,
-        }) {
+        if upper_bound >= self.top_results.threshold() {
             if !self.block_prune_has_succeeded {
                 self.consecutive_block_prune_failures += 1;
                 if self

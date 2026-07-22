@@ -46,17 +46,21 @@ use parking_lot::Mutex as ParkingMutex;
 use segment::common::operation_error::OperationResult;
 use segment::entry::ReadSegmentEntry as _;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
+use segment::index::native_dense_stream::NativeDensePolicy;
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
-    SeqNumberType, StrictModeConfig,
+    SeqNumberType, StrictModeConfig, VectorNameBuf,
 };
 use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
+use shard::native_dense_stream::NativeDenseShardStream;
+use shard::native_sparse_stream::NativeSparseShardStream;
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::optimization::{OptimizationSegmentInfo, PendingOptimization};
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
+use sparse::common::sparse_vector::SparseVector;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc, oneshot};
@@ -342,6 +346,64 @@ impl LocalShard {
     #[cfg(any(test, feature = "testing"))]
     pub fn segments(&self) -> LockedSegmentHolder {
         self.segments.clone()
+    }
+
+    /// Freeze the current Segment identities for a native exact read plan.
+    /// Each returned handle is subsequently read-locked by its channel worker.
+    pub fn native_segment_snapshot(&self) -> Vec<LockedSegment> {
+        self.segments
+            .read()
+            .iter()
+            .map(|(_, segment)| segment.clone())
+            .collect()
+    }
+
+    /// Opens one exact Sparse rank stream over the current local Shard
+    /// Segment snapshot. Segment identities are cloned under the holder read
+    /// lock; each worker then pins its own Segment read view for the stream
+    /// lifetime.
+    pub fn native_sparse_stream(
+        &self,
+        vector_name: VectorNameBuf,
+        query: SparseVector,
+        filter: Option<Filter>,
+        source_batch_size: usize,
+        posting_batch_size: usize,
+        stopped: Arc<AtomicBool>,
+    ) -> OperationResult<NativeSparseShardStream> {
+        let segments = self.native_segment_snapshot();
+        NativeSparseShardStream::open(
+            segments,
+            vector_name,
+            query,
+            filter,
+            source_batch_size,
+            posting_batch_size,
+            stopped,
+        )
+    }
+
+    /// Opens one exact Dense rank stream over the current local Shard
+    /// Segment snapshot. Every physical plan is exhaustive-order equivalent.
+    pub fn native_dense_stream(
+        &self,
+        vector_name: VectorNameBuf,
+        query: Vec<f32>,
+        filter: Option<Filter>,
+        policy: NativeDensePolicy,
+        batch_size: usize,
+        stopped: Arc<AtomicBool>,
+    ) -> OperationResult<NativeDenseShardStream> {
+        let segments = self.native_segment_snapshot();
+        NativeDenseShardStream::open(
+            segments,
+            vector_name,
+            query,
+            filter,
+            policy,
+            batch_size,
+            stopped,
+        )
     }
 
     /// Recovers shard from disk.

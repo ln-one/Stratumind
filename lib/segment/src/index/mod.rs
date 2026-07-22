@@ -14,6 +14,8 @@ pub mod n_channel_exact;
 mod n_channel_rank_sharing;
 pub mod n_channel_router;
 mod n_channel_streams;
+pub mod native_dense_stream;
+pub mod native_sparse_stream;
 pub mod payload_config;
 mod payload_index_base;
 pub mod plain_payload_index;

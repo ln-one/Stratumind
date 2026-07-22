@@ -4,15 +4,15 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-#[cfg(feature = "testing")]
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::storage_version::StorageVersion as _;
 use fs_err as fs;
-use sparse::SearchScratchPool;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
+use sparse::index::posting_block_stream::NativeCertifiedSparseCursor;
+use sparse::{SearchScratchArena, SearchScratchPool};
 
 use super::indices_tracker::IndicesTracker;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -215,6 +215,45 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
     pub fn inverted_index(&self) -> &TInvertedIndex {
         &self.inverted_index
+    }
+
+    /// Opens an exact, score-ordered cursor directly over this persisted
+    /// Segment index.
+    ///
+    /// Unlike `search(top)`, the cursor preserves its posting and certificate
+    /// state between pulls and reports exact EOF separately from failure. The
+    /// caller owns the scratch arena for the cursor lifetime so a Shard-level
+    /// merger can keep several Segment cursors paused at once.
+    pub fn native_exact_cursor<'a>(
+        &'a self,
+        query: &SparseVector,
+        batch_size: usize,
+        arena: &'a SearchScratchArena,
+        hardware_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<NativeCertifiedSparseCursor<'a, TInvertedIndex>> {
+        if batch_size == 0 {
+            return Err(OperationError::validation_error(
+                "native Sparse cursor batch size must be positive",
+            ));
+        }
+        if query.indices.len() != query.values.len()
+            || query
+                .values
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight < 0.0)
+        {
+            return Err(OperationError::validation_error(
+                "native Sparse cursor requires aligned finite non-negative impacts",
+            ));
+        }
+        let remapped_query = self.indices_tracker.remap_vector(query.clone());
+        Ok(NativeCertifiedSparseCursor::new(
+            &self.inverted_index,
+            remapped_query,
+            batch_size,
+            arena,
+            hardware_counter,
+        )?)
     }
 
     /// Returns the maximum number of results that can be returned by the index for a given sparse vector

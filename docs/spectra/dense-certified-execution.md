@@ -1,18 +1,25 @@
 # Dense certified execution
 
-## Accepted exact kernel
+## Accepted exact portfolio
 
-The current Dense default is a compact per-vector signed-int8 interval stream.
-For every document and query it computes a low-bit dot product, then adds a
-deterministic residual-norm and floating-point guard. An identity is rescored in
-full precision only while its upper interval can still precede the greatest
-known exact point. Score descending and frozen identity ascending define the
-total order.
+The current Dense default is a metadata-routed portfolio of exact Segment-owned streams:
 
-This is a complete exact stream, not an approximate proposal. A difficult query
-may scan every int8 code and rescore every vector; it may not return a different
-rank. The original vectors remain authoritative and are retained for exact
-fallback.
+- dimension at most 192: one lazy Qdrant exact `B+1` prefix;
+- higher dimension and at most 16,384 eligible points: compact per-vector signed-int8 residual
+  certificate;
+- higher dimension and larger Segment: Qdrant Scalar reconstruction certificate;
+- unsupported configuration or unsafe boundary: exact scan.
+
+The compact plan computes a low-bit dot product and adds a deterministic residual-norm and
+floating-point guard. The Scalar plan uses its persisted reconstruction error. An identity is
+rescored in full precision only while its upper interval can still precede the greatest known exact
+point. Score descending and frozen identity ascending define the total order. Prefix candidates are
+exposed only after a strict `B/B+1` boundary or exact EOF; a tie starts the fallback before any
+prefix identity is emitted.
+
+Every member is a complete exact stream, not an approximate proposal. A difficult query may scan
+and rescore every vector; it may not return a different rank. The original vectors remain
+authoritative. Router thresholds influence cost only.
 
 ## Evidence
 
@@ -29,6 +36,22 @@ dimensions, and Top-20:
 
 The raw artifact is
 `docs/spectra/results/fiqa-dense-exact-repeats-v1.local.json`.
+
+The portfolio is persisted and executed through the same Qdrant Segment. On the regenerated
+SciFact snapshot (5,183 documents, 100 queries, Top-20), five counterbalanced runs produced zero
+ordered mismatches. Auto selected Compact for all 500 measured queries and measured 92,833 ns
+median-run p50 versus 180,583 ns for Qdrant exact, a median latency ratio of 0.5137. It won all 500
+paired comparisons; its mean paired delta had query-cluster bootstrap 95% interval
+[-95,376.980, -89,273.032] ns. The raw artifact is
+`docs/spectra/results/generated/stratumind-dense-auto-portfolio-scifact-v1.local.json`.
+
+The frozen 100K synthetic dimension sweep also had zero mismatch. Auto used exact prefix at 64 and
+192 dimensions, measuring ratios of 1.0172 and 1.0158 versus exact scan: the exact-stream
+abstraction cost about 1.6--1.7%, rather than claiming a speedup. It used Scalar at 256 and 384
+dimensions, measuring ratios of 0.8893 and 0.7844. At 10K x 384 it used Compact and measured a ratio
+of 0.8179. These thresholds are a frozen training-free V0 profile, not a universal hardware
+constant. Production omits the Compact file above 16,384 points; forced-Compact scale artifacts are
+ablation storage, not production storage.
 
 ## N-channel sharing
 

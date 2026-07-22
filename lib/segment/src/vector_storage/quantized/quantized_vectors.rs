@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fs::{atomic_save_json, read_json};
+use common::fs::{atomic_save_bin, atomic_save_json, read_bin, read_json};
 use common::generic_consts::{Random, Sequential};
 use common::low_memory::low_memory_mode;
 use common::types::PointOffsetType;
@@ -26,7 +26,7 @@ use super::quantized_multivector_storage::{
 };
 use super::quantized_scorer_builder::QuantizedScorerBuilder;
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{QueryVector, VectorElementType, VectorRef};
 use crate::types::{
@@ -63,6 +63,103 @@ pub const QUANTIZED_APPENDABLE_DATA_PATH: &str = "quantized_data";
 pub const QUANTIZED_META_PATH: &str = "quantized.meta.json";
 pub const QUANTIZED_OFFSETS_PATH: &str = "quantized.offsets.data";
 pub const QUANTIZED_APPENDABLE_OFFSETS_PATH: &str = "quantized_offsets_data";
+pub const QUANTIZED_SCALAR_CERTIFICATE_PATH: &str = "quantized.scalar-certificate.bin";
+pub const QUANTIZED_COMPACT_CERTIFICATE_PATH: &str = "quantized.compact-certificate.bin";
+pub const DEFAULT_COMPACT_CERTIFICATE_MAX_POINTS: usize = 16_384;
+
+const COMPACT_MAX_CODE: f64 = 127.0;
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub struct CompactDenseVectorMetadata {
+    pub scale: f64,
+    pub reconstructed_norm: f64,
+    pub residual_norm: f64,
+    pub original_norm: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CompactDenseCertificate {
+    dimension: usize,
+    codes: Vec<i8>,
+    metadata: Vec<CompactDenseVectorMetadata>,
+}
+
+impl CompactDenseCertificate {
+    pub fn dimension(&self) -> usize {
+        self.dimension
+    }
+
+    pub fn len(&self) -> usize {
+        self.metadata.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.metadata.is_empty()
+    }
+
+    pub fn row(&self, id: PointOffsetType) -> Option<(&[i8], CompactDenseVectorMetadata)> {
+        let metadata = *self.metadata.get(id as usize)?;
+        let start = (id as usize).checked_mul(self.dimension)?;
+        let codes = self.codes.get(start..start + self.dimension)?;
+        Some((codes, metadata))
+    }
+
+    fn new(dimension: usize, count: usize) -> Self {
+        Self {
+            dimension,
+            codes: Vec::with_capacity(dimension.saturating_mul(count)),
+            metadata: Vec::with_capacity(count),
+        }
+    }
+
+    fn push(&mut self, vector: &[f32]) {
+        debug_assert_eq!(vector.len(), self.dimension);
+        let original_norm = vector
+            .iter()
+            .map(|value| f64::from(*value).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let max_abs = vector
+            .iter()
+            .map(|value| f64::from(*value).abs())
+            .fold(0.0, f64::max);
+        let scale = if max_abs == 0.0 {
+            1.0
+        } else {
+            max_abs / COMPACT_MAX_CODE
+        };
+        let start = self.codes.len();
+        self.codes.extend(vector.iter().map(|value| {
+            (f64::from(*value) / scale)
+                .round()
+                .clamp(-COMPACT_MAX_CODE, COMPACT_MAX_CODE) as i8
+        }));
+        let mut reconstructed_squared = 0.0;
+        let mut residual_squared = 0.0;
+        for (&value, &code) in vector.iter().zip(&self.codes[start..]) {
+            let reconstructed = f64::from(code) * scale;
+            reconstructed_squared += reconstructed * reconstructed;
+            let residual = f64::from(value) - reconstructed;
+            residual_squared += residual * residual;
+        }
+        self.metadata.push(CompactDenseVectorMetadata {
+            scale,
+            reconstructed_norm: reconstructed_squared.sqrt(),
+            residual_norm: residual_squared.sqrt().next_up(),
+            original_norm,
+        });
+    }
+
+    fn valid_for(&self, count: usize, dimension: usize) -> bool {
+        self.dimension == dimension
+            && self.metadata.len() == count
+            && self.codes.len() == count.saturating_mul(dimension)
+    }
+
+    fn heap_size_bytes(&self) -> usize {
+        self.codes.len() + self.metadata.len() * size_of::<CompactDenseVectorMetadata>()
+    }
+}
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct QuantizedVectorsConfig {
@@ -253,9 +350,29 @@ pub struct QuantizedVectors {
     path: PathBuf,
     distance: Distance,
     datatype: VectorStorageDatatype,
+    scalar_reconstruction: Option<Vec<ScalarReconstructionStats>>,
+    compact_dense_certificate: Option<CompactDenseCertificate>,
 }
 
 impl QuantizedVectors {
+    /// Query-independent reconstruction norms persisted alongside Scalar
+    /// quantization. Their ordinal is the Segment point offset.
+    pub fn scalar_reconstruction_table(&self) -> Option<&[ScalarReconstructionStats]> {
+        self.scalar_reconstruction.as_deref()
+    }
+
+    pub fn compact_dense_certificate(&self) -> Option<&CompactDenseCertificate> {
+        self.compact_dense_certificate.as_ref()
+    }
+
+    pub fn distance(&self) -> Distance {
+        self.distance
+    }
+
+    pub fn datatype(&self) -> VectorStorageDatatype {
+        self.datatype
+    }
+
     /// Returns reconstruction norms for Scalar quantization. Other quantizers
     /// require their own proven reconstruction contract before exact
     /// certification can use them.
@@ -615,6 +732,12 @@ impl QuantizedVectors {
             QuantizedVectorStorage::TQChunkedMmapMulti(q) => q.files(),
         };
         files.push(self.path.join(QUANTIZED_CONFIG_PATH));
+        if self.scalar_reconstruction.is_some() {
+            files.push(self.path.join(QUANTIZED_SCALAR_CERTIFICATE_PATH));
+        }
+        if self.compact_dense_certificate.is_some() {
+            files.push(self.path.join(QUANTIZED_COMPACT_CERTIFICATE_PATH));
+        }
         files
     }
 
@@ -646,6 +769,12 @@ impl QuantizedVectors {
             QuantizedVectorStorage::TQChunkedMmapMulti(q) => q.immutable_files(),
         };
         files.push(self.path.join(QUANTIZED_CONFIG_PATH));
+        if self.scalar_reconstruction.is_some() {
+            files.push(self.path.join(QUANTIZED_SCALAR_CERTIFICATE_PATH));
+        }
+        if self.compact_dense_certificate.is_some() {
+            files.push(self.path.join(QUANTIZED_COMPACT_CERTIFICATE_PATH));
+        }
         files
     }
 
@@ -657,6 +786,26 @@ impl QuantizedVectors {
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
+        Self::create_with_compact_limit(
+            vector_storage,
+            quantization_config,
+            storage_type,
+            path,
+            max_threads,
+            DEFAULT_COMPACT_CERTIFICATE_MAX_POINTS,
+            stopped,
+        )
+    }
+
+    pub fn create_with_compact_limit(
+        vector_storage: &VectorStorageEnum,
+        quantization_config: &QuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
+        path: &Path,
+        max_threads: usize,
+        compact_max_points: usize,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Self> {
         match vector_storage {
             VectorStorageEnum::DenseVolatile(v) => Self::create_impl(
                 v,
@@ -664,6 +813,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             #[cfg(test)]
@@ -673,6 +823,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             #[cfg(test)]
@@ -682,6 +833,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             VectorStorageEnum::DenseMemmap(v) => Self::create_impl(
@@ -690,6 +842,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             VectorStorageEnum::DenseMemmapByte(v) => Self::create_impl(
@@ -698,6 +851,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             VectorStorageEnum::DenseMemmapHalf(v) => Self::create_impl(
@@ -706,6 +860,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             #[cfg(target_os = "linux")]
@@ -715,6 +870,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             #[cfg(target_os = "linux")]
@@ -724,6 +880,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             #[cfg(target_os = "linux")]
@@ -733,6 +890,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             VectorStorageEnum::DenseAppendableMemmap(v) => Self::create_impl(
@@ -741,6 +899,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => Self::create_impl(
@@ -749,6 +908,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => Self::create_impl(
@@ -757,6 +917,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             VectorStorageEnum::SparseVolatile(_) => Err(OperationError::WrongSparse),
@@ -817,6 +978,7 @@ impl QuantizedVectors {
                 storage_type,
                 path,
                 max_threads,
+                compact_max_points,
                 stopped,
             ),
             VectorStorageEnum::EmptySparse(_) => Err(OperationError::WrongSparse),
@@ -832,6 +994,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
+        compact_max_points: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
@@ -911,13 +1074,50 @@ impl QuantizedVectors {
             storage_type,
         };
 
-        let quantized_vectors = QuantizedVectors {
+        let mut quantized_vectors = QuantizedVectors {
             storage_impl: quantized_storage,
             config: quantized_vectors_config,
             path: path.to_path_buf(),
             distance,
             datatype,
+            scalar_reconstruction: None,
+            compact_dense_certificate: None,
         };
+
+        if matches!(quantization_config, QuantizationConfig::Scalar(_)) {
+            let mut reconstruction = Vec::with_capacity(count);
+            let mut compact = (count <= compact_max_points)
+                .then(|| CompactDenseCertificate::new(vector_parameters.dim, count));
+            for id in 0..count as PointOffsetType {
+                check_process_stopped(stopped)?;
+                let original = PrimitiveVectorElement::quantization_preprocess(
+                    quantization_config,
+                    distance,
+                    vector_storage.get_dense::<Sequential>(id),
+                );
+                reconstruction.push(
+                    quantized_vectors
+                        .scalar_reconstruction_stats(id, &original)
+                        .ok_or_else(|| {
+                            OperationError::inconsistent_storage(format!(
+                                "failed to build Scalar reconstruction certificate for point {id}"
+                            ))
+                        })?,
+                );
+                if let Some(compact) = &mut compact {
+                    compact.push(&original);
+                }
+            }
+            atomic_save_bin(
+                &path.join(QUANTIZED_SCALAR_CERTIFICATE_PATH),
+                &reconstruction,
+            )?;
+            quantized_vectors.scalar_reconstruction = Some(reconstruction);
+            if let Some(compact) = compact {
+                atomic_save_bin(&path.join(QUANTIZED_COMPACT_CERTIFICATE_PATH), &compact)?;
+                quantized_vectors.compact_dense_certificate = Some(compact);
+            }
+        }
 
         atomic_save_json(&path.join(QUANTIZED_CONFIG_PATH), &quantized_vectors.config)?;
         Ok(quantized_vectors)
@@ -1046,6 +1246,8 @@ impl QuantizedVectors {
             path: path.to_path_buf(),
             distance,
             datatype,
+            scalar_reconstruction: None,
+            compact_dense_certificate: None,
         };
 
         atomic_save_json(&path.join(QUANTIZED_CONFIG_PATH), &quantized_vectors.config)?;
@@ -1151,12 +1353,62 @@ impl QuantizedVectors {
 
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
+        let scalar_reconstruction = if matches!(
+            config.quantization_config,
+            QuantizationConfig::Scalar(_)
+        ) {
+            let certificate_path = path.join(QUANTIZED_SCALAR_CERTIFICATE_PATH);
+            if certificate_path.is_file() {
+                let reconstruction: Vec<ScalarReconstructionStats> = read_bin(&certificate_path)?;
+                let expected = vector_storage.total_vector_count();
+                if reconstruction.len() == expected {
+                    Some(reconstruction)
+                } else {
+                    log::warn!(
+                        "Ignoring Scalar reconstruction certificate with {} rows; expected {expected}",
+                        reconstruction.len(),
+                    );
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let compact_dense_certificate = if matches!(
+            config.quantization_config,
+            QuantizationConfig::Scalar(_)
+        ) {
+            let certificate_path = path.join(QUANTIZED_COMPACT_CERTIFICATE_PATH);
+            if certificate_path.is_file() {
+                let compact: CompactDenseCertificate = read_bin(&certificate_path)?;
+                let expected = vector_storage.total_vector_count();
+                if compact.valid_for(expected, config.vector_parameters.dim) {
+                    Some(compact)
+                } else {
+                    log::warn!(
+                        "Ignoring invalid compact Dense certificate with {} rows and dimension {}; expected {expected} rows and dimension {}",
+                        compact.len(),
+                        compact.dimension(),
+                        config.vector_parameters.dim,
+                    );
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         Ok(QuantizedVectors {
             storage_impl: quantized_store,
             config,
             path: path.to_path_buf(),
             distance,
             datatype,
+            scalar_reconstruction,
+            compact_dense_certificate,
         })
     }
 
@@ -2664,7 +2916,14 @@ impl crate::common::memory_usage::MemoryReporter for QuantizedVectors {
         use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent};
 
         let files = self.files();
-        let heap_bytes = self.storage_impl.heap_size_bytes() as u64;
+        let heap_bytes = self.storage_impl.heap_size_bytes() as u64
+            + self.scalar_reconstruction.as_ref().map_or(0, |stats| {
+                stats.len() * size_of::<ScalarReconstructionStats>()
+            }) as u64
+            + self
+                .compact_dense_certificate
+                .as_ref()
+                .map_or(0, CompactDenseCertificate::heap_size_bytes) as u64;
 
         // Either always_ram, then we only load on in ram and track heap_bytes
         // Or full on_disk, and we don't preload anything

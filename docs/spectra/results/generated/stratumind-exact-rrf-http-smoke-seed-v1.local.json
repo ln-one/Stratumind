@@ -1,0 +1,220 @@
+{
+  "cases": [
+    {
+      "execution": {
+        "certificationChecks": 50,
+        "corpusPointsObserved": 512,
+        "exhaustiveFallback": false,
+        "plan": "native-local-dense-sparse-v1",
+        "queryRounds": 1,
+        "sourceExhausted": [
+          false,
+          true
+        ],
+        "sourcePointsMaterialized": [
+          470,
+          136
+        ],
+        "sourcePulls": [
+          470,
+          136
+        ],
+        "stopReason": "top-k-fixed"
+      },
+      "guarantee": {
+        "channelInput": "native-exact-rank-streams",
+        "orderedTopKExact": true,
+        "scope": "selected-local-shards-frozen-segment-view",
+        "tieBreak": "point-identity-ascending"
+      },
+      "name": "base",
+      "ordered_top_k_mismatches": 0,
+      "point_ids": [
+        338,
+        109,
+        472,
+        46,
+        73,
+        126,
+        276,
+        371,
+        412,
+        383,
+        377,
+        389,
+        311,
+        427,
+        179,
+        313,
+        489,
+        3,
+        101,
+        366
+      ]
+    },
+    {
+      "execution": {
+        "certificationChecks": 46,
+        "corpusPointsObserved": 341,
+        "exhaustiveFallback": false,
+        "plan": "native-local-dense-sparse-v1",
+        "queryRounds": 1,
+        "sourceExhausted": [
+          false,
+          true
+        ],
+        "sourcePointsMaterialized": [
+          285,
+          92
+        ],
+        "sourcePulls": [
+          285,
+          92
+        ],
+        "stopReason": "top-k-fixed"
+      },
+      "guarantee": {
+        "channelInput": "native-exact-rank-streams",
+        "orderedTopKExact": true,
+        "scope": "selected-local-shards-frozen-segment-view",
+        "tieBreak": "point-identity-ascending"
+      },
+      "name": "payload-filter",
+      "ordered_top_k_mismatches": 0,
+      "point_ids": [
+        338,
+        276,
+        371,
+        126,
+        377,
+        389,
+        383,
+        311,
+        489,
+        101,
+        179,
+        0,
+        12,
+        159,
+        260,
+        108,
+        320,
+        3,
+        6,
+        366
+      ]
+    },
+    {
+      "execution": {
+        "certificationChecks": 49,
+        "corpusPointsObserved": 509,
+        "exhaustiveFallback": false,
+        "plan": "native-local-dense-sparse-v1",
+        "queryRounds": 1,
+        "sourceExhausted": [
+          false,
+          true
+        ],
+        "sourcePointsMaterialized": [
+          465,
+          133
+        ],
+        "sourcePulls": [
+          465,
+          133
+        ],
+        "stopReason": "top-k-fixed"
+      },
+      "guarantee": {
+        "channelInput": "native-exact-rank-streams",
+        "orderedTopKExact": true,
+        "scope": "selected-local-shards-frozen-segment-view",
+        "tieBreak": "point-identity-ascending"
+      },
+      "name": "overwrite-delete",
+      "ordered_top_k_mismatches": 0,
+      "point_ids": [
+        3,
+        2,
+        0,
+        338,
+        109,
+        472,
+        46,
+        276,
+        73,
+        126,
+        371,
+        412,
+        377,
+        383,
+        389,
+        311,
+        427,
+        179,
+        489,
+        313
+      ]
+    },
+    {
+      "execution": {
+        "certificationChecks": 46,
+        "corpusPointsObserved": 338,
+        "exhaustiveFallback": false,
+        "plan": "native-local-dense-sparse-v1",
+        "queryRounds": 1,
+        "sourceExhausted": [
+          false,
+          true
+        ],
+        "sourcePointsMaterialized": [
+          282,
+          89
+        ],
+        "sourcePulls": [
+          282,
+          89
+        ],
+        "stopReason": "top-k-fixed"
+      },
+      "guarantee": {
+        "channelInput": "native-exact-rank-streams",
+        "orderedTopKExact": true,
+        "scope": "selected-local-shards-frozen-segment-view",
+        "tieBreak": "point-identity-ascending"
+      },
+      "name": "overwrite-delete-filter",
+      "ordered_top_k_mismatches": 0,
+      "point_ids": [
+        3,
+        2,
+        0,
+        338,
+        276,
+        371,
+        377,
+        126,
+        389,
+        311,
+        383,
+        489,
+        101,
+        179,
+        260,
+        159,
+        108,
+        320,
+        71,
+        366
+      ]
+    }
+  ],
+  "dense_dimension": 16,
+  "documents_before_delete": 512,
+  "experiment": "stratumind-exact-rrf-http-smoke-v1",
+  "phase": "seed-and-verify",
+  "rrf_k": 60,
+  "schema_version": 1,
+  "shards": 2,
+  "top_k": 20
+}

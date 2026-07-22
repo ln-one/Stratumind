@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use common::universal_io::MmapFile;
 use half::f16;
+use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
@@ -12,6 +15,7 @@ use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndex
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
 use super::hnsw_index::hnsw::HNSWIndex;
+use super::native_sparse_stream::NativeSparseIndexCursor;
 use super::plain_vector_index::PlainVectorIndex;
 use super::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::common::operation_error::OperationResult;
@@ -19,6 +23,7 @@ use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 /// Read-only trait for vector index.
 ///
@@ -59,6 +64,24 @@ pub trait VectorIndexRead {
     ///
     /// Used by reporting code to decide whether to count vectors as indexed.
     fn is_index(&self) -> bool;
+
+    /// Return this Dense index's quantized storage, when present. Sparse and
+    /// read-only implementations safely expose no certificate source.
+    fn quantized_vectors(&self) -> Option<Arc<AtomicRefCell<Option<QuantizedVectors>>>> {
+        None
+    }
+
+    /// Open a resumable exact Sparse stream when this index is Sparse.
+    /// Dense and read-only implementations reject this by default.
+    fn native_sparse_cursor<'a>(
+        &'a self,
+        _query: &SparseVector,
+        _batch_size: usize,
+        _arena: &'a sparse::SearchScratchArena,
+        _hardware_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<NativeSparseIndexCursor<'a>> {
+        Err(crate::common::operation_error::OperationError::WrongSparse)
+    }
 }
 
 /// Trait for vector index with mutating operations.
@@ -269,6 +292,30 @@ impl VectorIndexRead for VectorIndexEnum {
             Self::SparseCompressedMmapF16(_) => true,
             Self::SparseCompressedMmapU8(_) => true,
         }
+    }
+
+    fn quantized_vectors(&self) -> Option<Arc<AtomicRefCell<Option<QuantizedVectors>>>> {
+        match self {
+            Self::Plain(index) => Some(index.get_quantized_vectors()),
+            Self::Hnsw(index) => Some(index.get_quantized_vectors()),
+            Self::SparseRam(_)
+            | Self::SparseCompressedImmutableRamF32(_)
+            | Self::SparseCompressedImmutableRamF16(_)
+            | Self::SparseCompressedImmutableRamU8(_)
+            | Self::SparseCompressedMmapF32(_)
+            | Self::SparseCompressedMmapF16(_)
+            | Self::SparseCompressedMmapU8(_) => None,
+        }
+    }
+
+    fn native_sparse_cursor<'a>(
+        &'a self,
+        query: &SparseVector,
+        batch_size: usize,
+        arena: &'a sparse::SearchScratchArena,
+        hardware_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<NativeSparseIndexCursor<'a>> {
+        NativeSparseIndexCursor::open(self, query, batch_size, arena, hardware_counter)
     }
 
     fn fill_idf_statistics(

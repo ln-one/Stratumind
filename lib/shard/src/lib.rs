@@ -3,6 +3,8 @@ pub mod count;
 pub mod facet;
 pub mod files;
 pub mod locked_segment;
+pub mod native_dense_stream;
+pub mod native_sparse_stream;
 pub mod operation_rate_cost;
 pub mod operations;
 pub mod optimize;
