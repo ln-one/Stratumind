@@ -103,6 +103,58 @@
         71,
         366
       ]
+    },
+    {
+      "execution": {
+        "certificationChecks": 51,
+        "corpusPointsObserved": 509,
+        "exhaustiveFallback": false,
+        "plan": "adaptive-exact-prefix-v0",
+        "queryRounds": 3,
+        "sourceExhausted": [
+          false,
+          true
+        ],
+        "sourcePointsMaterialized": [
+          911,
+          214
+        ],
+        "sourcePulls": [
+          465,
+          133
+        ],
+        "stopReason": "top-k-fixed"
+      },
+      "guarantee": {
+        "channelInput": "tie-complete-exact-prefixes",
+        "orderedTopKExact": true,
+        "scope": "selected-shards-request-view",
+        "tieBreak": "point-identity-ascending"
+      },
+      "name": "restart-persistence-explicit-consistency-fallback",
+      "ordered_top_k_mismatches": 0,
+      "point_ids": [
+        3,
+        2,
+        0,
+        338,
+        109,
+        472,
+        46,
+        276,
+        73,
+        126,
+        371,
+        412,
+        377,
+        383,
+        389,
+        311,
+        427,
+        179,
+        489,
+        313
+      ]
     }
   ],
   "dense_dimension": 16,

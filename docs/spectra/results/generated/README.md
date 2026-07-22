@@ -28,9 +28,10 @@ Qdrant.
   100K scale; every strict prefix was accepted and every ordered list matched.
 - `qdrant-stock-v1.18.2-exact-kernels-scifact-v1.local.json` records five clean-upstream runs at
   commit `44ad62f8c`; its artifact includes empty library diff evidence and harness checksums.
-- `stratumind-exact-rrf-http-smoke-{seed,restart}-v1.local.json` record six independent full-WRRF
+- `stratumind-exact-rrf-http-smoke-{seed,restart}-v1.local.json` record eight independent full-WRRF
   parity checks across two Shards, payload filtering, overwrite updates, deletes, and container
-  restart persistence. Every case used the native plan with zero ordered mismatch.
+  restart persistence. Native and explicit-consistency exact-fallback cases all have zero ordered
+  mismatch.
 
 Regenerate the primary matrix and Segment-owned gates with the commands and frozen protocol in
 `docs/spectra/plan/experiment-protocol.md`.

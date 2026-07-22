@@ -1,4 +1,10 @@
-# Spectra single-request Chunk retrieval contract
+# Spectra N-channel research contract (V2 reference)
+
+> **Status: research only.** This document describes the N-channel `/spectra/query` reference
+> server and remains useful for V2 experiments. It is not the Stratumind Production API V1 and
+> must not be used by the production Spectra adapter. The frozen production contract is
+> [`../STRATUMIND_API_V1.md`](../STRATUMIND_API_V1.md), which uses one Dense channel and one Sparse
+> channel at `/collections/{collection_name}/points/query/exact-rrf`.
 
 Spectra owns one logical `ChunkRetrievalBackend` port. A request supplies the
 frozen index generation, one to N channel Query representations, one WRRF

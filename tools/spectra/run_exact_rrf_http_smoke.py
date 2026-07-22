@@ -165,11 +165,13 @@ def verify_case(
     documents: dict[int, dict[str, Any]],
     name: str,
     visible_only: bool,
+    force_exact_fallback: bool = False,
 ) -> dict[str, Any]:
+    query = "?consistency=1" if force_exact_fallback else ""
     response = request_json(
         base_url,
         "POST",
-        f"/collections/{collection}/points/query/exact-rrf",
+        f"/collections/{collection}/points/query/exact-rrf{query}",
         exact_rrf_request(visible_only),
     )["result"]
     actual = [point["id"] for point in response["points"]]
@@ -178,8 +180,15 @@ def verify_case(
         raise AssertionError(f"{name}: ordered Top-K mismatch\nactual={actual}\nexpected={expected}")
     guarantee = response["guarantee"]
     execution = response["execution"]
-    if not guarantee["orderedTopKExact"] or execution["plan"] != "native-local-dense-sparse-v1":
-        raise AssertionError(f"{name}: native exact guarantee was not returned: {response}")
+    expected_plan = (
+        "adaptive-exact-prefix-v0"
+        if force_exact_fallback
+        else "native-local-dense-sparse-v1"
+    )
+    if not guarantee["orderedTopKExact"] or execution["plan"] != expected_plan:
+        raise AssertionError(
+            f"{name}: expected exact plan {expected_plan!r} was not returned: {response}"
+        )
     return {
         "name": name,
         "ordered_top_k_mismatches": 0,
@@ -223,6 +232,14 @@ def seed_and_verify(base_url: str, collection: str) -> list[dict[str, Any]]:
     cases = [
         verify_case(base_url, collection, documents, "base", False),
         verify_case(base_url, collection, documents, "payload-filter", True),
+        verify_case(
+            base_url,
+            collection,
+            documents,
+            "base-explicit-consistency-fallback",
+            False,
+            force_exact_fallback=True,
+        ),
     ]
 
     updated = final_documents()
@@ -270,6 +287,14 @@ def main() -> None:
                 final_documents(),
                 "restart-persistence-filter",
                 True,
+            ),
+            verify_case(
+                args.base_url,
+                args.collection,
+                final_documents(),
+                "restart-persistence-explicit-consistency-fallback",
+                False,
+                force_exact_fallback=True,
             ),
         ]
     artifact = {

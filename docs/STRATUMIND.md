@@ -4,6 +4,10 @@ Stratumind is a Qdrant v1.18.2 fork for certified Dense + Sparse rank fusion. It
 Qdrant storage format, REST/gRPC ports, collection lifecycle, ordinary query APIs, snapshots and
 Docker layout. The additional API is deliberately isolated from Qdrant's existing `Rrf` behavior.
 
+The authoritative frozen production contract is [Stratumind Production API
+V1](STRATUMIND_API_V1.md). This document explains the current implementation and verification
+evidence; if descriptive implementation text differs from the V1 contract, the contract wins.
+
 ## Build and run
 
 ```bash
@@ -124,8 +128,9 @@ exact path after official IDF QueryContext initialization; it is never silently 
 
 `tools/spectra/run_exact_rrf_http_smoke.py` builds a two-Shard synthetic collection and compares the
 endpoint against an independent full-corpus Dense/Sparse WRRF implementation. Its two phases cover
-payload filtering, overwrite updates, deletes, and restart persistence. Both phases require the
-native plan and reject the run on the first ordered Top-K mismatch.
+payload filtering, overwrite updates, deletes, restart persistence, native execution, and the
+explicit-consistency exact fallback. Every case rejects the run on the first ordered Top-K
+mismatch and verifies the expected exact plan.
 
 ```bash
 python3 tools/spectra/run_exact_rrf_http_smoke.py --phase seed-and-verify

@@ -183,7 +183,9 @@ python3 tools/spectra/run_exact_rrf_http_smoke.py \
   --output docs/spectra/results/generated/stratumind-exact-rrf-http-smoke-restart-v1.local.json
 ```
 
-The seed phase has four zero-mismatch cases: base, payload filter, overwrite plus delete, and the
-same mutation under filter. The restart phase has two zero-mismatch persistence cases. Every case
-returns `native-local-dense-sparse-v1`, `native-exact-rank-streams`, and no exhaustive fallback.
-This gate establishes functional end-to-end equivalence, not a latency claim.
+The seed phase has five zero-mismatch cases: base, payload filter, explicit-consistency exact
+fallback, overwrite plus delete, and the same mutation under filter. The restart phase has three
+zero-mismatch persistence cases, including the explicit-consistency exact fallback. Native cases
+return `native-local-dense-sparse-v1`; fallback cases return `adaptive-exact-prefix-v0`. Every case
+returns an exact guarantee. This gate establishes functional end-to-end equivalence, not a latency
+claim.

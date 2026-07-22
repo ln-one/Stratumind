@@ -106,6 +106,58 @@
     },
     {
       "execution": {
+        "certificationChecks": 52,
+        "corpusPointsObserved": 512,
+        "exhaustiveFallback": false,
+        "plan": "adaptive-exact-prefix-v0",
+        "queryRounds": 3,
+        "sourceExhausted": [
+          false,
+          true
+        ],
+        "sourcePointsMaterialized": [
+          914,
+          217
+        ],
+        "sourcePulls": [
+          470,
+          136
+        ],
+        "stopReason": "top-k-fixed"
+      },
+      "guarantee": {
+        "channelInput": "tie-complete-exact-prefixes",
+        "orderedTopKExact": true,
+        "scope": "selected-shards-request-view",
+        "tieBreak": "point-identity-ascending"
+      },
+      "name": "base-explicit-consistency-fallback",
+      "ordered_top_k_mismatches": 0,
+      "point_ids": [
+        338,
+        109,
+        472,
+        46,
+        73,
+        126,
+        276,
+        371,
+        412,
+        383,
+        377,
+        389,
+        311,
+        427,
+        179,
+        313,
+        489,
+        3,
+        101,
+        366
+      ]
+    },
+    {
+      "execution": {
         "certificationChecks": 49,
         "corpusPointsObserved": 509,
         "exhaustiveFallback": false,

@@ -12,7 +12,8 @@
 The HTTP interface smoke is not plotted as a performance figure. Its current functional artifacts
 are `../results/generated/stratumind-exact-rrf-http-smoke-seed-v1.local.json` and
 `../results/generated/stratumind-exact-rrf-http-smoke-restart-v1.local.json`; they cover two-Shard
-native execution, filters, overwrites, deletes, and restart persistence.
+native execution, explicit-consistency exact fallback, filters, overwrites, deletes, and restart
+persistence.
 
 No mock values are used in current result prose. Any future planning-only dataset
 must use a `mock_` or `synthetic_` prefix and carry the required planning label.
