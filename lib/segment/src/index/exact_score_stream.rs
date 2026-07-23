@@ -2,8 +2,14 @@
 // Licensed under the Apache License, Version 2.0.
 
 //! Fail-closed k-way merge for exact per-channel Segment or Shard streams.
+//!
+//! This is the physical scored-pull layer. Dense and Sparse scores are never
+//! compared here; one `KWayExactScoreStream` combines sources belonging to one
+//! channel. Only the fully merged channel order may be converted into an
+//! identity-only `ExactRrfStream` for cross-channel fusion.
 
-use std::collections::HashSet;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashSet};
 
 use ordered_float::OrderedFloat;
 
@@ -17,6 +23,11 @@ pub struct ExactScoredIdentity {
     pub score: f32,
 }
 
+/// Exact, locally ordered scored results for one channel.
+///
+/// The type is deliberately synchronous and borrowing. Cross-thread and
+/// remote producers must own their lifecycle outside this fusion contract and
+/// adapt their pull replies at the coordinator boundary.
 pub type ExactScoreStream<'a> = Box<dyn Iterator<Item = OperationResult<ExactScoredIdentity>> + 'a>;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -24,6 +35,29 @@ pub struct ExactScoreMergeTelemetry {
     pub source_pulls: Vec<usize>,
     pub source_exhausted: Vec<bool>,
     pub points_emitted: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PendingExactScore {
+    source: usize,
+    point: ExactScoredIdentity,
+}
+
+impl Eq for PendingExactScore {}
+
+impl Ord for PendingExactScore {
+    fn cmp(&self, other: &Self) -> Ordering {
+        OrderedFloat(self.point.score)
+            .cmp(&OrderedFloat(other.point.score))
+            .then_with(|| other.point.id.cmp(&self.point.id))
+            .then_with(|| other.source.cmp(&self.source))
+    }
+}
+
+impl PartialOrd for PendingExactScore {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// Lazily restores one global channel order from exact local score streams.
@@ -35,9 +69,9 @@ pub struct ExactScoreMergeTelemetry {
 /// mistaken for EOF.
 pub struct KWayExactScoreStream<'a> {
     sources: Vec<ExactScoreStream<'a>>,
-    heads: Vec<Option<ExactScoredIdentity>>,
+    pending: BinaryHeap<PendingExactScore>,
     previous: Vec<Option<ExactScoredIdentity>>,
-    needs_refill: Vec<bool>,
+    refill_source: Option<usize>,
     seen: HashSet<ExtendedPointId>,
     telemetry: ExactScoreMergeTelemetry,
     terminal_error: Option<OperationError>,
@@ -52,11 +86,11 @@ impl<'a> KWayExactScoreStream<'a> {
             ));
         }
         let source_count = sources.len();
-        Ok(Self {
+        let mut stream = Self {
             sources,
-            heads: vec![None; source_count],
+            pending: BinaryHeap::with_capacity(source_count),
             previous: vec![None; source_count],
-            needs_refill: vec![true; source_count],
+            refill_source: None,
             seen: HashSet::new(),
             telemetry: ExactScoreMergeTelemetry {
                 source_pulls: vec![0; source_count],
@@ -65,28 +99,34 @@ impl<'a> KWayExactScoreStream<'a> {
             },
             terminal_error: None,
             error_delivered: false,
-        })
+        };
+        for source in 0..source_count {
+            stream.refill(source)?;
+        }
+        Ok(stream)
     }
 
     pub fn telemetry(&self) -> &ExactScoreMergeTelemetry {
         &self.telemetry
     }
 
+    /// Erase scores only after every visible source for this channel has been
+    /// included in the merge. A Segment- or Shard-local instance is not a
+    /// global rank stream and must not be passed to WRRF.
     pub fn into_rank_stream(self) -> ExactRrfStream<'a> {
         Box::new(self.map(|result| result.map(|point| point.id)))
     }
 
     fn fail(&mut self, error: OperationError) {
         self.terminal_error = Some(error);
-        self.heads.fill(None);
-        self.needs_refill.fill(false);
+        self.pending.clear();
+        self.refill_source = None;
     }
 
     fn refill(&mut self, source: usize) -> OperationResult<()> {
-        if !self.needs_refill[source] || self.telemetry.source_exhausted[source] {
+        if self.telemetry.source_exhausted[source] {
             return Ok(());
         }
-        self.needs_refill[source] = false;
         let Some(point) = self.sources[source].next().transpose()? else {
             self.telemetry.source_exhausted[source] = true;
             return Ok(());
@@ -105,28 +145,19 @@ impl<'a> KWayExactScoreStream<'a> {
         }
         self.telemetry.source_pulls[source] += 1;
         self.previous[source] = Some(point);
-        self.heads[source] = Some(point);
+        self.pending.push(PendingExactScore { source, point });
         Ok(())
     }
 
     fn next_inner(&mut self) -> OperationResult<Option<ExactScoredIdentity>> {
-        for source in 0..self.sources.len() {
+        if let Some(source) = self.refill_source.take() {
             self.refill(source)?;
         }
-        let Some(source) = self
-            .heads
-            .iter()
-            .enumerate()
-            .filter_map(|(source, point)| point.map(|point| (source, point)))
-            .min_by(|(_, left), (_, right)| exact_score_order(*left, *right))
-            .map(|(source, _)| source)
-        else {
+        let Some(pending) = self.pending.pop() else {
             return Ok(None);
         };
-        let point = self.heads[source]
-            .take()
-            .expect("selected exact score source has a head");
-        self.needs_refill[source] = true;
+        self.refill_source = Some(pending.source);
+        let point = pending.point;
         if !self.seen.insert(point.id) {
             return Err(OperationError::validation_error(format!(
                 "exact score merge observed duplicate visible identity {}",

@@ -4,6 +4,10 @@ pub mod facet;
 pub mod files;
 pub mod locked_segment;
 pub mod native_dense_stream;
+mod native_score_stream;
+pub use native_score_stream::{
+    NativeShardPointVersions, NativeShardPointVersionsCache, NativeWorkerSpawner,
+};
 pub mod native_sparse_stream;
 pub mod operation_rate_cost;
 pub mod operations;

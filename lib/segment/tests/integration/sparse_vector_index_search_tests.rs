@@ -218,7 +218,6 @@ fn segment_native_sparse_stream_applies_filter_and_external_identity_ties() {
                 SPARSE_VECTOR_NAME,
                 &query,
                 Some(&filter),
-                32,
                 4_096,
                 &segment_query_context,
                 |next| {

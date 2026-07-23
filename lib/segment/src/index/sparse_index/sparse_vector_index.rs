@@ -11,7 +11,10 @@ use fs_err as fs;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-use sparse::index::posting_block_stream::NativeCertifiedSparseCursor;
+use sparse::index::native_rank_stream::NativeSearchContextRankStream;
+use sparse::index::posting_block_stream::{
+    ExactSparseCursor, NativeCertifiedSparseCursor, NativeSparsePlan,
+};
 use sparse::{SearchScratchArena, SearchScratchPool};
 
 use super::indices_tracker::IndicesTracker;
@@ -254,6 +257,60 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             arena,
             hardware_counter,
         )?)
+    }
+
+    /// Opens one interchangeable exact Sparse physical plan.
+    ///
+    /// Opens an exact Sparse cursor behind one internal physical-plan boundary.
+    /// `Auto` is the frozen production choice; explicit variants are used by
+    /// benchmarks and do not alter the public API.
+    pub fn native_exact_cursor_with_plan<'a>(
+        &'a self,
+        query: &SparseVector,
+        batch_size: usize,
+        plan: NativeSparsePlan,
+        arena: &'a SearchScratchArena,
+        hardware_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Box<dyn ExactSparseCursor + 'a>> {
+        if batch_size == 0 {
+            return Err(OperationError::validation_error(
+                "native Sparse cursor batch size must be positive",
+            ));
+        }
+        if query.indices.len() != query.values.len()
+            || query
+                .values
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight < 0.0)
+        {
+            return Err(OperationError::validation_error(
+                "native Sparse cursor requires aligned finite non-negative impacts",
+            ));
+        }
+        let remapped_query = self.indices_tracker.remap_vector(query.clone());
+        let plan = match plan {
+            // Production-facing Auto retains the validated eager exact plan.
+            NativeSparsePlan::Auto => NativeSparsePlan::EagerPostingBlock,
+            explicit => explicit,
+        };
+        let cursor: Box<dyn ExactSparseCursor + 'a> = match plan {
+            NativeSparsePlan::EagerPostingBlock => Box::new(NativeCertifiedSparseCursor::new(
+                &self.inverted_index,
+                remapped_query,
+                batch_size,
+                arena,
+                hardware_counter,
+            )?),
+            NativeSparsePlan::NativeSearchContext => Box::new(NativeSearchContextRankStream::new(
+                remapped_query,
+                batch_size,
+                &self.inverted_index,
+                arena,
+                hardware_counter,
+            )?),
+            NativeSparsePlan::Auto => unreachable!("Auto is resolved above"),
+        };
+        Ok(cursor)
     }
 
     /// Returns the maximum number of results that can be returned by the index for a given sparse vector

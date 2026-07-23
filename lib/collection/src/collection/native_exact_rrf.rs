@@ -3,29 +3,38 @@
 
 //! Native exact Dense/Sparse channel execution followed by dynamic WRRF.
 
-use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
 use std::time::Duration;
 
-use ordered_float::OrderedFloat;
-use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::reciprocal_rank_fusion::{
     DynamicRrfExecution, DynamicRrfPolicy, DynamicRrfScheduler, DynamicRrfStopReason,
     ExactRrfStream, execute_dynamic_rrf_with_policy,
 };
+use segment::index::exact_score_stream::{
+    ExactScoreStream, ExactScoredIdentity, KWayExactScoreStream,
+};
 use segment::index::native_dense_stream::NativeDensePolicy;
 use segment::types::{ExtendedPointId, Filter, PointIdType, ScoredPoint, VectorNameBuf};
 use shard::locked_segment::LockedSegment;
-use shard::native_dense_stream::NativeDenseShardStream;
-use shard::native_sparse_stream::NativeSparseShardStream;
+use shard::native_dense_stream::{
+    NativeDenseShardStream, NativeDenseShardTelemetry,
+    materialize_shard_exact as materialize_dense_shard_exact,
+};
+use shard::native_sparse_stream::{
+    NativeSparseShardStream, materialize_shard_exact as materialize_sparse_shard_exact,
+};
+use shard::{NativeShardPointVersionsCache, NativeWorkerSpawner};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::Collection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shards::local_shard::NativeSegmentSnapshot;
 
 pub const DEFAULT_NATIVE_EXACT_BATCH_SIZE: usize = 64;
 pub const DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE: usize = 4_096;
@@ -54,124 +63,170 @@ pub struct NativeExactRrfResult {
     pub source_exhausted: Vec<bool>,
     pub certification_checks: usize,
     pub source_points_materialized: Vec<usize>,
+    /// Physical Segment-session reply batches fetched per channel.
+    pub source_worker_pull_batches: Vec<usize>,
+    /// Physical scored points received per channel, including buffered
+    /// lookahead not yet consumed by WRRF.
+    pub source_worker_points_received: Vec<usize>,
     pub exhaustive_fallback_sources: usize,
+    pub visible_points: usize,
     pub shard_count: usize,
 }
 
-trait ScoredStream: Send {
-    fn next_result(&mut self) -> OperationResult<Option<ScoredPoint>>;
+struct NativeExactCancellation {
+    stopped: Arc<AtomicBool>,
+    armed: bool,
 }
 
-impl ScoredStream for NativeDenseShardStream {
-    fn next_result(&mut self) -> OperationResult<Option<ScoredPoint>> {
-        NativeDenseShardStream::next_result(self)
-    }
-}
-
-impl ScoredStream for NativeSparseShardStream {
-    fn next_result(&mut self) -> OperationResult<Option<ScoredPoint>> {
-        NativeSparseShardStream::next_result(self)
-    }
-}
-
-#[derive(Debug)]
-struct PendingPoint {
-    source: usize,
-    point: ScoredPoint,
-}
-
-impl Eq for PendingPoint {}
-
-impl PartialEq for PendingPoint {
-    fn eq(&self, other: &Self) -> bool {
-        self.source == other.source
-            && self.point.id == other.point.id
-            && self.point.version == other.point.version
-            && self.point.score == other.point.score
-    }
-}
-
-impl Ord for PendingPoint {
-    fn cmp(&self, other: &Self) -> Ordering {
-        OrderedFloat(self.point.score)
-            .cmp(&OrderedFloat(other.point.score))
-            .then_with(|| other.point.id.cmp(&self.point.id))
-            .then_with(|| self.point.version.cmp(&other.point.version))
-            .then_with(|| other.source.cmp(&self.source))
-    }
-}
-
-impl PartialOrd for PendingPoint {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-/// Merge Shard-local exact score streams into one exact channel rank stream.
-/// Scores are compared only within this channel.
-struct MergedChannelStream {
-    sources: Vec<Box<dyn ScoredStream>>,
-    pending: BinaryHeap<PendingPoint>,
-    seen: HashSet<PointIdType>,
-}
-
-impl MergedChannelStream {
-    fn new(sources: Vec<Box<dyn ScoredStream>>) -> OperationResult<Self> {
-        let mut stream = Self {
-            sources,
-            pending: BinaryHeap::new(),
-            seen: HashSet::new(),
-        };
-        for source in 0..stream.sources.len() {
-            stream.pull_source(source)?;
+impl NativeExactCancellation {
+    fn new(stopped: Arc<AtomicBool>) -> Self {
+        Self {
+            stopped,
+            armed: true,
         }
-        Ok(stream)
     }
 
-    fn next_result(&mut self) -> OperationResult<Option<ScoredPoint>> {
-        loop {
-            let Some(pending) = self.pending.pop() else {
-                return Ok(None);
-            };
-            self.pull_source(pending.source)?;
-            if self.seen.insert(pending.point.id) {
-                return Ok(Some(pending.point));
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for NativeExactCancellation {
+    fn drop(&mut self) {
+        if self.armed {
+            self.stopped.store(true, AtomicOrdering::Relaxed);
+        }
+    }
+}
+
+fn exact_score_stream(
+    mut next: impl FnMut() -> OperationResult<Option<ScoredPoint>> + 'static,
+    versions: Rc<RefCell<HashMap<PointIdType, u64>>>,
+) -> ExactScoreStream<'static> {
+    Box::new(std::iter::from_fn(move || match next() {
+        Ok(Some(point)) => {
+            let mut versions = versions.borrow_mut();
+            if let Some(observed) = versions.get(&point.id)
+                && *observed != point.version
+            {
+                return Some(Err(OperationError::inconsistent_storage(format!(
+                    "native exact RRF observed point {} at conflicting versions {} and {}",
+                    point.id, observed, point.version,
+                ))));
             }
+            versions.insert(point.id, point.version);
+            Some(Ok(ExactScoredIdentity {
+                id: point.id,
+                score: point.score,
+            }))
         }
-    }
-
-    fn pull_source(&mut self, source: usize) -> OperationResult<()> {
-        if let Some(point) = self.sources[source].next_result()? {
-            self.pending.push(PendingPoint { source, point });
-        }
-        Ok(())
-    }
+        Ok(None) => None,
+        Err(error) => Some(Err(error)),
+    }))
 }
 
-struct IdentityStream {
-    inner: MergedChannelStream,
-    versions: Arc<Mutex<HashMap<PointIdType, u64>>>,
+fn observed_rank_stream(
+    merged: KWayExactScoreStream<'static>,
     materialized: Arc<AtomicUsize>,
+) -> ExactRrfStream<'static> {
+    Box::new(merged.map(move |point| {
+        point.map(|point| {
+            materialized.fetch_add(1, AtomicOrdering::Relaxed);
+            point.id
+        })
+    }))
 }
 
-impl Iterator for IdentityStream {
-    type Item = OperationResult<ExtendedPointId>;
+struct NativeRrfCoreResult {
+    point_ids: Vec<ExtendedPointId>,
+    versions: HashMap<PointIdType, u64>,
+    stop_reason: DynamicRrfStopReason,
+    source_pulls: Vec<usize>,
+    source_exhausted: Vec<bool>,
+    certification_checks: usize,
+    source_points_materialized: Vec<usize>,
+}
 
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.inner.next_result() {
-            Ok(Some(point)) => {
-                self.materialized.fetch_add(1, AtomicOrdering::Relaxed);
-                self.versions
-                    .lock()
-                    .entry(point.id)
-                    .and_modify(|version| *version = (*version).max(point.version))
-                    .or_insert(point.version);
-                Some(Ok(point.id))
-            }
-            Ok(None) => None,
-            Err(error) => Some(Err(error)),
-        }
-    }
+struct NativeFrozenShard {
+    segments: Vec<LockedSegment>,
+    point_versions_cache: Arc<NativeShardPointVersionsCache>,
+}
+
+fn frozen_shards(snapshots: &[NativeSegmentSnapshot]) -> Vec<NativeFrozenShard> {
+    snapshots
+        .iter()
+        .map(|snapshot| NativeFrozenShard {
+            segments: snapshot.segments.clone(),
+            point_versions_cache: snapshot.point_versions_cache.clone(),
+        })
+        .collect()
+}
+
+fn execute_rrf_sources(
+    dense_sources: Vec<ExactScoreStream<'static>>,
+    sparse_sources: Vec<ExactScoreStream<'static>>,
+    versions: Rc<RefCell<HashMap<PointIdType, u64>>>,
+    limit: usize,
+    rrf_k: usize,
+    weights: [f32; 2],
+) -> OperationResult<NativeRrfCoreResult> {
+    let materialized = [Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0))];
+    let dense_stream = observed_rank_stream(
+        KWayExactScoreStream::new(dense_sources)?,
+        materialized[0].clone(),
+    );
+    let sparse_stream = observed_rank_stream(
+        KWayExactScoreStream::new(sparse_sources)?,
+        materialized[1].clone(),
+    );
+    let DynamicRrfExecution {
+        point_ids,
+        source_pulls,
+        source_exhausted,
+        certification_checks,
+        stop_reason,
+        ..
+    } = execute_dynamic_rrf_with_policy(
+        vec![dense_stream, sparse_stream],
+        limit,
+        rrf_k,
+        Some(&weights),
+        DynamicRrfPolicy {
+            scheduler: DynamicRrfScheduler::MaxNextContribution,
+            ..DynamicRrfPolicy::default()
+        },
+    )?;
+    let observed_versions = Rc::try_unwrap(versions)
+        .map_err(|_| OperationError::service_error_light("native exact RRF version map leaked"))?
+        .into_inner();
+    let versions = point_ids
+        .iter()
+        .map(|id| {
+            observed_versions
+                .get(id)
+                .copied()
+                .map(|version| (*id, version))
+                .ok_or_else(|| {
+                    OperationError::inconsistent_storage(format!(
+                        "native exact RRF result {id} has no visible version"
+                    ))
+                })
+        })
+        .collect::<OperationResult<HashMap<_, _>>>()?;
+    let source_points_materialized = materialized
+        .into_iter()
+        .map(|count| count.load(AtomicOrdering::Relaxed))
+        .collect();
+
+    Ok(NativeRrfCoreResult {
+        point_ids,
+        versions,
+        stop_reason,
+        source_pulls,
+        source_exhausted,
+        certification_checks,
+        source_points_materialized,
+    })
 }
 
 impl Collection {
@@ -197,6 +252,9 @@ impl Collection {
         let mut snapshots = Vec::with_capacity(targets.len());
         for target in targets {
             let Some(snapshot) = target.native_segment_snapshot().await? else {
+                log::debug!(
+                    "native exact RRF skipped: selected Shard has no local native snapshot"
+                );
                 return Ok(None);
             };
             snapshots.push(snapshot);
@@ -205,14 +263,58 @@ impl Collection {
         let stopped = Arc::new(AtomicBool::new(false));
         let task_stopped = stopped.clone();
         let shard_count = snapshots.len();
-        let mut task = tokio::task::spawn_blocking(move || {
-            execute_native_exact_rrf(snapshots, request, task_stopped)
-        });
+        let segment_count = snapshots
+            .iter()
+            .map(|snapshot| snapshot.segments.len())
+            .sum::<usize>();
+        let Some(required_worker_slots) = segment_count.checked_mul(2) else {
+            log::debug!("native exact RRF skipped: Segment worker count overflow");
+            return Ok(None);
+        };
+        let mut cancellation = NativeExactCancellation::new(stopped.clone());
+        let mut task = if let Some(reservation) = self
+            .search_runtime
+            .try_reserve_exact_workers(required_worker_slots)
+        {
+            debug_assert_eq!(reservation.worker_slots(), required_worker_slots);
+            let worker_reservation = reservation.workers();
+            let worker_spawner = NativeWorkerSpawner::new(move |_name, worker| {
+                worker_reservation.spawn_blocking(worker).ok_or_else(|| {
+                    OperationError::service_error_light(
+                        "native exact session attempted to exceed its reserved worker capacity",
+                    )
+                })?;
+                Ok(())
+            });
+            reservation
+                .coordinator()
+                .spawn_blocking(move || {
+                    let shards = frozen_shards(&snapshots);
+                    let result =
+                        execute_native_exact_rrf(shards, request, task_stopped, worker_spawner);
+                    drop(snapshots);
+                    result
+                })
+                .expect("fresh exact reservation includes its coordinator slot")
+        } else {
+            // The frozen eager plan needs only one blocking coordinator. It
+            // materializes each Segment through Qdrant's exact kernels and is
+            // result-equivalent to the resumable cursor plan, so low runtime
+            // capacity changes latency rather than correctness/availability.
+            log::debug!(
+                "native exact RRF using bounded eager fallback for {shard_count} Shards, {segment_count} Segments and {required_worker_slots} requested cursor workers",
+            );
+            tokio::task::spawn_blocking(move || {
+                let shards = frozen_shards(&snapshots);
+                let result = execute_materialized_exact_rrf(shards, request, task_stopped);
+                drop(snapshots);
+                result
+            })
+        };
         let result = if let Some(timeout) = timeout {
             match tokio::time::timeout(timeout, &mut task).await {
                 Ok(result) => result,
                 Err(_) => {
-                    stopped.store(true, AtomicOrdering::Relaxed);
                     return Err(CollectionError::timeout(timeout, "native exact RRF"));
                 }
             }
@@ -222,6 +324,7 @@ impl Collection {
         .map_err(|error| {
             CollectionError::service_error(format!("native exact RRF task failed: {error}"))
         })??;
+        cancellation.disarm();
 
         Ok(Some(NativeExactRrfResult {
             shard_count,
@@ -231,9 +334,10 @@ impl Collection {
 }
 
 fn execute_native_exact_rrf(
-    snapshots: Vec<Vec<LockedSegment>>,
+    snapshots: Vec<NativeFrozenShard>,
     request: NativeExactRrfRequest,
     stopped: Arc<AtomicBool>,
+    worker_spawner: NativeWorkerSpawner,
 ) -> OperationResult<NativeExactRrfResult> {
     let batch_size = if request.batch_size == 0 {
         DEFAULT_NATIVE_EXACT_BATCH_SIZE
@@ -245,78 +349,127 @@ fn execute_native_exact_rrf(
     } else {
         request.sparse_posting_batch_size
     };
+    let point_versions = snapshots
+        .iter()
+        .map(|snapshot| {
+            snapshot
+                .point_versions_cache
+                .get_or_build(&snapshot.segments, &stopped)
+        })
+        .collect::<OperationResult<Vec<_>>>()?;
 
     // Sparse workers are opened for every Segment first. Their pinned read
     // views freeze the corpus while Dense opens over the same identities.
-    let mut sparse_sources = Vec::with_capacity(snapshots.len());
+    let versions = Rc::new(RefCell::new(HashMap::new()));
+    let sparse_physical = Rc::new(RefCell::new(Vec::<NativeDenseShardTelemetry>::new()));
+    let mut sparse_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
     let mut exhaustive_fallback_sources = 0;
-    for segments in snapshots.iter().cloned() {
-        let stream = NativeSparseShardStream::open(
-            segments,
+    for (shard, snapshot) in snapshots.iter().enumerate() {
+        let stream = NativeSparseShardStream::open_with_point_versions(
+            snapshot.segments.clone(),
             request.sparse_using.clone(),
             request.sparse_query.clone(),
             request.filter.clone(),
             batch_size,
             sparse_posting_batch_size,
             stopped.clone(),
+            worker_spawner.clone(),
+            point_versions[shard].clone(),
         )?;
         exhaustive_fallback_sources += stream.telemetry().exhaustive_fallback_sources;
-        sparse_sources.push(Box::new(stream) as Box<dyn ScoredStream>);
+        let physical_source = {
+            let mut telemetry = sparse_physical.borrow_mut();
+            telemetry.push(stream.telemetry());
+            telemetry.len() - 1
+        };
+        let source_versions = versions.clone();
+        let source_physical = sparse_physical.clone();
+        let mut stream = stream;
+        sparse_sources.push(exact_score_stream(
+            move || {
+                let result = stream.next_result();
+                source_physical.borrow_mut()[physical_source] = stream.telemetry();
+                result
+            },
+            source_versions,
+        ));
     }
-    let dense_sources = snapshots
-        .into_iter()
-        .map(|segments| {
-            NativeDenseShardStream::open(
-                segments,
-                request.dense_using.clone(),
-                request.dense_query.clone(),
-                request.filter.clone(),
-                request.dense_policy,
-                batch_size,
-                stopped.clone(),
-            )
-            .map(|stream| Box::new(stream) as Box<dyn ScoredStream>)
-        })
-        .collect::<OperationResult<Vec<_>>>()?;
+    let dense_physical = Rc::new(RefCell::new(Vec::<NativeDenseShardTelemetry>::new()));
+    let mut dense_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
+    for (shard, snapshot) in snapshots.iter().enumerate() {
+        let mut stream = NativeDenseShardStream::open_with_point_versions(
+            snapshot.segments.clone(),
+            request.dense_using.clone(),
+            request.dense_query.clone(),
+            request.filter.clone(),
+            request.dense_policy,
+            batch_size,
+            stopped.clone(),
+            worker_spawner.clone(),
+            point_versions[shard].clone(),
+        )?;
+        let physical_source = {
+            let mut telemetry = dense_physical.borrow_mut();
+            telemetry.push(stream.telemetry());
+            telemetry.len() - 1
+        };
+        let source_versions = versions.clone();
+        let source_physical = dense_physical.clone();
+        dense_sources.push(exact_score_stream(
+            move || {
+                let result = stream.next_result();
+                source_physical.borrow_mut()[physical_source] = stream.telemetry();
+                result
+            },
+            source_versions,
+        ));
+    }
 
-    let versions = Arc::new(Mutex::new(HashMap::new()));
-    let materialized = [Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0))];
-    let dense_stream = IdentityStream {
-        inner: MergedChannelStream::new(dense_sources)?,
-        versions: versions.clone(),
-        materialized: materialized[0].clone(),
-    };
-    let sparse_stream = IdentityStream {
-        inner: MergedChannelStream::new(sparse_sources)?,
-        versions: versions.clone(),
-        materialized: materialized[1].clone(),
-    };
-    let streams: Vec<ExactRrfStream<'static>> =
-        vec![Box::new(dense_stream), Box::new(sparse_stream)];
-    let DynamicRrfExecution {
+    let NativeRrfCoreResult {
         point_ids,
+        versions,
+        stop_reason,
         source_pulls,
         source_exhausted,
         certification_checks,
-        stop_reason,
-        ..
-    } = execute_dynamic_rrf_with_policy(
-        streams,
+        source_points_materialized,
+    } = execute_rrf_sources(
+        dense_sources,
+        sparse_sources,
+        versions,
         request.limit,
         request.rrf_k,
-        Some(&request.weights),
-        DynamicRrfPolicy {
-            scheduler: DynamicRrfScheduler::MaxNextContribution,
-            ..DynamicRrfPolicy::default()
-        },
+        request.weights,
     )?;
-    let versions = Arc::try_unwrap(versions)
-        .map_err(|_| OperationError::service_error_light("native exact RRF version map leaked"))?
-        .into_inner();
-    let source_points_materialized = materialized
-        .into_iter()
-        .map(|count| count.load(AtomicOrdering::Relaxed))
-        .collect();
+    let source_worker_pull_batches = vec![
+        dense_physical
+            .borrow()
+            .iter()
+            .map(|telemetry| telemetry.worker_pull_batches)
+            .sum(),
+        sparse_physical
+            .borrow()
+            .iter()
+            .map(|telemetry| telemetry.worker_pull_batches)
+            .sum(),
+    ];
+    let source_worker_points_received = vec![
+        dense_physical
+            .borrow()
+            .iter()
+            .map(|telemetry| telemetry.worker_points_received)
+            .sum(),
+        sparse_physical
+            .borrow()
+            .iter()
+            .map(|telemetry| telemetry.worker_points_received)
+            .sum(),
+    ];
+    let visible_points = dense_physical
+        .borrow()
+        .iter()
+        .map(|telemetry| telemetry.visible_points)
+        .sum();
 
     Ok(NativeExactRrfResult {
         point_ids,
@@ -326,147 +479,104 @@ fn execute_native_exact_rrf(
         source_exhausted,
         certification_checks,
         source_points_materialized,
+        source_worker_pull_batches,
+        source_worker_points_received,
         exhaustive_fallback_sources,
+        visible_points,
+        shard_count: 0,
+    })
+}
+
+fn execute_materialized_exact_rrf(
+    snapshots: Vec<NativeFrozenShard>,
+    request: NativeExactRrfRequest,
+    stopped: Arc<AtomicBool>,
+) -> OperationResult<NativeExactRrfResult> {
+    let point_versions = snapshots
+        .iter()
+        .map(|snapshot| {
+            snapshot
+                .point_versions_cache
+                .get_or_build(&snapshot.segments, &stopped)
+        })
+        .collect::<OperationResult<Vec<_>>>()?;
+    let visible_points = point_versions.iter().map(|versions| versions.len()).sum();
+    let exhaustive_fallback_sources = snapshots
+        .iter()
+        .map(|snapshot| snapshot.segments.len())
+        .sum::<usize>()
+        .saturating_mul(2);
+
+    let versions = Rc::new(RefCell::new(HashMap::new()));
+    let mut source_worker_points_received = vec![0_usize, 0_usize];
+    let mut dense_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
+    let mut sparse_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
+
+    for (shard, snapshot) in snapshots.iter().enumerate() {
+        let dense = materialize_dense_shard_exact(
+            &snapshot.segments,
+            &request.dense_using,
+            &request.dense_query,
+            request.filter.as_ref(),
+            stopped.clone(),
+            &point_versions[shard],
+        )?;
+        source_worker_points_received[0] += dense.len();
+        let mut dense = dense.into_iter();
+        dense_sources.push(exact_score_stream(
+            move || Ok(dense.next()),
+            versions.clone(),
+        ));
+
+        let sparse = materialize_sparse_shard_exact(
+            &snapshot.segments,
+            &request.sparse_using,
+            &request.sparse_query,
+            request.filter.as_ref(),
+            stopped.clone(),
+            &point_versions[shard],
+        )?;
+        source_worker_points_received[1] += sparse.len();
+        let mut sparse = sparse.into_iter();
+        sparse_sources.push(exact_score_stream(
+            move || Ok(sparse.next()),
+            versions.clone(),
+        ));
+    }
+
+    let NativeRrfCoreResult {
+        point_ids,
+        versions,
+        stop_reason,
+        source_pulls,
+        source_exhausted,
+        certification_checks,
+        source_points_materialized,
+    } = execute_rrf_sources(
+        dense_sources,
+        sparse_sources,
+        versions,
+        request.limit,
+        request.rrf_k,
+        request.weights,
+    )?;
+
+    Ok(NativeExactRrfResult {
+        point_ids,
+        versions,
+        stop_reason,
+        source_pulls,
+        source_exhausted,
+        certification_checks,
+        source_points_materialized,
+        source_worker_pull_batches: vec![0, 0],
+        source_worker_points_received,
+        exhaustive_fallback_sources,
+        visible_points,
         shard_count: 0,
     })
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use segment::common::reciprocal_rank_fusion::exact_rrf_scoring;
-    use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-    use segment::entry::SegmentEntry;
-    use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-    use segment::segment::Segment;
-    use segment::segment_constructor::build_segment;
-    use segment::types::{
-        Distance, Indexes, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
-        VectorDataConfig, VectorStorageType,
-    };
-
-    use super::*;
-
-    const SPARSE_NAME: &str = "sparse";
-
-    fn scored(id: PointIdType, score: f32) -> ScoredPoint {
-        ScoredPoint {
-            id,
-            version: 0,
-            score,
-            payload: None,
-            vector: None,
-            shard_key: None,
-            order_value: None,
-        }
-    }
-
-    fn make_segment(
-        lane: u64,
-    ) -> (
-        tempfile::TempDir,
-        Segment,
-        Vec<ScoredPoint>,
-        Vec<ScoredPoint>,
-    ) {
-        let directory = tempfile::tempdir().unwrap();
-        let config = SegmentConfig {
-            vector_data: HashMap::from([(
-                DEFAULT_VECTOR_NAME.to_owned(),
-                VectorDataConfig {
-                    size: 2,
-                    distance: Distance::Dot,
-                    storage_type: VectorStorageType::default(),
-                    index: Indexes::Plain {},
-                    quantization_config: None,
-                    multivector_config: None,
-                    datatype: None,
-                },
-            )]),
-            sparse_vector_data: HashMap::from([(
-                SPARSE_NAME.to_owned(),
-                SparseVectorDataConfig {
-                    index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None),
-                    storage_type: SparseVectorStorageType::Mmap,
-                    modifier: None,
-                },
-            )]),
-            payload_storage_type: Default::default(),
-        };
-        let mut segment = build_segment(directory.path(), &config, None, true).unwrap();
-        let hardware_counter = HardwareCounterCell::new();
-        let mut dense = Vec::new();
-        let mut sparse = Vec::new();
-        for index in 0..128u64 {
-            let id: PointIdType = (40_000 - (index * 2 + lane)).into();
-            let dense_score = 1.0 + ((index * 5 + lane) % 17) as f32;
-            let sparse_score = 1.0 + ((index * 7 + lane) % 19) as f32;
-            let dense_vector = [dense_score, index as f32];
-            let mut vectors = only_default_vector(&dense_vector);
-            vectors.insert(
-                SPARSE_NAME.to_owned(),
-                SparseVector {
-                    indices: vec![11],
-                    values: vec![sparse_score],
-                }
-                .into(),
-            );
-            segment
-                .upsert_point(index, id, vectors, &hardware_counter)
-                .unwrap();
-            dense.push(scored(id, dense_score));
-            sparse.push(scored(id, sparse_score));
-        }
-        (directory, segment, dense, sparse)
-    }
-
-    #[test]
-    fn native_execution_equals_exhaustive_dense_sparse_wrrf() {
-        let (first_dir, first, mut dense, mut sparse) = make_segment(0);
-        let (second_dir, second, second_dense, second_sparse) = make_segment(1);
-        dense.extend(second_dense);
-        sparse.extend(second_sparse);
-        for ranking in [&mut dense, &mut sparse] {
-            ranking.sort_unstable_by(|left, right| {
-                OrderedFloat(right.score)
-                    .cmp(&OrderedFloat(left.score))
-                    .then_with(|| left.id.cmp(&right.id))
-            });
-        }
-        let expected = exact_rrf_scoring(vec![dense, sparse], 60, Some(&[1.0, 1.0]))
-            .unwrap()
-            .into_iter()
-            .take(20)
-            .map(|point| point.id)
-            .collect::<Vec<_>>();
-
-        let actual = execute_native_exact_rrf(
-            vec![vec![LockedSegment::new(first), LockedSegment::new(second)]],
-            NativeExactRrfRequest {
-                dense_query: vec![1.0, 0.0],
-                dense_using: DEFAULT_VECTOR_NAME.to_owned(),
-                sparse_query: SparseVector {
-                    indices: vec![11],
-                    values: vec![1.0],
-                },
-                sparse_using: SPARSE_NAME.to_owned(),
-                filter: None,
-                limit: 20,
-                rrf_k: 60,
-                weights: [1.0, 1.0],
-                batch_size: 13,
-                sparse_posting_batch_size: 4_096,
-                dense_policy: NativeDensePolicy::default(),
-            },
-            Arc::new(AtomicBool::new(false)),
-        )
-        .unwrap();
-
-        assert_eq!(actual.point_ids, expected);
-        assert_eq!(actual.point_ids.len(), 20);
-        assert!(actual.source_pulls.iter().all(|pulls| *pulls < 256));
-        drop((first_dir, second_dir));
-    }
-}
+#[path = "native_exact_rrf/tests.rs"]
+mod tests;

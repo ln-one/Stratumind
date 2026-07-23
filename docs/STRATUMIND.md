@@ -1,4 +1,4 @@
-# Stratumind V0
+# Stratumind Production API V1.1
 
 Stratumind is a Qdrant v1.18.2 fork for certified Dense + Sparse rank fusion. It keeps the stock
 Qdrant storage format, REST/gRPC ports, collection lifecycle, ordinary query APIs, snapshots and
@@ -6,17 +6,17 @@ Docker layout. The additional API is deliberately isolated from Qdrant's existin
 
 The authoritative frozen production contract is [Stratumind Production API
 V1](STRATUMIND_API_V1.md). This document explains the current implementation and verification
-evidence; if descriptive implementation text differs from the V1 contract, the contract wins.
+evidence; if descriptive implementation text differs from the V1.1 contract, the contract wins.
 
 ## Build and run
 
 ```bash
-docker build --build-arg PROFILE=perf . --tag stratumind:qdrant-v1.18.2
+docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.0
 docker run --rm \
   --publish 6333:6333 \
   --publish 6334:6334 \
   --volume stratumind-storage:/qdrant/storage \
-  stratumind:qdrant-v1.18.2
+  stratumind:api-v1.1.0
 ```
 
 The upstream image entrypoint, health endpoints and configuration environment variables remain
@@ -81,32 +81,31 @@ The response returns identities and ranks plus an explicit guarantee and executi
 }
 ```
 
-## V0 correctness boundary
+## V1.1 correctness boundary
 
 For default-consistency reads whose selected Shards all have a local readable replica, the current
-HTTP plan pins the same Segment identities for both channels, opens Segment-owned exact rank
-producers, merges every channel globally across Segments and Shards, and only then runs dynamic
-WRRF. It never fuses shard-local RRF results. Remote replicas and explicit consistency requests use
-the older exact adaptive-prefix plan; Router choice may change cost but not ordered Top-K.
+HTTP plan acquires one frozen Shard snapshot, shares its authoritative point identity/version map
+between both channels, opens one canonical Segment-owned session per channel, merges every channel
+globally across Segments and Shards, and only then runs dynamic WRRF. It never fuses shard-local RRF
+results. Remote replicas and explicit consistency requests use the older exact adaptive-prefix
+plan; Router choice may change cost but not ordered Top-K.
 
-Dense uses an exact, metadata-only Router over three Segment-owned plans. Low-dimensional
-Segments use one lazy `B+1` Qdrant exact prefix; high-dimensional Segments with at most 16,384
-eligible points use the persisted compact signed-int8 residual certificate; larger
-high-dimensional Segments use Qdrant Scalar reconstruction bounds. Every plan computes an
-outward-safe upper bound and full-precision-rescores unresolved competitors. A strict prefix
-boundary, or exact EOF, is required before a prefix is exposed. Tied boundaries and unsupported
-storage fall back before emitting anything. Exact scan remains the universal fallback.
+Dense uses an exact, metadata-only Router over Segment-owned exact scan, persisted compact
+signed-int8 residual certificate, and Qdrant Scalar reconstruction-bound plans. Every plan
+computes an outward-safe upper bound and full-precision-rescores unresolved competitors. The
+session owns the ordered continuation and ExactRank cache, so one query never pays for an
+independent Top-N prefix and then starts a second physical Dense truth. Unsupported storage falls
+back before emitting anything. Exact scan remains the universal fallback.
 
 The compact certificate is built only below its 16,384-point production limit; large Segments do
 not pay its storage cost. Router thresholds are implementation profile values, not correctness
 assumptions: selecting a slower exact plan changes cost only, never ordered Top-K.
 
-Sparse uses a two-stage exact producer. It first asks Qdrant `SearchContext` for `B+1` points. The
-first `B` are exposed only when the extra point proves a strict score boundary, so internal tie
-order cannot leak past the frozen external-identity rule. If fusion asks for more, or the boundary
-is tied, a persisted Posting-Block cursor starts lazily and resumes from its exact certificate
-state; identities already emitted by the prefix are suppressed. This is one native prefix plus one
-resumable fallback, not repeated geometric Top-N queries.
+Sparse uses one Qdrant `SearchContext`-backed native ranking session. It retains posting state,
+publishes only score groups whose order is certified against all unread posting contribution, and
+resumes from the same state when fusion asks for another identity. Equal-score groups are ordered
+by frozen external point identity. It does not issue repeated geometric Top-N queries or prepend an
+independently materialized prefix.
 
 `sourcePulls` counts identities consumed by the WRRF state machine. `sourcePointsMaterialized`
 counts identities delivered to the fusion layer and `exhaustiveFallback` reports an internal
@@ -114,9 +113,12 @@ one-shot Qdrant fallback, including an IDF-configured Sparse source. These field
 confused with Dense quantized dots, exact rescoring, Sparse posting visits, or prefix overfetch;
 kernel experiments report those counters separately.
 
-The local-native plan holds Segment read views for the stream lifetime. Producer failure and
-cancellation are errors, never exact EOF. The remote adaptive plan still checks visible point count
-before and after execution. A cross-replica MVCC snapshot token remains outside the current scope.
+The local-native plan atomically reserves Qdrant search-runtime capacity for its coordinator and
+Segment workers before starting. If that reservation is unavailable, it uses one bounded
+materialized exact plan over the same frozen snapshot instead of partially starting a session.
+Segment read views remain pinned for the session lifetime. Producer failure and cancellation are
+errors, never exact EOF. The remote adaptive plan still checks visible point count before and after
+execution. A cross-replica MVCC snapshot token remains outside the current scope.
 
 The native Dense/Sparse producers, fallible exact EOF streams, safe Router, Segment/Shard/global
 k-way merges, and dynamic WRRF certificate are wired into the Collection request hot path.

@@ -149,9 +149,11 @@ impl TableOfContent {
             StorageError::service_error(format!("Can't create general purpose runtime: {err}"))
         })?;
 
-        let adaptive_search_handle = AdaptiveSearchHandle::new(
+        let adaptive_search_handle = AdaptiveSearchHandle::new_with_session_capacities(
             high_cpu_search_runtime.handle().clone(),
             high_io_search_runtime.handle().clone(),
+            runtimes::high_cpu_blocking_threads(max_search_threads),
+            runtimes::high_io_blocking_threads(max_search_threads),
         );
 
         let collection_paths = fs::read_dir(&collections_path)?;

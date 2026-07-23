@@ -24,7 +24,27 @@ use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimWeight};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+pub enum NativeSparsePhysicalPlan {
+    #[default]
+    EagerPostingBlock,
+    /// Qdrant's original document-at-a-time kernel retained as a resumable
+    /// suffix-certified stream.
+    NativeSearchContext,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeSparsePlan {
+    Auto,
+    EagerPostingBlock,
+    NativeSearchContext,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PostingBlockStreamTelemetry {
+    pub plan: NativeSparsePhysicalPlan,
+    pub cursor_started: bool,
+    pub query_terms: usize,
+    pub query_posting_elements: usize,
     pub posting_lists: usize,
     pub batches: usize,
     pub bound_evaluations: usize,
@@ -36,6 +56,16 @@ pub struct PostingBlockStreamTelemetry {
     pub max_pending_batches: usize,
     pub max_pending_points: usize,
     pub max_buffered_points: usize,
+}
+
+/// Object-safe contract shared by all exact resumable Sparse physical plans.
+pub trait ExactSparseCursor {
+    fn next_result(
+        &mut self,
+        stopped: &AtomicBool,
+    ) -> std::result::Result<Option<ScoredPointOffset>, NativeSparseCursorError>;
+
+    fn telemetry(&self) -> PostingBlockStreamTelemetry;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -119,7 +149,7 @@ pub struct NativeCertifiedSparseCursor<'a, I: InvertedIndex> {
     terminal_error: Option<NativeSparseCursorError>,
 }
 
-/// Legacy research name retained for source compatibility.
+/// Backward-compatible name used by existing Sparse benchmarks.
 pub type PostingBlockStream<'a, I> = NativeCertifiedSparseCursor<'a, I>;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -174,7 +204,14 @@ impl<'a, I: InvertedIndex> NativeCertifiedSparseCursor<'a, I> {
         let postings = open_postings(index, &query, arena, hardware_counter)?;
         let mut bound_postings = postings.clone();
         let mut telemetry = PostingBlockStreamTelemetry {
+            plan: NativeSparsePhysicalPlan::EagerPostingBlock,
+            cursor_started: true,
+            query_terms: query.indices.len(),
             posting_lists: postings.len(),
+            query_posting_elements: postings
+                .iter()
+                .map(|posting| posting.iterator.len_to_end())
+                .sum(),
             ..Default::default()
         };
         let min_id = bound_postings
@@ -365,6 +402,19 @@ impl<I: InvertedIndex> Iterator for NativeCertifiedSparseCursor<'_, I> {
         let stopped = AtomicBool::new(false);
         self.next_result(&stopped)
             .expect("infallible PostingBlockStream adapter failed")
+    }
+}
+
+impl<I: InvertedIndex> ExactSparseCursor for NativeCertifiedSparseCursor<'_, I> {
+    fn next_result(
+        &mut self,
+        stopped: &AtomicBool,
+    ) -> std::result::Result<Option<ScoredPointOffset>, NativeSparseCursorError> {
+        NativeCertifiedSparseCursor::next_result(self, stopped)
+    }
+
+    fn telemetry(&self) -> PostingBlockStreamTelemetry {
+        NativeCertifiedSparseCursor::telemetry(self)
     }
 }
 

@@ -8,6 +8,10 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::Result;
 use serde::Serialize;
 
+#[cfg(test)]
+use super::native_rank_stream::{NativeSearchContextRankStream, SparseIncrementalRankCertificate};
+#[cfg(test)]
+use super::posting_block_stream::NativeSparseCursorError;
 use super::posting_list_common::PostingListIter;
 use crate::SearchScratch;
 use crate::common::sparse_vector::{RemappedSparseVector, score_vectors};
@@ -38,33 +42,33 @@ pub struct SearchTelemetry {
 }
 
 /// Iterator over posting lists with a reference to the corresponding query index and weight
-pub struct IndexedPostingListIterator<T: PostingListIter> {
-    posting_list_iterator: T,
+pub(super) struct IndexedPostingListIterator<T: PostingListIter> {
+    pub(super) posting_list_iterator: T,
     query_index: DimId,
-    query_weight: DimWeight,
+    pub(super) query_weight: DimWeight,
 }
 
 /// Making this larger makes the search faster but uses more (pooled) memory
 const ADVANCE_BATCH_SIZE: usize = 10_000;
 
 pub struct SearchContext<'a, T: PostingListIter = PostingListIterator<'a>> {
-    postings_iterators: Vec<IndexedPostingListIterator<T>>,
+    pub(super) postings_iterators: Vec<IndexedPostingListIterator<T>>,
     query: RemappedSparseVector,
     top: usize,
-    is_stopped: &'a AtomicBool,
+    pub(super) is_stopped: &'a AtomicBool,
     top_results: TopK,
-    min_record_id: Option<PointOffsetType>, // min_record_id ids across all posting lists
-    max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
+    pub(super) min_record_id: Option<PointOffsetType>, // min_record_id ids across all posting lists
+    pub(super) max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
     /// Scores buffer from [`SearchScratch`].
-    scores: &'a mut Vec<ScoreType>,
+    pub(super) scores: &'a mut Vec<ScoreType>,
     use_pruning: bool,
-    use_block_pruning: bool,
+    pub(super) use_block_pruning: bool,
     block_prune_failure_limit: Option<usize>,
     consecutive_block_prune_failures: usize,
     block_prune_has_succeeded: bool,
     hardware_counter: &'a HardwareCounterCell,
-    telemetry: SearchTelemetry,
-    batch_size: PointOffsetType,
+    pub(super) telemetry: SearchTelemetry,
+    pub(super) batch_size: PointOffsetType,
 }
 
 impl<'a, T: PostingListIter> SearchContext<'a, T> {
@@ -268,7 +272,9 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
     /// Returns the next min record id from all posting list iterators
     ///
     /// returns None if all posting list iterators are exhausted
-    fn next_min_id(to_inspect: &mut [IndexedPostingListIterator<T>]) -> Option<PointOffsetType> {
+    pub(super) fn next_min_id(
+        to_inspect: &mut [IndexedPostingListIterator<T>],
+    ) -> Option<PointOffsetType> {
         let mut min_record_id = None;
 
         // Iterate to find min record id at the head of the posting lists
@@ -621,3 +627,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             .expect("sparse batch size exceeds PointOffsetType");
     }
 }
+
+#[cfg(test)]
+#[path = "search_context/native_rank_stream_tests.rs"]
+mod native_rank_stream_tests;

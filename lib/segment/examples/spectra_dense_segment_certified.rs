@@ -174,7 +174,7 @@ fn main() {
     let mut compact_mismatches = 0;
     let mut scalar_mismatches = 0;
     let mut auto_mismatches = 0;
-    let mut auto_plan_queries = [0usize; 4];
+    let mut auto_plan_queries = [0usize; 3];
     let mut compact_quantized_scores = 0;
     let mut compact_exact_scores = 0;
     let mut scalar_quantized_scores = 0;
@@ -231,10 +231,9 @@ fn main() {
             Some(NativeDensePlan::ScalarCertificate)
         );
         match auto_telemetry.plan.expect("auto plan records its executor") {
-            NativeDensePlan::ExactPrefix => auto_plan_queries[0] += 1,
-            NativeDensePlan::CompactCertificate => auto_plan_queries[1] += 1,
-            NativeDensePlan::ScalarCertificate => auto_plan_queries[2] += 1,
-            NativeDensePlan::ExactScan => auto_plan_queries[3] += 1,
+            NativeDensePlan::CompactCertificate => auto_plan_queries[0] += 1,
+            NativeDensePlan::ScalarCertificate => auto_plan_queries[1] += 1,
+            NativeDensePlan::ExactScan => auto_plan_queries[2] += 1,
         }
         compact_quantized_scores += compact_telemetry.native_quantized_scores;
         compact_exact_scores += compact_telemetry.exact_scores;
@@ -253,10 +252,10 @@ fn main() {
         compact_ordered_mismatches: compact_mismatches,
         scalar_ordered_mismatches: scalar_mismatches,
         auto_ordered_mismatches: auto_mismatches,
-        auto_exact_prefix_queries: auto_plan_queries[0],
-        auto_compact_queries: auto_plan_queries[1],
-        auto_scalar_queries: auto_plan_queries[2],
-        auto_exact_scan_queries: auto_plan_queries[3],
+        auto_exact_prefix_queries: 0,
+        auto_compact_queries: auto_plan_queries[0],
+        auto_scalar_queries: auto_plan_queries[1],
+        auto_exact_scan_queries: auto_plan_queries[2],
         compact_quantized_scores,
         compact_exact_scores,
         scalar_quantized_scores,
@@ -325,7 +324,6 @@ fn run_native(
                 DEFAULT_VECTOR_NAME,
                 query,
                 None,
-                0,
                 NativeDensePolicy {
                     scalar_min_points: 0,
                     compact_max_points: usize::MAX,
@@ -367,7 +365,6 @@ fn run_auto(
                 DEFAULT_VECTOR_NAME,
                 query,
                 None,
-                64,
                 NativeDensePolicy::default(),
                 &segment_query_context,
                 |next| {

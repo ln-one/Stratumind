@@ -52,6 +52,7 @@ use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
     SeqNumberType, StrictModeConfig, VectorNameBuf,
 };
+use shard::NativeShardPointVersionsCache;
 use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::native_dense_stream::NativeDenseShardStream;
 use shard::native_sparse_stream::NativeSparseShardStream;
@@ -63,7 +64,7 @@ use shard::wal::SerdeWal;
 use sparse::common::sparse_vector::SparseVector;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc, oneshot};
+use tokio::sync::{Mutex, OwnedRwLockReadGuard, RwLock as TokioRwLock, mpsc, oneshot};
 use tokio_util::task::AbortOnDropHandle;
 
 use self::clock_map::{ClockMap, RecoveryPoint};
@@ -144,8 +145,20 @@ pub struct LocalShard {
     /// Write lock must be held for updates, while read lock must be held for critical sections
     pub(super) update_operation_lock: Arc<tokio::sync::RwLock<()>>,
 
+    /// Authoritative point ownership for the latest frozen Segment generation.
+    /// The cache validates Segment identity and update version on every use.
+    native_point_versions_cache: Arc<NativeShardPointVersionsCache>,
+
     /// Persist the applied op_num sequence number
     applied_seq_handler: Arc<AppliedSeqHandler>,
+}
+
+/// Segment handles plus the Shard update barrier that makes them one frozen
+/// read generation for a native exact query.
+pub(crate) struct NativeSegmentSnapshot {
+    pub(crate) segments: Vec<LockedSegment>,
+    pub(crate) point_versions_cache: Arc<NativeShardPointVersionsCache>,
+    _update_guard: OwnedRwLockReadGuard<()>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -339,6 +352,7 @@ impl LocalShard {
             write_rate_limiter,
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
+            native_point_versions_cache: Arc::new(NativeShardPointVersionsCache::default()),
             applied_seq_handler,
         }
     }
@@ -348,14 +362,24 @@ impl LocalShard {
         self.segments.clone()
     }
 
-    /// Freeze the current Segment identities for a native exact read plan.
-    /// Each returned handle is subsequently read-locked by its channel worker.
-    pub fn native_segment_snapshot(&self) -> Vec<LockedSegment> {
+    fn native_segment_handles(&self) -> Vec<LockedSegment> {
         self.segments
             .read()
             .iter()
             .map(|(_, segment)| segment.clone())
             .collect()
+    }
+
+    /// Freeze both updates and Segment identities for a native exact read.
+    /// The owned update guard must travel with the handles until every channel
+    /// worker and the fusion coordinator have stopped.
+    pub(crate) async fn native_segment_snapshot(&self) -> NativeSegmentSnapshot {
+        let update_guard = self.update_operation_lock.clone().read_owned().await;
+        NativeSegmentSnapshot {
+            segments: self.native_segment_handles(),
+            point_versions_cache: self.native_point_versions_cache.clone(),
+            _update_guard: update_guard,
+        }
     }
 
     /// Opens one exact Sparse rank stream over the current local Shard
@@ -370,8 +394,9 @@ impl LocalShard {
         source_batch_size: usize,
         posting_batch_size: usize,
         stopped: Arc<AtomicBool>,
+        worker_spawner: shard::NativeWorkerSpawner,
     ) -> OperationResult<NativeSparseShardStream> {
-        let segments = self.native_segment_snapshot();
+        let segments = self.native_segment_handles();
         NativeSparseShardStream::open(
             segments,
             vector_name,
@@ -380,6 +405,7 @@ impl LocalShard {
             source_batch_size,
             posting_batch_size,
             stopped,
+            worker_spawner,
         )
     }
 
@@ -393,8 +419,9 @@ impl LocalShard {
         policy: NativeDensePolicy,
         batch_size: usize,
         stopped: Arc<AtomicBool>,
+        worker_spawner: shard::NativeWorkerSpawner,
     ) -> OperationResult<NativeDenseShardStream> {
-        let segments = self.native_segment_snapshot();
+        let segments = self.native_segment_handles();
         NativeDenseShardStream::open(
             segments,
             vector_name,
@@ -403,6 +430,7 @@ impl LocalShard {
             policy,
             batch_size,
             stopped,
+            worker_spawner,
         )
     }
 

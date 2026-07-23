@@ -4,27 +4,35 @@
 //! Segment-owned exact Dense stream with a safe physical-plan router.
 
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::{BinaryHeap, HashMap};
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use ordered_float::OrderedFloat;
 
+use crate::common::check_stopped;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::{QueryVector, VectorElementType, VectorInternal};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::quantized::quantized_vectors::{
     CompactDenseVectorMetadata, DEFAULT_COMPACT_CERTIFICATE_MAX_POINTS, QuantizedVectors,
 };
-use crate::vector_storage::{RawScorer, VectorStorageEnum, VectorStorageRead, new_raw_scorer};
+use crate::vector_storage::{VectorStorageEnum, VectorStorageRead, new_raw_scorer};
+
+mod plans;
+
+use self::plans::{
+    build_compact_certificate_cursor, build_exact_scan_cursor, build_scalar_certificate_cursor,
+    select_dense_plan,
+};
 
 pub const DEFAULT_DENSE_SCALAR_MIN_POINTS: usize = 4_096;
 pub const DEFAULT_DENSE_COMPACT_MAX_POINTS: usize = DEFAULT_COMPACT_CERTIFICATE_MAX_POINTS;
-pub const DEFAULT_DENSE_EXACT_PREFIX_MAX_DIMENSION: usize = 192;
+const NATIVE_DENSE_SCORE_CHUNK_SIZE: usize = 4_096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeDensePlan {
-    ExactPrefix,
     CompactCertificate,
     ScalarCertificate,
     ExactScan,
@@ -34,9 +42,8 @@ pub enum NativeDensePlan {
 pub struct NativeDensePolicy {
     pub scalar_min_points: usize,
     pub compact_max_points: usize,
-    pub exact_prefix_max_dimension: usize,
     pub force_exact_scan: bool,
-    /// Benchmark/profile switch. Production Auto keeps this false.
+    /// Internal benchmark switch. Production keeps this true.
     pub disable_compact_certificate: bool,
 }
 
@@ -45,9 +52,11 @@ impl Default for NativeDensePolicy {
         Self {
             scalar_min_points: DEFAULT_DENSE_SCALAR_MIN_POINTS,
             compact_max_points: DEFAULT_DENSE_COMPACT_MAX_POINTS,
-            exact_prefix_max_dimension: DEFAULT_DENSE_EXACT_PREFIX_MAX_DIMENSION,
             force_exact_scan: false,
-            disable_compact_certificate: false,
+            // Production defaults to Qdrant's native Scalar quantization
+            // scorer. Compact remains benchmark-only until it can reuse the
+            // same native storage and SIMD dispatch.
+            disable_compact_certificate: true,
         }
     }
 }
@@ -56,16 +65,23 @@ impl Default for NativeDensePolicy {
 pub struct NativeDenseTelemetry {
     pub plan: Option<NativeDensePlan>,
     pub eligible_points: usize,
-    pub accepted_prefix_points: usize,
-    pub exact_prefix_fallbacks: usize,
     pub native_quantized_scores: usize,
     pub exact_scores: usize,
     pub points_emitted: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeDenseExactRankProbe {
+    pub id: PointOffsetType,
+    pub score: f32,
+    /// Zero-based exact rank within the cursor's frozen eligible universe.
+    pub rank: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct PendingBound {
     id: PointOffsetType,
+    lower: f64,
     value: f64,
 }
 
@@ -105,22 +121,79 @@ impl PartialOrd for PendingExact {
 }
 
 struct CertificateCursor<'a> {
-    exact_scorer: Box<dyn RawScorer + 'a>,
+    exact_scorer: Box<dyn FnMut(PointOffsetType) -> f32 + 'a>,
     bounds: BinaryHeap<PendingBound>,
     exact: BinaryHeap<PendingExact>,
+    /// Query-lifetime canonical cache. Ordered continuation and arbitrary
+    /// ExactRank probes must never score the same original vector twice.
+    exact_scores: HashMap<PointOffsetType, f32>,
+}
+
+struct ExactScanCursor {
+    points: Vec<ScoredPointOffset>,
+    next: usize,
 }
 
 enum NativeDenseCursorInner<'a> {
     Certificate(CertificateCursor<'a>),
-    Scan(VecDeque<ScoredPointOffset>),
+    Scan(ExactScanCursor),
 }
 
 pub struct NativeDenseIndexCursor<'a> {
     inner: NativeDenseCursorInner<'a>,
+    /// Sorted once so probe validation does not require another bitmap or a
+    /// second copy of the underlying vector storage.
+    eligible: Vec<PointOffsetType>,
     telemetry: NativeDenseTelemetry,
 }
 
 impl<'a> NativeDenseIndexCursor<'a> {
+    pub(crate) fn from_certificate_bounds(
+        mut eligible: Vec<PointOffsetType>,
+        bounds: Vec<(PointOffsetType, f64, f64)>,
+        exact_scorer: impl FnMut(PointOffsetType) -> f32 + 'a,
+        plan: NativeDensePlan,
+        native_quantized_scores: usize,
+    ) -> OperationResult<Self> {
+        eligible.sort_unstable();
+        if eligible.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(OperationError::inconsistent_storage(
+                "native Dense session received duplicate eligible point offsets",
+            ));
+        }
+        let mut bound_ids = bounds.iter().map(|(id, _, _)| *id).collect::<Vec<_>>();
+        bound_ids.sort_unstable();
+        if bound_ids != eligible
+            || bounds
+                .iter()
+                .any(|(_, lower, upper)| !lower.is_finite() || !upper.is_finite() || lower > upper)
+        {
+            return Err(OperationError::inconsistent_storage(
+                "native Dense session bounds do not match its eligible universe",
+            ));
+        }
+        let pending: Vec<_> = bounds
+            .into_iter()
+            .map(|(id, lower, value)| PendingBound { id, lower, value })
+            .collect();
+        let eligible_points = eligible.len();
+        Ok(Self {
+            inner: NativeDenseCursorInner::Certificate(CertificateCursor {
+                exact_scorer: Box::new(exact_scorer),
+                bounds: BinaryHeap::from(pending),
+                exact: BinaryHeap::new(),
+                exact_scores: HashMap::new(),
+            }),
+            eligible,
+            telemetry: NativeDenseTelemetry {
+                plan: Some(plan),
+                eligible_points,
+                native_quantized_scores,
+                ..Default::default()
+            },
+        })
+    }
+
     pub fn new(
         vector_storage: &'a VectorStorageEnum,
         quantized: Option<&QuantizedVectors>,
@@ -128,174 +201,58 @@ impl<'a> NativeDenseIndexCursor<'a> {
         query: &[f32],
         policy: NativeDensePolicy,
         hardware_counter: &HardwareCounterCell,
+        stopped: &AtomicBool,
     ) -> OperationResult<Self> {
+        check_stopped(stopped)?;
         if query.is_empty() || query.iter().any(|coordinate| !coordinate.is_finite()) {
             return Err(OperationError::validation_error(
                 "native Dense stream requires a non-empty finite Query",
             ));
         }
+        let mut eligible = eligible;
+        eligible.sort_unstable();
+        if eligible.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(OperationError::inconsistent_storage(
+                "native Dense stream received duplicate eligible point offsets",
+            ));
+        }
         let query_vector: QueryVector = VectorInternal::Dense(query.to_vec()).into();
-        let compact_available = !policy.force_exact_scan
-            && !policy.disable_compact_certificate
-            && eligible.len() >= policy.scalar_min_points
-            && eligible.len() <= policy.compact_max_points
-            && matches!(vector_storage.distance(), Distance::Dot | Distance::Cosine)
-            && vector_storage.datatype() == VectorStorageDatatype::Float32
-            && quantized.is_some_and(|quantized| {
-                quantized
-                    .compact_dense_certificate()
-                    .is_some_and(|compact| {
-                        compact.dimension() == query.len()
-                            && eligible.iter().all(|id| compact.row(*id).is_some())
-                    })
-            });
-        let scalar_available = !policy.force_exact_scan
-            && eligible.len() >= policy.scalar_min_points
-            && matches!(vector_storage.distance(), Distance::Dot | Distance::Cosine)
-            && quantized.is_some_and(|quantized| {
-                matches!(quantized.distance(), Distance::Dot | Distance::Cosine)
-                    && quantized.datatype() == VectorStorageDatatype::Float32
-                    && quantized
-                        .scalar_reconstruction_table()
-                        .is_some_and(|table| eligible.iter().all(|id| (*id as usize) < table.len()))
-            });
-
-        if compact_available {
-            let compact = quantized
-                .and_then(QuantizedVectors::compact_dense_certificate)
-                .expect("availability checked");
-            let processed_query = vector_storage
-                .distance()
-                .preprocess_vector::<VectorElementType>(query.to_vec());
-            let (query_codes, query_metadata) = compact_encode(&processed_query);
-            let dimension = query.len() as f64;
-            let gamma = f64::from(f32::EPSILON) * (8.0 * dimension + 64.0);
-            let mut bounds = Vec::with_capacity(eligible.len());
-            for &id in &eligible {
-                let (document_codes, document) = compact
-                    .row(id)
-                    .expect("compact certificate availability checked");
-                let approximate = integer_dot(&query_codes, document_codes) as f64
-                    * query_metadata.scale
-                    * document.scale;
-                let error = query_metadata.residual_norm * document.original_norm
-                    + query_metadata.reconstructed_norm * document.residual_norm;
-                let scale = approximate.abs()
-                    + error
-                    + query_metadata.original_norm * document.original_norm;
-                let floating_guard = if gamma < 1.0 {
-                    scale * gamma / (1.0 - gamma)
-                } else {
-                    f64::INFINITY
-                };
-                bounds.push(PendingBound {
-                    id,
-                    value: (approximate + error + floating_guard).next_up(),
-                });
-            }
-            let exact_scorer =
-                new_raw_scorer(query_vector, vector_storage, hardware_counter.fork())?;
-            return Ok(Self {
-                inner: NativeDenseCursorInner::Certificate(CertificateCursor {
-                    exact_scorer,
-                    bounds: BinaryHeap::from(bounds),
-                    exact: BinaryHeap::new(),
-                }),
-                telemetry: NativeDenseTelemetry {
-                    plan: Some(NativeDensePlan::CompactCertificate),
-                    eligible_points: eligible.len(),
-                    native_quantized_scores: eligible.len(),
-                    ..Default::default()
-                },
-            });
+        match select_dense_plan(vector_storage, quantized, &eligible, query, policy) {
+            NativeDensePlan::CompactCertificate => build_compact_certificate_cursor(
+                vector_storage,
+                quantized.expect("compact plan requires quantized vectors"),
+                eligible,
+                query,
+                query_vector,
+                hardware_counter,
+                stopped,
+            ),
+            NativeDensePlan::ScalarCertificate => build_scalar_certificate_cursor(
+                vector_storage,
+                quantized.expect("Scalar plan requires quantized vectors"),
+                eligible,
+                query,
+                query_vector,
+                hardware_counter,
+                stopped,
+            ),
+            NativeDensePlan::ExactScan => build_exact_scan_cursor(
+                vector_storage,
+                eligible,
+                query_vector,
+                hardware_counter,
+                stopped,
+            ),
         }
-
-        if scalar_available {
-            let quantized = quantized.expect("availability checked");
-            let reconstruction = quantized
-                .scalar_reconstruction_table()
-                .expect("availability checked");
-            let processed_query = vector_storage
-                .distance()
-                .preprocess_vector::<VectorElementType>(query.to_vec());
-            let query_stats = quantized
-                .scalar_query_reconstruction_stats(&processed_query)
-                .ok_or_else(|| {
-                    OperationError::inconsistent_storage(
-                        "Scalar quantization did not expose Query reconstruction statistics",
-                    )
-                })?;
-            let approximate_scorer =
-                quantized.raw_scorer(query_vector.clone(), hardware_counter.fork())?;
-            let mut approximate = vec![0.0; eligible.len()];
-            approximate_scorer.score_points(&eligible, &mut approximate);
-
-            let dimension = query.len() as f64;
-            let gamma = f64::from(f32::EPSILON) * (8.0 * dimension + 64.0);
-            let mut bounds = Vec::with_capacity(eligible.len());
-            for (&id, approximate) in eligible.iter().zip(approximate) {
-                let document = reconstruction[id as usize];
-                let error = query_stats.residual_norm * document.original_norm
-                    + query_stats.reconstructed_norm * document.residual_norm;
-                let scale = f64::from(approximate).abs()
-                    + error
-                    + query_stats.original_norm * document.original_norm;
-                let floating_guard = if gamma < 1.0 {
-                    scale * gamma / (1.0 - gamma)
-                } else {
-                    f64::INFINITY
-                };
-                bounds.push(PendingBound {
-                    id,
-                    value: (f64::from(approximate) + error + floating_guard).next_up(),
-                });
-            }
-            drop(approximate_scorer);
-            let exact_scorer =
-                new_raw_scorer(query_vector, vector_storage, hardware_counter.fork())?;
-            return Ok(Self {
-                inner: NativeDenseCursorInner::Certificate(CertificateCursor {
-                    exact_scorer,
-                    bounds: BinaryHeap::from(bounds),
-                    exact: BinaryHeap::new(),
-                }),
-                telemetry: NativeDenseTelemetry {
-                    plan: Some(NativeDensePlan::ScalarCertificate),
-                    eligible_points: eligible.len(),
-                    native_quantized_scores: eligible.len(),
-                    ..Default::default()
-                },
-            });
-        }
-
-        let scorer = new_raw_scorer(query_vector, vector_storage, hardware_counter.fork())?;
-        let mut scores = vec![0.0; eligible.len()];
-        scorer.score_points(&eligible, &mut scores);
-        let mut points: Vec<_> = eligible
-            .into_iter()
-            .zip(scores)
-            .map(|(idx, score)| ScoredPointOffset { idx, score })
-            .collect();
-        points.sort_unstable_by(|left, right| {
-            OrderedFloat(right.score)
-                .cmp(&OrderedFloat(left.score))
-                .then_with(|| left.idx.cmp(&right.idx))
-        });
-        let point_count = points.len();
-        Ok(Self {
-            inner: NativeDenseCursorInner::Scan(VecDeque::from(points)),
-            telemetry: NativeDenseTelemetry {
-                plan: Some(NativeDensePlan::ExactScan),
-                eligible_points: point_count,
-                exact_scores: point_count,
-                ..Default::default()
-            },
-        })
     }
 
     pub fn next_result(&mut self) -> OperationResult<Option<ScoredPointOffset>> {
         let point = match &mut self.inner {
-            NativeDenseCursorInner::Scan(points) => points.pop_front(),
+            NativeDenseCursorInner::Scan(cursor) => {
+                let point = cursor.points.get(cursor.next).copied();
+                cursor.next += usize::from(point.is_some());
+                point
+            }
             NativeDenseCursorInner::Certificate(cursor) => loop {
                 let fixed = cursor.exact.peek().is_some_and(|exact| {
                     cursor.bounds.peek().is_none_or(|bound| {
@@ -309,14 +266,13 @@ impl<'a> NativeDenseIndexCursor<'a> {
                 let Some(bound) = cursor.bounds.pop() else {
                     break cursor.exact.pop().map(|point| point.0);
                 };
-                let score = cursor.exact_scorer.score_point(bound.id);
+                let score = exact_score_cached(cursor, &mut self.telemetry, bound.id);
                 if f64::from(score) > bound.value {
                     return Err(OperationError::inconsistent_storage(format!(
                         "native Dense Scalar certificate violated for point {}: score {score}, bound {}",
                         bound.id, bound.value,
                     )));
                 }
-                self.telemetry.exact_scores += 1;
                 cursor.exact.push(PendingExact(ScoredPointOffset {
                     idx: bound.id,
                     score,
@@ -327,483 +283,134 @@ impl<'a> NativeDenseIndexCursor<'a> {
         Ok(point)
     }
 
+    /// Resolve exact Dense ranks for externally discovered points without
+    /// starting another Scalar scan or rebuilding the ordered-stream heap.
+    ///
+    /// Scalar bounds were materialized once in `new`. A probe only exact-scores
+    /// unresolved bounds that can still outrank at least one target. Every
+    /// exact score is cached and immediately reusable by `next_result` and all
+    /// later probe batches.
+    pub fn probe_exact_ranks(
+        &mut self,
+        ids: &[PointOffsetType],
+    ) -> OperationResult<Vec<NativeDenseExactRankProbe>> {
+        let mut unique = std::collections::HashSet::with_capacity(ids.len());
+        for &id in ids {
+            if !unique.insert(id) {
+                return Err(OperationError::validation_error(format!(
+                    "native Dense ExactRank probe contains duplicate point {id}",
+                )));
+            }
+            if self.eligible.binary_search(&id).is_err() {
+                return Err(OperationError::validation_error(format!(
+                    "native Dense ExactRank probe point {id} is outside the frozen eligible universe",
+                )));
+            }
+        }
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        match &mut self.inner {
+            NativeDenseCursorInner::Scan(cursor) => ids
+                .iter()
+                .map(|&id| {
+                    let rank = cursor
+                        .points
+                        .iter()
+                        .position(|point| point.idx == id)
+                        .ok_or_else(|| {
+                            OperationError::inconsistent_storage(format!(
+                                "native Dense exact scan lost eligible point {id}",
+                            ))
+                        })?;
+                    Ok(NativeDenseExactRankProbe {
+                        id,
+                        score: cursor.points[rank].score,
+                        rank,
+                    })
+                })
+                .collect(),
+            NativeDenseCursorInner::Certificate(cursor) => {
+                let targets: Vec<_> = ids
+                    .iter()
+                    .map(|&id| {
+                        let score = exact_score_cached(cursor, &mut self.telemetry, id);
+                        (id, score)
+                    })
+                    .collect();
+
+                let ambiguous = cursor
+                    .bounds
+                    .iter()
+                    .filter(|bound| !cursor.exact_scores.contains_key(&bound.id))
+                    .filter(|bound| {
+                        targets.iter().any(|&(target_id, target_score)| {
+                            let target_score = f64::from(target_score);
+                            let definitely_outranks = bound.lower > target_score
+                                || (bound.lower == target_score && bound.id < target_id);
+                            let possibly_outranks = bound.value > target_score
+                                || (bound.value == target_score && bound.id < target_id);
+                            possibly_outranks && !definitely_outranks
+                        })
+                    })
+                    .map(|bound| (bound.id, bound.lower, bound.value))
+                    .collect::<Vec<_>>();
+                for (id, lower, upper) in ambiguous {
+                    let score = exact_score_cached(cursor, &mut self.telemetry, id);
+                    if f64::from(score) < lower || f64::from(score) > upper {
+                        return Err(OperationError::inconsistent_storage(format!(
+                            "native Dense Scalar certificate violated for point {id}: score {score}, interval [{lower}, {upper}]",
+                        )));
+                    }
+                }
+
+                Ok(targets
+                    .into_iter()
+                    .map(|(id, score)| NativeDenseExactRankProbe {
+                        id,
+                        score,
+                        rank: cursor
+                            .exact_scores
+                            .iter()
+                            .filter(|&(&other_id, &other_score)| {
+                                other_score > score || (other_score == score && other_id < id)
+                            })
+                            .count()
+                            + cursor
+                                .bounds
+                                .iter()
+                                .filter(|bound| !cursor.exact_scores.contains_key(&bound.id))
+                                .filter(|bound| {
+                                    bound.lower > f64::from(score)
+                                        || (bound.lower == f64::from(score) && bound.id < id)
+                                })
+                                .count(),
+                    })
+                    .collect())
+            }
+        }
+    }
+
     pub fn telemetry(&self) -> NativeDenseTelemetry {
         self.telemetry
     }
 }
 
-fn compact_encode(vector: &[f32]) -> (Vec<i8>, CompactDenseVectorMetadata) {
-    const MAX_CODE: f64 = 127.0;
-    let original_norm = vector
-        .iter()
-        .map(|value| f64::from(*value).powi(2))
-        .sum::<f64>()
-        .sqrt();
-    let max_abs = vector
-        .iter()
-        .map(|value| f64::from(*value).abs())
-        .fold(0.0, f64::max);
-    let scale = if max_abs == 0.0 {
-        1.0
-    } else {
-        max_abs / MAX_CODE
-    };
-    let codes: Vec<_> = vector
-        .iter()
-        .map(|value| {
-            (f64::from(*value) / scale)
-                .round()
-                .clamp(-MAX_CODE, MAX_CODE) as i8
-        })
-        .collect();
-    let mut reconstructed_squared = 0.0;
-    let mut residual_squared = 0.0;
-    for (&value, &code) in vector.iter().zip(&codes) {
-        let reconstructed = f64::from(code) * scale;
-        reconstructed_squared += reconstructed * reconstructed;
-        let residual = f64::from(value) - reconstructed;
-        residual_squared += residual * residual;
+fn exact_score_cached(
+    cursor: &mut CertificateCursor<'_>,
+    telemetry: &mut NativeDenseTelemetry,
+    id: PointOffsetType,
+) -> f32 {
+    if let Some(&score) = cursor.exact_scores.get(&id) {
+        return score;
     }
-    (
-        codes,
-        CompactDenseVectorMetadata {
-            scale,
-            reconstructed_norm: reconstructed_squared.sqrt(),
-            residual_norm: residual_squared.sqrt().next_up(),
-            original_norm,
-        },
-    )
-}
-
-fn integer_dot(left: &[i8], right: &[i8]) -> i64 {
-    debug_assert_eq!(left.len(), right.len());
-    const MAX_I32_DOT_DIMENSION: usize = i32::MAX as usize / (127 * 127);
-    if left.len() <= MAX_I32_DOT_DIMENSION {
-        i64::from(
-            left.iter()
-                .zip(right)
-                .map(|(&left, &right)| i32::from(left) * i32::from(right))
-                .sum::<i32>(),
-        )
-    } else {
-        left.iter()
-            .zip(right)
-            .map(|(&left, &right)| i64::from(left) * i64::from(right))
-            .sum()
-    }
+    let score = (cursor.exact_scorer)(id);
+    cursor.exact_scores.insert(id, score);
+    telemetry.exact_scores += 1;
+    score
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::atomic::AtomicBool;
-
-    use common::counter::hardware_counter::HardwareCounterCell;
-
-    use super::*;
-    use crate::data_types::query_context::QueryContext;
-    use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
-    use crate::entry::{ReadSegmentEntry, SegmentEntry};
-    use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
-    use crate::types::{
-        Distance, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
-        SearchParams,
-    };
-    use crate::vector_storage::quantized::quantized_vectors::{
-        QUANTIZED_COMPACT_CERTIFICATE_PATH, QuantizedVectors, QuantizedVectorsStorageType,
-    };
-
-    #[test]
-    fn default_compact_build_limit_keeps_scalar_fallback_without_extra_file() {
-        let segment_dir = tempfile::tempdir().unwrap();
-        let quantized_dir = tempfile::tempdir().unwrap();
-        let mut segment = build_simple_segment(segment_dir.path(), 2, Distance::Dot).unwrap();
-        let hardware_counter = HardwareCounterCell::new();
-        for id in 0..=DEFAULT_DENSE_COMPACT_MAX_POINTS as u64 {
-            segment
-                .upsert_point(
-                    id,
-                    id.into(),
-                    only_default_vector(&[id as f32, 1.0]),
-                    &hardware_counter,
-                )
-                .unwrap();
-        }
-        let scalar_config = QuantizationConfig::Scalar(ScalarQuantization {
-            scalar: ScalarQuantizationConfig {
-                r#type: ScalarType::Int8,
-                quantile: None,
-                always_ram: Some(true),
-            },
-        });
-        let quantized = QuantizedVectors::create(
-            &segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_storage
-                .borrow(),
-            &scalar_config,
-            QuantizedVectorsStorageType::Immutable,
-            quantized_dir.path(),
-            1,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-        assert!(quantized.scalar_reconstruction_table().is_some());
-        assert!(quantized.compact_dense_certificate().is_none());
-        assert!(
-            !quantized_dir
-                .path()
-                .join(QUANTIZED_COMPACT_CERTIFICATE_PATH)
-                .exists()
-        );
-    }
-
-    #[test]
-    fn exact_prefix_matches_full_scan_and_avoids_certificate_startup() {
-        let segment_dir = tempfile::tempdir().unwrap();
-        let mut segment = build_simple_segment(segment_dir.path(), 2, Distance::Dot).unwrap();
-        let hardware_counter = HardwareCounterCell::new();
-        for id in 0..8_192u64 {
-            segment
-                .upsert_point(
-                    id,
-                    (20_000 - id).into(),
-                    only_default_vector(&[id as f32, 1.0]),
-                    &hardware_counter,
-                )
-                .unwrap();
-        }
-        let query = vec![1.0, 0.0];
-        let query_vector: QueryVector = VectorInternal::Dense(query.clone()).into();
-        let expected = segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &Default::default(),
-                &Default::default(),
-                None,
-                20,
-                Some(&SearchParams {
-                    exact: true,
-                    ..Default::default()
-                }),
-            )
-            .unwrap()
-            .into_iter()
-            .map(|point| point.id)
-            .collect::<Vec<_>>();
-        let mut query_context = QueryContext::default();
-        segment.fill_query_context(&mut query_context).unwrap();
-        let segment_query_context = query_context.get_segment_query_context();
-        let (actual, telemetry) = segment
-            .with_view(|view| {
-                view.with_native_dense_stream(
-                    DEFAULT_VECTOR_NAME,
-                    &query,
-                    None,
-                    64,
-                    NativeDensePolicy::default(),
-                    &segment_query_context,
-                    |next| {
-                        (0..20)
-                            .map(|_| next().map(Option::unwrap))
-                            .collect::<OperationResult<Vec<_>>>()
-                    },
-                )
-            })
-            .unwrap();
-        assert_eq!(
-            actual.into_iter().map(|point| point.id).collect::<Vec<_>>(),
-            expected
-        );
-        assert_eq!(telemetry.plan, Some(NativeDensePlan::ExactPrefix));
-        assert_eq!(telemetry.accepted_prefix_points, 64);
-        assert_eq!(telemetry.exact_prefix_fallbacks, 0);
-    }
-
-    #[test]
-    fn tied_exact_prefix_falls_back_before_emitting_and_freezes_identity_order() {
-        let segment_dir = tempfile::tempdir().unwrap();
-        let mut segment = build_simple_segment(segment_dir.path(), 2, Distance::Dot).unwrap();
-        let hardware_counter = HardwareCounterCell::new();
-        let mut identities = Vec::new();
-        for id in 0..128u64 {
-            let external = (1_000 - id).into();
-            identities.push(external);
-            segment
-                .upsert_point(
-                    id,
-                    external,
-                    only_default_vector(&[1.0, id as f32]),
-                    &hardware_counter,
-                )
-                .unwrap();
-        }
-        identities.sort_unstable();
-        identities.truncate(20);
-        let mut query_context = QueryContext::default();
-        segment.fill_query_context(&mut query_context).unwrap();
-        let segment_query_context = query_context.get_segment_query_context();
-        let (actual, telemetry) = segment
-            .with_view(|view| {
-                view.with_native_dense_stream(
-                    DEFAULT_VECTOR_NAME,
-                    &[1.0, 0.0],
-                    None,
-                    16,
-                    NativeDensePolicy::default(),
-                    &segment_query_context,
-                    |next| {
-                        (0..20)
-                            .map(|_| next().map(Option::unwrap))
-                            .collect::<OperationResult<Vec<_>>>()
-                    },
-                )
-            })
-            .unwrap();
-        assert_eq!(
-            actual.into_iter().map(|point| point.id).collect::<Vec<_>>(),
-            identities
-        );
-        assert_eq!(telemetry.plan, Some(NativeDensePlan::ExactScan));
-        assert_eq!(telemetry.accepted_prefix_points, 0);
-        assert_eq!(telemetry.exact_prefix_fallbacks, 1);
-    }
-
-    #[test]
-    fn persisted_compact_certificate_matches_segment_exact_top_k() {
-        let segment_dir = tempfile::tempdir().unwrap();
-        let quantized_dir = tempfile::tempdir().unwrap();
-        let mut segment = build_simple_segment(segment_dir.path(), 2, Distance::Dot).unwrap();
-        let hardware_counter = HardwareCounterCell::new();
-        for id in 0..8_192u64 {
-            segment
-                .upsert_point(
-                    id,
-                    (20_000 - id).into(),
-                    only_default_vector(&[id as f32, 1.0]),
-                    &hardware_counter,
-                )
-                .unwrap();
-        }
-
-        let scalar_config = QuantizationConfig::Scalar(ScalarQuantization {
-            scalar: ScalarQuantizationConfig {
-                r#type: ScalarType::Int8,
-                quantile: None,
-                always_ram: Some(true),
-            },
-        });
-        let quantized = QuantizedVectors::create(
-            &segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_storage
-                .borrow(),
-            &scalar_config,
-            QuantizedVectorsStorageType::Immutable,
-            quantized_dir.path(),
-            1,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-        assert_eq!(
-            quantized.scalar_reconstruction_table().unwrap().len(),
-            8_192
-        );
-        assert_eq!(quantized.compact_dense_certificate().unwrap().len(), 8_192);
-        drop(quantized);
-        let quantized = QuantizedVectors::load(
-            &scalar_config,
-            &segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_storage
-                .borrow(),
-            quantized_dir.path(),
-            &AtomicBool::new(false),
-        )
-        .unwrap()
-        .unwrap();
-        *segment.vector_data[DEFAULT_VECTOR_NAME]
-            .quantized_vectors
-            .borrow_mut() = Some(quantized);
-
-        let query = vec![1.0, 0.0];
-        let query_vector: QueryVector = VectorInternal::Dense(query.clone()).into();
-        let mut expected = segment
-            .search(
-                DEFAULT_VECTOR_NAME,
-                &query_vector,
-                &Default::default(),
-                &Default::default(),
-                None,
-                20,
-                Some(&SearchParams {
-                    exact: true,
-                    ..Default::default()
-                }),
-            )
-            .unwrap();
-        expected.sort_unstable_by(|left, right| {
-            OrderedFloat(right.score)
-                .cmp(&OrderedFloat(left.score))
-                .then_with(|| left.id.cmp(&right.id))
-        });
-
-        let mut query_context = QueryContext::default();
-        segment.fill_query_context(&mut query_context).unwrap();
-        let segment_query_context = query_context.get_segment_query_context();
-        let (actual, telemetry) = segment
-            .with_view(|view| {
-                view.with_native_dense_stream(
-                    DEFAULT_VECTOR_NAME,
-                    &query,
-                    None,
-                    0,
-                    NativeDensePolicy {
-                        scalar_min_points: 0,
-                        compact_max_points: usize::MAX,
-                        ..NativeDensePolicy::default()
-                    },
-                    &segment_query_context,
-                    |next| {
-                        (0..20)
-                            .map(|_| next().map(Option::unwrap))
-                            .collect::<OperationResult<Vec<_>>>()
-                    },
-                )
-            })
-            .unwrap();
-
-        assert_eq!(actual, expected);
-        assert_eq!(telemetry.plan, Some(NativeDensePlan::CompactCertificate));
-        assert_eq!(telemetry.native_quantized_scores, 8_192);
-        assert!(telemetry.exact_scores < telemetry.eligible_points);
-    }
-
-    #[test]
-    fn persisted_compact_certificate_is_exact_for_mixed_sign_dot() {
-        check_mixed_sign_persisted_certificate(Distance::Dot);
-    }
-
-    #[test]
-    fn persisted_compact_certificate_is_exact_for_mixed_sign_cosine() {
-        check_mixed_sign_persisted_certificate(Distance::Cosine);
-    }
-
-    fn check_mixed_sign_persisted_certificate(distance: Distance) {
-        const DIMENSION: usize = 16;
-        const POINTS: usize = 1_024;
-        const QUERIES: usize = 12;
-        const TOP_K: usize = 32;
-
-        let segment_dir = tempfile::tempdir().unwrap();
-        let quantized_dir = tempfile::tempdir().unwrap();
-        let mut segment = build_simple_segment(segment_dir.path(), DIMENSION, distance).unwrap();
-        let hardware_counter = HardwareCounterCell::new();
-        for id in 0..POINTS {
-            let vector = (0..DIMENSION)
-                .map(|coordinate| {
-                    let mixed = (id * 131 + coordinate * 47 + id * coordinate * 3) % 257;
-                    (mixed as f32 - 128.0) / 37.0
-                        + id as f32 * 0.000_001
-                        + coordinate as f32 * 0.000_01
-                })
-                .collect::<Vec<_>>();
-            segment
-                .upsert_point(
-                    id as u64,
-                    (50_000 - id as u64).into(),
-                    only_default_vector(&vector),
-                    &hardware_counter,
-                )
-                .unwrap();
-        }
-
-        let scalar_config = QuantizationConfig::Scalar(ScalarQuantization {
-            scalar: ScalarQuantizationConfig {
-                r#type: ScalarType::Int8,
-                quantile: None,
-                always_ram: Some(true),
-            },
-        });
-        let quantized = QuantizedVectors::create(
-            &segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_storage
-                .borrow(),
-            &scalar_config,
-            QuantizedVectorsStorageType::Immutable,
-            quantized_dir.path(),
-            1,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-        drop(quantized);
-        let quantized = QuantizedVectors::load(
-            &scalar_config,
-            &segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_storage
-                .borrow(),
-            quantized_dir.path(),
-            &AtomicBool::new(false),
-        )
-        .unwrap()
-        .unwrap();
-        *segment.vector_data[DEFAULT_VECTOR_NAME]
-            .quantized_vectors
-            .borrow_mut() = Some(quantized);
-
-        let mut query_context = QueryContext::default();
-        segment.fill_query_context(&mut query_context).unwrap();
-        let segment_query_context = query_context.get_segment_query_context();
-        for query_id in 0..QUERIES {
-            let query = (0..DIMENSION)
-                .map(|coordinate| {
-                    let mixed =
-                        (query_id * 73 + coordinate * 29 + query_id * coordinate * 11) % 193;
-                    (mixed as f32 - 96.0) / 31.0 + coordinate as f32 * 0.000_03
-                })
-                .collect::<Vec<_>>();
-            let query_vector: QueryVector = VectorInternal::Dense(query.clone()).into();
-            let mut expected = segment
-                .search(
-                    DEFAULT_VECTOR_NAME,
-                    &query_vector,
-                    &Default::default(),
-                    &Default::default(),
-                    None,
-                    TOP_K,
-                    Some(&SearchParams {
-                        exact: true,
-                        ..Default::default()
-                    }),
-                )
-                .unwrap();
-            expected.sort_unstable_by(|left, right| {
-                OrderedFloat(right.score)
-                    .cmp(&OrderedFloat(left.score))
-                    .then_with(|| left.id.cmp(&right.id))
-            });
-
-            let (actual, telemetry) = segment
-                .with_view(|view| {
-                    view.with_native_dense_stream(
-                        DEFAULT_VECTOR_NAME,
-                        &query,
-                        None,
-                        0,
-                        NativeDensePolicy {
-                            scalar_min_points: 0,
-                            compact_max_points: usize::MAX,
-                            ..NativeDensePolicy::default()
-                        },
-                        &segment_query_context,
-                        |next| {
-                            (0..TOP_K)
-                                .map(|_| next().map(Option::unwrap))
-                                .collect::<OperationResult<Vec<_>>>()
-                        },
-                    )
-                })
-                .unwrap();
-
-            assert_eq!(actual, expected, "distance={distance:?}, query={query_id}");
-            assert_eq!(telemetry.plan, Some(NativeDensePlan::CompactCertificate));
-        }
-    }
-}
+#[path = "native_dense_stream/tests.rs"]
+mod tests;

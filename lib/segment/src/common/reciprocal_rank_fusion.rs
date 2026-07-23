@@ -61,11 +61,15 @@ pub struct DynamicRrfState {
     points: AHashMap<ExtendedPointId, PartialRrfPoint>,
 }
 
-/// Recoverable exact rank stream.
+/// Recoverable channel-global exact rank stream.
 ///
 /// `None` is the only successful end-of-stream signal. Producer failures stay
 /// distinct from exhaustion so a partial prefix can never be certified after
 /// an I/O, snapshot, or cancellation error.
+///
+/// Segment- and Shard-local scored streams must first be merged within their
+/// channel. This identity-only contract must never be used to hide a local
+/// rank and then feed that rank directly into WRRF.
 pub type ExactRrfStream<'a> = Box<dyn Iterator<Item = OperationResult<ExtendedPointId>> + 'a>;
 
 /// Adapts an in-memory or otherwise infallible ordered identity iterator to
