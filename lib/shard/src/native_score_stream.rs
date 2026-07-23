@@ -145,6 +145,21 @@ pub(crate) enum NativeStreamWorkerMode {
     ExhaustiveFallback,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum NativeScoreChannel {
+    Dense,
+    Sparse,
+}
+
+impl NativeScoreChannel {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Dense => "Dense",
+            Self::Sparse => "Sparse",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct NativeShardStreamTelemetry {
     pub sources: usize,
@@ -168,6 +183,7 @@ pub(crate) struct BatchReply {
 
 pub(crate) enum WorkerCommand {
     Pull {
+        channel: NativeScoreChannel,
         limit: usize,
         reply: SyncSender<OperationResult<BatchReply>>,
     },
@@ -237,16 +253,39 @@ impl Drop for WorkerCompletionSignal {
     }
 }
 
+struct SharedWorkerLifecycle {
+    commands: SyncSender<WorkerCommand>,
+    completion: Mutex<Option<Receiver<()>>>,
+}
+
+impl SharedWorkerLifecycle {
+    fn new(commands: SyncSender<WorkerCommand>, completion: Receiver<()>) -> Arc<Self> {
+        Arc::new(Self {
+            commands,
+            completion: Mutex::new(Some(completion)),
+        })
+    }
+}
+
+impl Drop for SharedWorkerLifecycle {
+    fn drop(&mut self) {
+        let _ = self.commands.send(WorkerCommand::Stop);
+        if let Some(completion) = self.completion.get_mut().take() {
+            let _ = completion.recv();
+        }
+    }
+}
+
 /// One capacity-reserved Qdrant-runtime worker owns the pinned Segment read
 /// state. This client owns only its bounded pull protocol and completion
 /// handshake; it never creates or manages an OS thread.
 pub(crate) struct SegmentScoreSource {
     commands: SyncSender<WorkerCommand>,
-    completion: Option<Receiver<()>>,
+    _lifecycle: Arc<SharedWorkerLifecycle>,
     buffer: VecDeque<ScoredPoint>,
     eof: bool,
     mode: NativeStreamWorkerMode,
-    channel: &'static str,
+    channel: NativeScoreChannel,
 }
 
 impl SegmentScoreSource {
@@ -254,11 +293,39 @@ impl SegmentScoreSource {
         commands: SyncSender<WorkerCommand>,
         completion: Receiver<()>,
         mode: NativeStreamWorkerMode,
-        channel: &'static str,
+        channel: NativeScoreChannel,
+    ) -> Self {
+        let lifecycle = SharedWorkerLifecycle::new(commands.clone(), completion);
+        Self::new_shared(commands, lifecycle, mode, channel)
+    }
+
+    pub(crate) fn new_pair(
+        commands: SyncSender<WorkerCommand>,
+        completion: Receiver<()>,
+        dense_mode: NativeStreamWorkerMode,
+        sparse_mode: NativeStreamWorkerMode,
+    ) -> (Self, Self) {
+        let lifecycle = SharedWorkerLifecycle::new(commands.clone(), completion);
+        (
+            Self::new_shared(
+                commands.clone(),
+                lifecycle.clone(),
+                dense_mode,
+                NativeScoreChannel::Dense,
+            ),
+            Self::new_shared(commands, lifecycle, sparse_mode, NativeScoreChannel::Sparse),
+        )
+    }
+
+    fn new_shared(
+        commands: SyncSender<WorkerCommand>,
+        lifecycle: Arc<SharedWorkerLifecycle>,
+        mode: NativeStreamWorkerMode,
+        channel: NativeScoreChannel,
     ) -> Self {
         Self {
             commands,
-            completion: Some(completion),
+            _lifecycle: lifecycle,
             buffer: VecDeque::new(),
             eof: false,
             mode,
@@ -272,19 +339,20 @@ impl SegmentScoreSource {
             let (reply_tx, reply_rx) = sync_channel(1);
             self.commands
                 .send(WorkerCommand::Pull {
+                    channel: self.channel,
                     limit: batch_size,
                     reply: reply_tx,
                 })
                 .map_err(|_| {
                     OperationError::service_error_light(format!(
                         "native {} Segment worker stopped before a pull request",
-                        self.channel
+                        self.channel.as_str()
                     ))
                 })?;
             let batch = reply_rx.recv().map_err(|_| {
                 OperationError::service_error_light(format!(
                     "native {} Segment worker stopped before returning a pull result",
-                    self.channel
+                    self.channel.as_str()
                 ))
             })??;
             fetched = batch.points.len();
@@ -292,15 +360,6 @@ impl SegmentScoreSource {
             self.eof = batch.eof;
         }
         Ok((self.buffer.pop_front(), fetched))
-    }
-}
-
-impl Drop for SegmentScoreSource {
-    fn drop(&mut self) {
-        let _ = self.commands.send(WorkerCommand::Stop);
-        if let Some(completion) = self.completion.take() {
-            let _ = completion.recv();
-        }
     }
 }
 
@@ -459,10 +518,23 @@ impl NativeShardScoreStream {
 pub(crate) fn serve_native(
     next: &mut dyn FnMut() -> OperationResult<Option<ScoredPoint>>,
     commands: &Receiver<WorkerCommand>,
+    channel: NativeScoreChannel,
 ) -> OperationResult<()> {
     while let Ok(command) = commands.recv() {
         match command {
-            WorkerCommand::Pull { limit, reply } => {
+            WorkerCommand::Pull {
+                channel: requested,
+                limit,
+                reply,
+            } => {
+                if requested != channel {
+                    let _ = reply.send(Err(OperationError::inconsistent_storage(format!(
+                        "native {} Segment worker received a {} pull",
+                        channel.as_str(),
+                        requested.as_str(),
+                    ))));
+                    return Ok(());
+                }
                 let mut points = Vec::with_capacity(limit);
                 let mut eof = false;
                 for _ in 0..limit {
@@ -488,11 +560,27 @@ pub(crate) fn serve_native(
     Ok(())
 }
 
-pub(crate) fn serve_materialized(points: Vec<ScoredPoint>, commands: &Receiver<WorkerCommand>) {
+pub(crate) fn serve_materialized(
+    points: Vec<ScoredPoint>,
+    commands: &Receiver<WorkerCommand>,
+    channel: NativeScoreChannel,
+) {
     let mut points = VecDeque::from(points);
     while let Ok(command) = commands.recv() {
         match command {
-            WorkerCommand::Pull { limit, reply } => {
+            WorkerCommand::Pull {
+                channel: requested,
+                limit,
+                reply,
+            } => {
+                if requested != channel {
+                    let _ = reply.send(Err(OperationError::inconsistent_storage(format!(
+                        "native {} materialized worker received a {} pull",
+                        channel.as_str(),
+                        requested.as_str(),
+                    ))));
+                    return;
+                }
                 let batch: Vec<_> = (0..limit).filter_map(|_| points.pop_front()).collect();
                 let eof = points.is_empty();
                 if reply.send(Ok(BatchReply { points: batch, eof })).is_err() {
@@ -502,6 +590,58 @@ pub(crate) fn serve_materialized(points: Vec<ScoredPoint>, commands: &Receiver<W
             WorkerCommand::Stop => return,
         }
     }
+}
+
+pub(crate) fn serve_pair(
+    dense_next: &mut dyn FnMut() -> OperationResult<Option<ScoredPoint>>,
+    sparse_next: &mut dyn FnMut() -> OperationResult<Option<ScoredPoint>>,
+    commands: &Receiver<WorkerCommand>,
+) -> OperationResult<()> {
+    while let Ok(command) = commands.recv() {
+        match command {
+            WorkerCommand::Pull {
+                channel,
+                limit,
+                reply,
+            } => {
+                let batch = match channel {
+                    NativeScoreChannel::Dense => collect_batch(dense_next, limit),
+                    NativeScoreChannel::Sparse => collect_batch(sparse_next, limit),
+                };
+                match batch {
+                    Ok(batch) => {
+                        if reply.send(Ok(batch)).is_err() {
+                            return Ok(());
+                        }
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(error));
+                        return Ok(());
+                    }
+                }
+            }
+            WorkerCommand::Stop => return Ok(()),
+        }
+    }
+    Ok(())
+}
+
+fn collect_batch(
+    next: &mut dyn FnMut() -> OperationResult<Option<ScoredPoint>>,
+    limit: usize,
+) -> OperationResult<BatchReply> {
+    let mut points = Vec::with_capacity(limit);
+    let mut eof = false;
+    for _ in 0..limit {
+        match next()? {
+            Some(point) => points.push(point),
+            None => {
+                eof = true;
+                break;
+            }
+        }
+    }
+    Ok(BatchReply { points, eof })
 }
 
 #[cfg(test)]
@@ -554,7 +694,7 @@ mod tests {
             command_tx,
             completion_rx,
             NativeStreamWorkerMode::Native,
-            "Test",
+            NativeScoreChannel::Dense,
         );
         let stopped = Arc::new(AtomicBool::new(false));
         let point_versions = Arc::new(NativeShardPointVersions {
@@ -573,6 +713,72 @@ mod tests {
         let second = stream.next_result().unwrap_err();
         assert!(first.to_string().contains("synthetic producer failure"));
         assert_eq!(first.to_string(), second.to_string());
+    }
+
+    #[test]
+    fn paired_sources_interleave_and_stop_only_after_both_drop() {
+        let (command_tx, command_rx) = sync_channel(1);
+        let (completion_tx, completion_rx) = sync_channel(1);
+        let exited = Arc::new(AtomicBool::new(false));
+        let worker_exited = exited.clone();
+        std::thread::spawn(move || {
+            let _completion = WorkerCompletionSignal::new(completion_tx);
+            let mut dense = VecDeque::from(vec![scored(1, 4.0), scored(3, 2.0)]);
+            let mut sparse = VecDeque::from(vec![scored(2, 3.0), scored(4, 1.0)]);
+            let mut dense_next = || Ok(dense.pop_front());
+            let mut sparse_next = || Ok(sparse.pop_front());
+            serve_pair(&mut dense_next, &mut sparse_next, &command_rx).unwrap();
+            worker_exited.store(true, AtomicOrdering::Release);
+        });
+
+        let (mut dense, mut sparse) = SegmentScoreSource::new_pair(
+            command_tx,
+            completion_rx,
+            NativeStreamWorkerMode::Native,
+            NativeStreamWorkerMode::Native,
+        );
+        assert_eq!(dense.pop(1).unwrap().0.unwrap().id, 1_u64.into());
+        assert_eq!(sparse.pop(1).unwrap().0.unwrap().id, 2_u64.into());
+        assert_eq!(dense.pop(1).unwrap().0.unwrap().id, 3_u64.into());
+
+        drop(dense);
+        assert!(!exited.load(AtomicOrdering::Acquire));
+        assert_eq!(sparse.pop(1).unwrap().0.unwrap().id, 4_u64.into());
+
+        drop(sparse);
+        assert!(exited.load(AtomicOrdering::Acquire));
+    }
+
+    #[test]
+    fn paired_worker_failure_never_becomes_other_channel_eof() {
+        let (command_tx, command_rx) = sync_channel(1);
+        let (completion_tx, completion_rx) = sync_channel(1);
+        std::thread::spawn(move || {
+            let _completion = WorkerCompletionSignal::new(completion_tx);
+            let mut dense_next = || {
+                Err(OperationError::service_error_light(
+                    "synthetic paired Dense failure",
+                ))
+            };
+            let mut sparse = Some(scored(9, 1.0));
+            let mut sparse_next = || Ok(sparse.take());
+            serve_pair(&mut dense_next, &mut sparse_next, &command_rx).unwrap();
+        });
+
+        let (mut dense, mut sparse) = SegmentScoreSource::new_pair(
+            command_tx,
+            completion_rx,
+            NativeStreamWorkerMode::Native,
+            NativeStreamWorkerMode::Native,
+        );
+        let dense_error = dense.pop(1).unwrap_err();
+        let sparse_error = sparse.pop(1).unwrap_err();
+        assert!(
+            dense_error
+                .to_string()
+                .contains("synthetic paired Dense failure")
+        );
+        assert!(sparse_error.to_string().contains("stopped before"));
     }
 
     #[test]

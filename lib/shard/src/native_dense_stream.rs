@@ -19,9 +19,9 @@ use segment::types::{Filter, ScoredPoint, SearchParams, VectorNameBuf, WithPaylo
 
 use crate::locked_segment::LockedSegment;
 use crate::native_score_stream::{
-    NativeShardPointVersions, NativeShardScoreStream, NativeShardStreamTelemetry,
-    NativeStreamWorkerMode, NativeWorkerSpawner, SegmentScoreSource, WorkerCommand,
-    WorkerCompletionSignal, serve_materialized, serve_native,
+    NativeScoreChannel, NativeShardPointVersions, NativeShardScoreStream,
+    NativeShardStreamTelemetry, NativeStreamWorkerMode, NativeWorkerSpawner, SegmentScoreSource,
+    WorkerCommand, WorkerCompletionSignal, serve_materialized, serve_native,
 };
 
 pub type NativeDenseShardTelemetry = NativeShardStreamTelemetry;
@@ -93,6 +93,15 @@ impl NativeDenseShardStream {
             )?);
         }
 
+        Self::from_sources(sources, point_versions, batch_size, stopped)
+    }
+
+    pub(crate) fn from_sources(
+        sources: Vec<SegmentScoreSource>,
+        point_versions: Arc<NativeShardPointVersions>,
+        batch_size: usize,
+        stopped: Arc<AtomicBool>,
+    ) -> OperationResult<Self> {
         Ok(Self {
             inner: NativeShardScoreStream::open(
                 sources,
@@ -154,7 +163,7 @@ fn spawn_segment_worker(
         command_tx,
         completion_rx,
         mode,
-        "Dense",
+        NativeScoreChannel::Dense,
     ))
 }
 
@@ -197,7 +206,7 @@ fn run_segment_worker(
                                     "native Dense Shard stream closed during initialization",
                                 )
                             })?;
-                        serve_native(next, &commands)
+                        serve_native(next, &commands, NativeScoreChannel::Dense)
                     },
                 )
             });
@@ -240,7 +249,7 @@ fn run_materialized_worker(
                 .send(Ok(NativeStreamWorkerMode::ExhaustiveFallback))
                 .is_ok()
             {
-                serve_materialized(points, commands);
+                serve_materialized(points, commands, NativeScoreChannel::Dense);
             }
         }
         Err(error) => {
@@ -249,7 +258,7 @@ fn run_materialized_worker(
     }
 }
 
-fn materialize_exact(
+pub(crate) fn materialize_exact(
     segment: &dyn ReadSegmentEntry,
     vector_name: &str,
     query: &[f32],

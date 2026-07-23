@@ -84,11 +84,18 @@ The response returns identities and ranks plus an explicit guarantee and executi
 ## V1.1 correctness boundary
 
 For default-consistency reads whose selected Shards all have a local readable replica, the current
-HTTP plan acquires one frozen Shard snapshot, shares its authoritative point identity/version map
-between both channels, opens one canonical Segment-owned session per channel, merges every channel
-globally across Segments and Shards, and only then runs dynamic WRRF. It never fuses shard-local RRF
-results. Remote replicas and explicit consistency requests use the older exact adaptive-prefix
-plan; Router choice may change cost but not ordered Top-K.
+HTTP plan acquires one frozen Shard snapshot and shares its authoritative point identity/version
+map between both channels. Every channel is merged globally across Segments and Shards before
+dynamic WRRF; it never fuses shard-local RRF results. Remote replicas and explicit consistency
+requests use the older exact adaptive-prefix plan. Router choice may change cost but not ordered
+Top-K.
+
+The paired-worker candidate can host independent canonical Dense and Sparse sessions over one
+pinned Segment read view. Its channels share only the Qdrant runtime worker and lifetime, never
+scores or certificates. It is disabled in the production profile after its latency gate lost to
+the bounded materialized exact plan at both 512 and 20,000 points. Internal experiments may enable
+it with `STRATUMIND_EXPERIMENTAL_PAIRED_NATIVE_WORKERS=1`; this switch is not part of the Production
+API contract.
 
 Dense uses an exact, metadata-only Router over Segment-owned exact scan, persisted compact
 signed-int8 residual certificate, and Qdrant Scalar reconstruction-bound plans. Every plan
@@ -113,9 +120,11 @@ one-shot Qdrant fallback, including an IDF-configured Sparse source. These field
 confused with Dense quantized dots, exact rescoring, Sparse posting visits, or prefix overfetch;
 kernel experiments report those counters separately.
 
-The local-native plan atomically reserves Qdrant search-runtime capacity for its coordinator and
-Segment workers before starting. If that reservation is unavailable, it uses one bounded
-materialized exact plan over the same frozen snapshot instead of partially starting a session.
+When enabled, the paired plan atomically reserves Qdrant search-runtime capacity for its coordinator
+and one worker per Segment before starting. Workers and coordinator may occupy the two existing
+Qdrant search runtimes when neither runtime can hold the complete task set alone. The production
+default, or any reservation miss, uses one bounded materialized exact plan over the same frozen
+snapshot instead of partially starting a session.
 Segment read views remain pinned for the session lifetime. Producer failure and cancellation are
 errors, never exact EOF. The remote adaptive plan still checks visible point count before and after
 execution. A cross-replica MVCC snapshot token remains outside the current scope.

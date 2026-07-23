@@ -20,9 +20,9 @@ use sparse::common::sparse_vector::SparseVector;
 
 use crate::locked_segment::LockedSegment;
 use crate::native_score_stream::{
-    NativeShardPointVersions, NativeShardScoreStream, NativeShardStreamTelemetry,
-    NativeStreamWorkerMode, NativeWorkerSpawner, SegmentScoreSource, WorkerCommand,
-    WorkerCompletionSignal, serve_materialized, serve_native,
+    NativeScoreChannel, NativeShardPointVersions, NativeShardScoreStream,
+    NativeShardStreamTelemetry, NativeStreamWorkerMode, NativeWorkerSpawner, SegmentScoreSource,
+    WorkerCommand, WorkerCompletionSignal, serve_materialized, serve_native,
 };
 
 pub type NativeSparseShardTelemetry = NativeShardStreamTelemetry;
@@ -101,6 +101,15 @@ impl NativeSparseShardStream {
             )?);
         }
 
+        Self::from_sources(sources, point_versions, source_batch_size, stopped)
+    }
+
+    pub(crate) fn from_sources(
+        sources: Vec<SegmentScoreSource>,
+        point_versions: Arc<NativeShardPointVersions>,
+        source_batch_size: usize,
+        stopped: Arc<AtomicBool>,
+    ) -> OperationResult<Self> {
         Ok(Self {
             inner: NativeShardScoreStream::open(
                 sources,
@@ -162,7 +171,7 @@ fn spawn_segment_worker(
         command_tx,
         completion_rx,
         mode,
-        "Sparse",
+        NativeScoreChannel::Sparse,
     ))
 }
 
@@ -199,7 +208,7 @@ fn run_segment_worker(
                                     "native Sparse Shard stream closed during initialization",
                                 )
                             })?;
-                        serve_native(next, &commands)
+                        serve_native(next, &commands, NativeScoreChannel::Sparse)
                     },
                 )
             });
@@ -237,7 +246,7 @@ fn run_segment_worker(
     }
 }
 
-fn build_query_context(
+pub(crate) fn build_query_context(
     segments: &[LockedSegment],
     vector_name: &str,
     query: &SparseVector,
@@ -283,7 +292,7 @@ fn run_materialized_worker(
                 .send(Ok(NativeStreamWorkerMode::ExhaustiveFallback))
                 .is_ok()
             {
-                serve_materialized(points, commands);
+                serve_materialized(points, commands, NativeScoreChannel::Sparse);
             }
         }
         Err(error) => {
@@ -292,7 +301,7 @@ fn run_materialized_worker(
     }
 }
 
-fn materialize_exact(
+pub(crate) fn materialize_exact(
     segment: &dyn ReadSegmentEntry,
     vector_name: &str,
     query: &SparseVector,

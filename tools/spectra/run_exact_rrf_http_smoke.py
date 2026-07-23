@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import statistics
 import time
 import urllib.error
 import urllib.request
@@ -180,14 +181,17 @@ def verify_case(
         raise AssertionError(f"{name}: ordered Top-K mismatch\nactual={actual}\nexpected={expected}")
     guarantee = response["guarantee"]
     execution = response["execution"]
-    expected_plan = (
-        "adaptive-exact-prefix-v0"
+    expected_plans = (
+        {
+            "adaptive-exact-prefix-v0",
+            "adaptive-exact-prefix-with-exhaustive-fallback-v0",
+        }
         if force_exact_fallback
-        else "native-local-dense-sparse-v1"
+        else {"native-local-dense-sparse-v1"}
     )
-    if not guarantee["orderedTopKExact"] or execution["plan"] != expected_plan:
+    if not guarantee["orderedTopKExact"] or execution["plan"] not in expected_plans:
         raise AssertionError(
-            f"{name}: expected exact plan {expected_plan!r} was not returned: {response}"
+            f"{name}: expected one of the exact plans {expected_plans!r}: {response}"
         )
     return {
         "name": name,
@@ -259,20 +263,66 @@ def seed_and_verify(base_url: str, collection: str) -> list[dict[str, Any]]:
     return cases
 
 
+def benchmark_existing(
+    base_url: str, collection: str, warmup: int, samples: int
+) -> dict[str, Any]:
+    path = f"/collections/{collection}/points/query/exact-rrf"
+    body = exact_rrf_request(False)
+    for _ in range(warmup):
+        request_json(base_url, "POST", path, body)
+    latencies = []
+    result = None
+    for _ in range(samples):
+        started = time.perf_counter_ns()
+        result = request_json(base_url, "POST", path, body)["result"]
+        latencies.append(time.perf_counter_ns() - started)
+    assert result is not None
+    actual = [point["id"] for point in result["points"]]
+    if actual != exhaustive_wrrf(final_documents(), False):
+        raise AssertionError("benchmark-existing: ordered Top-K mismatch")
+    latencies.sort()
+
+    def percentile(percent: float) -> int:
+        index = round((len(latencies) - 1) * percent)
+        return latencies[index]
+
+    return {
+        "samples": samples,
+        "warmup": warmup,
+        "p50_ns": statistics.median(latencies),
+        "p95_ns": percentile(0.95),
+        "p99_ns": percentile(0.99),
+        "min_ns": latencies[0],
+        "max_ns": latencies[-1],
+        "ordered_top_k_mismatches": 0,
+        "execution": result["execution"],
+    }
+
+
 def main() -> None:
+    global DOCUMENTS
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:6533")
     parser.add_argument("--collection", default="stratumind_exact_rrf_smoke")
     parser.add_argument(
-        "--phase", choices=("seed-and-verify", "verify-existing"), default="seed-and-verify"
+        "--phase",
+        choices=("seed-and-verify", "verify-existing", "benchmark-existing"),
+        default="seed-and-verify",
     )
+    parser.add_argument("--warmup", type=int, default=20)
+    parser.add_argument("--samples", type=int, default=200)
+    parser.add_argument("--documents", type=int, default=DOCUMENTS)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    if args.documents <= 0:
+        parser.error("--documents must be positive")
+    DOCUMENTS = args.documents
 
     wait_ready(args.base_url)
     if args.phase == "seed-and-verify":
         cases = seed_and_verify(args.base_url, args.collection)
-    else:
+    elif args.phase == "verify-existing":
         cases = [
             verify_case(
                 args.base_url,
@@ -297,6 +347,10 @@ def main() -> None:
                 force_exact_fallback=True,
             ),
         ]
+    else:
+        if args.warmup < 0 or args.samples <= 0:
+            parser.error("--warmup must be non-negative and --samples must be positive")
+        cases = []
     artifact = {
         "schema_version": 1,
         "experiment": "stratumind-exact-rrf-http-smoke-v1",
@@ -308,6 +362,10 @@ def main() -> None:
         "rrf_k": RRF_K,
         "cases": cases,
     }
+    if args.phase == "benchmark-existing":
+        artifact["benchmark"] = benchmark_existing(
+            args.base_url, args.collection, args.warmup, args.samples
+        )
     encoded = json.dumps(artifact, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

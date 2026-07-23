@@ -3,6 +3,7 @@ pub mod count;
 pub mod facet;
 pub mod files;
 pub mod locked_segment;
+pub mod native_dense_sparse_stream;
 pub mod native_dense_stream;
 mod native_score_stream;
 pub use native_score_stream::{

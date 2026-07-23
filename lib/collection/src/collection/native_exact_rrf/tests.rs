@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use ordered_float::OrderedFloat;
 use segment::common::reciprocal_rank_fusion::exact_rrf_scoring;
+use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
@@ -73,8 +74,30 @@ fn dropping_native_execution_arms_cancellation() {
     assert!(!stopped.load(AtomicOrdering::Relaxed));
 }
 
+#[test]
+fn paired_worker_experiment_flag_is_explicit() {
+    for enabled in ["1", "true", "TRUE", " yes ", "On"] {
+        assert!(parse_enabled_flag(enabled));
+    }
+    for disabled in ["", "0", "false", "enabled", "2"] {
+        assert!(!parse_enabled_flag(disabled));
+    }
+}
+
 fn make_segment(
     lane: u64,
+) -> (
+    tempfile::TempDir,
+    Segment,
+    Vec<ScoredPoint>,
+    Vec<ScoredPoint>,
+) {
+    make_segment_with_sparse_modifier(lane, None)
+}
+
+fn make_segment_with_sparse_modifier(
+    lane: u64,
+    sparse_modifier: Option<Modifier>,
 ) -> (
     tempfile::TempDir,
     Segment,
@@ -100,7 +123,7 @@ fn make_segment(
             SparseVectorDataConfig {
                 index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None),
                 storage_type: SparseVectorStorageType::Mmap,
-                modifier: None,
+                modifier: sparse_modifier,
             },
         )]),
         payload_storage_type: Default::default(),
@@ -221,8 +244,8 @@ async fn reserved_qdrant_runtime_starts_the_complete_exact_session() {
         3,
     );
     let reservation = runtime
-        .try_reserve_exact_workers(2)
-        .expect("coordinator plus both channel workers fit atomically");
+        .try_reserve_exact_workers(1)
+        .expect("coordinator plus the paired Segment worker fit atomically");
     let worker_reservation = reservation.workers();
     let worker_spawner = NativeWorkerSpawner::new(move |_name, worker| {
         worker_reservation.spawn_blocking(worker).ok_or_else(|| {
@@ -264,6 +287,140 @@ async fn reserved_qdrant_runtime_starts_the_complete_exact_session() {
         .expect("coordinator task joins")
         .expect("exact execution succeeds");
     assert_eq!(result.point_ids.len(), 20);
+    drop(directory);
+}
+
+#[test]
+fn four_segments_use_four_paired_workers_across_qdrant_runtimes() {
+    let high_cpu = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .max_blocking_threads(4)
+        .enable_all()
+        .build()
+        .unwrap();
+    let high_io = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .max_blocking_threads(4)
+        .enable_all()
+        .build()
+        .unwrap();
+    let runtime = AdaptiveSearchHandle::new_with_session_capacities(
+        high_cpu.handle().clone(),
+        high_io.handle().clone(),
+        4,
+        4,
+    );
+    assert!(
+        runtime.try_reserve_exact_workers(5).is_none(),
+        "five paired workers cannot be partially started across four-slot runtimes",
+    );
+    let reservation = runtime
+        .try_reserve_exact_workers(4)
+        .expect("four paired workers and their coordinator fit across both runtimes");
+    let spawned = Arc::new(AtomicUsize::new(0));
+    let spawned_workers = spawned.clone();
+    let worker_reservation = reservation.workers();
+    let worker_spawner = NativeWorkerSpawner::new(move |_name, worker| {
+        spawned_workers.fetch_add(1, AtomicOrdering::Relaxed);
+        worker_reservation.spawn_blocking(worker).ok_or_else(|| {
+            OperationError::service_error_light(
+                "paired session exceeded its four reserved worker slots",
+            )
+        })?;
+        Ok(())
+    });
+
+    let mut directories = Vec::new();
+    let mut shards = Vec::new();
+    for lane in 0..4 {
+        let (directory, segment, _, _) = make_segment(lane * 1_000);
+        directories.push(directory);
+        shards.push(frozen(vec![LockedSegment::new(segment)]));
+    }
+    let task = reservation
+        .coordinator()
+        .spawn_blocking(move || {
+            execute_native_exact_rrf(
+                shards,
+                NativeExactRrfRequest {
+                    dense_query: vec![1.0, 0.0],
+                    dense_using: DEFAULT_VECTOR_NAME.to_owned(),
+                    sparse_query: SparseVector {
+                        indices: vec![11],
+                        values: vec![1.0],
+                    },
+                    sparse_using: SPARSE_NAME.to_owned(),
+                    filter: None,
+                    limit: 20,
+                    rrf_k: 60,
+                    weights: [1.0, 1.0],
+                    batch_size: 13,
+                    sparse_posting_batch_size: 4_096,
+                    dense_policy: NativeDensePolicy::default(),
+                },
+                Arc::new(AtomicBool::new(false)),
+                worker_spawner,
+            )
+        })
+        .expect("reserved coordinator slot");
+    let result = high_cpu
+        .block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), task)
+                .await
+                .expect("paired session must not starve")
+                .expect("coordinator task joins")
+        })
+        .expect("paired exact execution succeeds");
+
+    assert_eq!(spawned.load(AtomicOrdering::Relaxed), 4);
+    assert_eq!(result.exhaustive_fallback_sources, 0);
+    assert_eq!(result.point_ids.len(), 20);
+    drop(directories);
+}
+
+#[test]
+fn paired_worker_keeps_dense_native_when_sparse_requires_materialization() {
+    let (directory, segment, _, _) = make_segment_with_sparse_modifier(0, Some(Modifier::Idf));
+    let segment = LockedSegment::new(segment);
+    let request = NativeExactRrfRequest {
+        dense_query: vec![1.0, 0.0],
+        dense_using: DEFAULT_VECTOR_NAME.to_owned(),
+        sparse_query: SparseVector {
+            indices: vec![11],
+            values: vec![1.0],
+        },
+        sparse_using: SPARSE_NAME.to_owned(),
+        filter: None,
+        limit: 20,
+        rrf_k: 60,
+        weights: [1.0, 1.0],
+        batch_size: 13,
+        sparse_posting_batch_size: 4_096,
+        dense_policy: NativeDensePolicy::default(),
+    };
+    let actual = execute_native_exact_rrf(
+        vec![frozen(vec![segment.clone()])],
+        request.clone(),
+        Arc::new(AtomicBool::new(false)),
+        NativeWorkerSpawner::dedicated_threads_for_tests(),
+    )
+    .unwrap();
+    let eager = execute_materialized_exact_rrf(
+        vec![frozen(vec![segment])],
+        request,
+        Arc::new(AtomicBool::new(false)),
+    )
+    .unwrap();
+
+    assert_eq!(actual.point_ids, eager.point_ids);
+    assert_eq!(actual.versions, eager.versions);
+    assert_eq!(actual.exhaustive_fallback_sources, 1);
+    assert!(
+        actual
+            .source_worker_pull_batches
+            .iter()
+            .all(|pulls| *pulls > 0)
+    );
     drop(directory);
 }
 

@@ -6,8 +6,8 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -21,13 +21,13 @@ use segment::index::exact_score_stream::{
 use segment::index::native_dense_stream::NativeDensePolicy;
 use segment::types::{ExtendedPointId, Filter, PointIdType, ScoredPoint, VectorNameBuf};
 use shard::locked_segment::LockedSegment;
+use shard::native_dense_sparse_stream::{
+    NativeDenseSparseShardStreams, open_native_dense_sparse_shard_streams,
+};
 use shard::native_dense_stream::{
-    NativeDenseShardStream, NativeDenseShardTelemetry,
-    materialize_shard_exact as materialize_dense_shard_exact,
+    NativeDenseShardTelemetry, materialize_shard_exact as materialize_dense_shard_exact,
 };
-use shard::native_sparse_stream::{
-    NativeSparseShardStream, materialize_shard_exact as materialize_sparse_shard_exact,
-};
+use shard::native_sparse_stream::materialize_shard_exact as materialize_sparse_shard_exact;
 use shard::{NativeShardPointVersionsCache, NativeWorkerSpawner};
 use sparse::common::sparse_vector::SparseVector;
 
@@ -38,6 +38,7 @@ use crate::shards::local_shard::NativeSegmentSnapshot;
 
 pub const DEFAULT_NATIVE_EXACT_BATCH_SIZE: usize = 64;
 pub const DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE: usize = 4_096;
+const PAIRED_NATIVE_WORKERS_ENV: &str = "STRATUMIND_EXPERIMENTAL_PAIRED_NATIVE_WORKERS";
 
 #[derive(Clone, Debug)]
 pub struct NativeExactRrfRequest {
@@ -267,15 +268,16 @@ impl Collection {
             .iter()
             .map(|snapshot| snapshot.segments.len())
             .sum::<usize>();
-        let Some(required_worker_slots) = segment_count.checked_mul(2) else {
-            log::debug!("native exact RRF skipped: Segment worker count overflow");
-            return Ok(None);
-        };
+        let required_worker_slots = segment_count;
         let mut cancellation = NativeExactCancellation::new(stopped.clone());
-        let mut task = if let Some(reservation) = self
-            .search_runtime
-            .try_reserve_exact_workers(required_worker_slots)
-        {
+        let paired_workers_enabled = paired_native_workers_enabled();
+        let reservation = paired_workers_enabled
+            .then(|| {
+                self.search_runtime
+                    .try_reserve_exact_workers(required_worker_slots)
+            })
+            .flatten();
+        let mut task = if let Some(reservation) = reservation {
             debug_assert_eq!(reservation.worker_slots(), required_worker_slots);
             let worker_reservation = reservation.workers();
             let worker_spawner = NativeWorkerSpawner::new(move |_name, worker| {
@@ -301,9 +303,15 @@ impl Collection {
             // materializes each Segment through Qdrant's exact kernels and is
             // result-equivalent to the resumable cursor plan, so low runtime
             // capacity changes latency rather than correctness/availability.
-            log::debug!(
-                "native exact RRF using bounded eager fallback for {shard_count} Shards, {segment_count} Segments and {required_worker_slots} requested cursor workers",
-            );
+            if paired_workers_enabled {
+                log::debug!(
+                    "native exact RRF using bounded eager fallback for {shard_count} Shards, {segment_count} paired Segment workers and {required_worker_slots} requested worker slots",
+                );
+            } else {
+                log::debug!(
+                    "native exact RRF using bounded eager fallback because the paired-worker candidate is disabled by its production latency gate",
+                );
+            }
             tokio::task::spawn_blocking(move || {
                 let shards = frozen_shards(&snapshots);
                 let result = execute_materialized_exact_rrf(shards, request, task_stopped);
@@ -333,6 +341,23 @@ impl Collection {
     }
 }
 
+fn paired_native_workers_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var(PAIRED_NATIVE_WORKERS_ENV)
+            .ok()
+            .as_deref()
+            .is_some_and(parse_enabled_flag)
+    })
+}
+
+fn parse_enabled_flag(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
 fn execute_native_exact_rrf(
     snapshots: Vec<NativeFrozenShard>,
     request: NativeExactRrfRequest,
@@ -358,15 +383,27 @@ fn execute_native_exact_rrf(
         })
         .collect::<OperationResult<Vec<_>>>()?;
 
-    // Sparse workers are opened for every Segment first. Their pinned read
-    // views freeze the corpus while Dense opens over the same identities.
     let versions = Rc::new(RefCell::new(HashMap::new()));
     let sparse_physical = Rc::new(RefCell::new(Vec::<NativeDenseShardTelemetry>::new()));
+    let dense_physical = Rc::new(RefCell::new(Vec::<NativeDenseShardTelemetry>::new()));
     let mut sparse_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
+    let mut dense_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
     let mut exhaustive_fallback_sources = 0;
+    let mut paired_native_workers = 0;
+    let mut mixed_workers = 0;
+    let mut materialized_workers = 0;
     for (shard, snapshot) in snapshots.iter().enumerate() {
-        let stream = NativeSparseShardStream::open_with_point_versions(
+        let NativeDenseSparseShardStreams {
+            dense,
+            sparse,
+            paired_native_workers: shard_paired_native_workers,
+            mixed_workers: shard_mixed_workers,
+            materialized_workers: shard_materialized_workers,
+        } = open_native_dense_sparse_shard_streams(
             snapshot.segments.clone(),
+            request.dense_using.clone(),
+            request.dense_query.clone(),
+            request.dense_policy,
             request.sparse_using.clone(),
             request.sparse_query.clone(),
             request.filter.clone(),
@@ -376,54 +413,49 @@ fn execute_native_exact_rrf(
             worker_spawner.clone(),
             point_versions[shard].clone(),
         )?;
-        exhaustive_fallback_sources += stream.telemetry().exhaustive_fallback_sources;
-        let physical_source = {
+        paired_native_workers += shard_paired_native_workers;
+        mixed_workers += shard_mixed_workers;
+        materialized_workers += shard_materialized_workers;
+        exhaustive_fallback_sources += dense.telemetry().exhaustive_fallback_sources;
+        exhaustive_fallback_sources += sparse.telemetry().exhaustive_fallback_sources;
+
+        let sparse_physical_source = {
             let mut telemetry = sparse_physical.borrow_mut();
-            telemetry.push(stream.telemetry());
+            telemetry.push(sparse.telemetry());
             telemetry.len() - 1
         };
-        let source_versions = versions.clone();
-        let source_physical = sparse_physical.clone();
-        let mut stream = stream;
+        let sparse_versions = versions.clone();
+        let sparse_telemetry = sparse_physical.clone();
+        let mut sparse = sparse;
         sparse_sources.push(exact_score_stream(
             move || {
-                let result = stream.next_result();
-                source_physical.borrow_mut()[physical_source] = stream.telemetry();
+                let result = sparse.next_result();
+                sparse_telemetry.borrow_mut()[sparse_physical_source] = sparse.telemetry();
                 result
             },
-            source_versions,
+            sparse_versions,
         ));
-    }
-    let dense_physical = Rc::new(RefCell::new(Vec::<NativeDenseShardTelemetry>::new()));
-    let mut dense_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
-    for (shard, snapshot) in snapshots.iter().enumerate() {
-        let mut stream = NativeDenseShardStream::open_with_point_versions(
-            snapshot.segments.clone(),
-            request.dense_using.clone(),
-            request.dense_query.clone(),
-            request.filter.clone(),
-            request.dense_policy,
-            batch_size,
-            stopped.clone(),
-            worker_spawner.clone(),
-            point_versions[shard].clone(),
-        )?;
-        let physical_source = {
+
+        let dense_physical_source = {
             let mut telemetry = dense_physical.borrow_mut();
-            telemetry.push(stream.telemetry());
+            telemetry.push(dense.telemetry());
             telemetry.len() - 1
         };
-        let source_versions = versions.clone();
-        let source_physical = dense_physical.clone();
+        let dense_versions = versions.clone();
+        let dense_telemetry = dense_physical.clone();
+        let mut dense = dense;
         dense_sources.push(exact_score_stream(
             move || {
-                let result = stream.next_result();
-                source_physical.borrow_mut()[physical_source] = stream.telemetry();
+                let result = dense.next_result();
+                dense_telemetry.borrow_mut()[dense_physical_source] = dense.telemetry();
                 result
             },
-            source_versions,
+            dense_versions,
         ));
     }
+    log::debug!(
+        "native exact RRF opened {paired_native_workers} paired-native, {mixed_workers} mixed and {materialized_workers} materialized Segment workers",
+    );
 
     let NativeRrfCoreResult {
         point_ids,
