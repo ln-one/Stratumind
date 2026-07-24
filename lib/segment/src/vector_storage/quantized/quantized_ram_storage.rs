@@ -48,6 +48,22 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         Cow::Borrowed(self.vectors.get(index as VectorOffsetType))
     }
 
+    fn get_contiguous_vector_data(
+        &self,
+        start: PointOffsetType,
+        max_vectors: usize,
+    ) -> Option<(usize, Cow<'_, [u8]>)> {
+        let start = start as VectorOffsetType;
+        let available = self.vectors.len().checked_sub(start)?;
+        let count = max_vectors
+            .min(available)
+            .min(self.vectors.get_chunk_left_keys(start));
+        if count == 0 {
+            return None;
+        }
+        Some((count, Cow::Borrowed(self.vectors.get_many(start, count)?)))
+    }
+
     fn upsert_vector(
         &mut self,
         id: PointOffsetType,

@@ -54,6 +54,30 @@ impl<
             hardware_counter,
         }
     }
+
+    /// Construct a scorer from coordinates already processed by `TMetric`.
+    /// Exact certificate plans use this so bounds and authoritative scoring
+    /// consume the same frozen query.
+    pub(crate) fn new_preprocessed(
+        preprocessed_query: TypedDenseVector<VectorElementType>,
+        vector_storage: &'a TVectorStorage,
+        mut hardware_counter: HardwareCounterCell,
+    ) -> Self {
+        let dim = preprocessed_query.len();
+        hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
+        if vector_storage.is_on_disk() {
+            hardware_counter.set_vector_io_read_multiplier(dim * size_of::<TElement>());
+        } else {
+            hardware_counter.set_vector_io_read_multiplier(0);
+        }
+
+        Self {
+            query: TElement::query_from_float_cow(Cow::Owned(preprocessed_query)),
+            vector_storage,
+            metric: PhantomData,
+            hardware_counter,
+        }
+    }
 }
 
 impl<

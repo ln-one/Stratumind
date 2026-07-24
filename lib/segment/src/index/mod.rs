@@ -18,6 +18,7 @@ pub mod native_dense_stream;
 pub mod native_sparse_stream;
 pub mod payload_config;
 mod payload_index_base;
+pub mod per_vector_scalar_index;
 pub mod plain_payload_index;
 pub mod plain_vector_index;
 pub mod query_estimator;

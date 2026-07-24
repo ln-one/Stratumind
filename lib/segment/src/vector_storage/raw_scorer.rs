@@ -96,6 +96,36 @@ pub fn new_raw_scorer<'a>(
     }
 }
 
+/// Authoritative scorer for a Dense query already preprocessed by the
+/// storage metric exactly once.
+pub(crate) fn new_raw_scorer_preprocessed<'a>(
+    preprocessed_query: DenseVector,
+    vector_storage: &'a VectorStorageEnum,
+    hardware_counter: HardwareCounterCell,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    match vector_storage {
+        VectorStorageEnum::DenseVolatile(storage) => {
+            raw_scorer_impl_preprocessed(preprocessed_query, storage, hardware_counter)
+        }
+        VectorStorageEnum::DenseMemmap(storage) => {
+            raw_scorer_impl_preprocessed(preprocessed_query, storage.as_ref(), hardware_counter)
+        }
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseUring(storage) => {
+            raw_scorer_impl_preprocessed(preprocessed_query, storage.as_ref(), hardware_counter)
+        }
+        VectorStorageEnum::DenseAppendableMemmap(storage) => {
+            raw_scorer_impl_preprocessed(preprocessed_query, storage.as_ref(), hardware_counter)
+        }
+        VectorStorageEnum::EmptyDense(storage) => {
+            raw_scorer_impl_preprocessed(preprocessed_query, storage, hardware_counter)
+        }
+        _ => Err(OperationError::validation_error(
+            "preprocessed RawScorer requires Float32 single-vector Dense storage",
+        )),
+    }
+}
+
 pub static DEFAULT_STOPPED: AtomicBool = AtomicBool::new(false);
 
 pub fn raw_sparse_scorer_volatile<'a>(
@@ -221,6 +251,54 @@ where
             hardware_counter,
         ),
     }
+}
+
+fn raw_scorer_impl_preprocessed<
+    'a,
+    TElement: PrimitiveVectorElement,
+    TVectorStorage: DenseVectorStorage<TElement>,
+>(
+    preprocessed_query: DenseVector,
+    vector_storage: &'a TVectorStorage,
+    hardware_counter: HardwareCounterCell,
+) -> OperationResult<Box<dyn RawScorer + 'a>>
+where
+    CosineMetric: Metric<TElement>,
+    DotProductMetric: Metric<TElement>,
+{
+    match vector_storage.distance() {
+        Distance::Cosine => new_scorer_with_metric_preprocessed::<TElement, CosineMetric, _>(
+            preprocessed_query,
+            vector_storage,
+            hardware_counter,
+        ),
+        Distance::Dot => new_scorer_with_metric_preprocessed::<TElement, DotProductMetric, _>(
+            preprocessed_query,
+            vector_storage,
+            hardware_counter,
+        ),
+        Distance::Euclid | Distance::Manhattan => Err(OperationError::validation_error(
+            "preprocessed RawScorer supports Dot/Cosine only",
+        )),
+    }
+}
+
+fn new_scorer_with_metric_preprocessed<
+    'a,
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement> + 'a,
+    TVectorStorage: DenseVectorStorage<TElement>,
+>(
+    preprocessed_query: DenseVector,
+    vector_storage: &'a TVectorStorage,
+    hardware_counter: HardwareCounterCell,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    let query_scorer = MetricQueryScorer::<_, TMetric, _>::new_preprocessed(
+        preprocessed_query,
+        vector_storage,
+        hardware_counter,
+    );
+    raw_scorer_from_query_scorer(query_scorer)
 }
 
 fn new_scorer_with_metric<

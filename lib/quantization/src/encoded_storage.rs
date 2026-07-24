@@ -20,6 +20,17 @@ use fs_err::File;
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]>;
 
+    /// Returns up to `max_vectors` consecutive fixed-width vectors beginning at
+    /// `start`, flattened into one slice. Storages without a contiguous view
+    /// retain the default and fall back to point batches.
+    fn get_contiguous_vector_data(
+        &self,
+        _start: PointOffsetType,
+        _max_vectors: usize,
+    ) -> Option<(usize, Cow<'_, [u8]>)> {
+        None
+    }
+
     fn iter_batch(
         &self,
         offsets: &[PointOffsetType],

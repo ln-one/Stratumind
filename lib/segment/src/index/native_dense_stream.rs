@@ -23,8 +23,8 @@ use crate::vector_storage::{VectorStorageEnum, VectorStorageRead, new_raw_scorer
 mod plans;
 
 use self::plans::{
-    build_compact_certificate_cursor, build_exact_scan_cursor, build_scalar_certificate_cursor,
-    select_dense_plan,
+    build_compact_certificate_cursor, build_exact_scan_cursor,
+    build_per_vector_scalar_certificate_cursor, build_scalar_certificate_cursor, select_dense_plan,
 };
 
 pub const DEFAULT_DENSE_SCALAR_MIN_POINTS: usize = 4_096;
@@ -34,6 +34,7 @@ const NATIVE_DENSE_SCORE_CHUNK_SIZE: usize = 4_096;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeDensePlan {
     CompactCertificate,
+    PerVectorScalarCertificate,
     ScalarCertificate,
     ExactScan,
 }
@@ -43,6 +44,8 @@ pub struct NativeDensePolicy {
     pub scalar_min_points: usize,
     pub compact_max_points: usize,
     pub force_exact_scan: bool,
+    /// Internal rollback/baseline switch. Production Auto keeps this false.
+    pub disable_per_vector_scalar_certificate: bool,
     /// Internal benchmark switch. Production keeps this true.
     pub disable_compact_certificate: bool,
 }
@@ -53,6 +56,7 @@ impl Default for NativeDensePolicy {
             scalar_min_points: DEFAULT_DENSE_SCALAR_MIN_POINTS,
             compact_max_points: DEFAULT_DENSE_COMPACT_MAX_POINTS,
             force_exact_scan: false,
+            disable_per_vector_scalar_certificate: false,
             // Production defaults to Qdrant's native Scalar quantization
             // scorer. Compact remains benchmark-only until it can reuse the
             // same native storage and SIMD dispatch.
@@ -218,6 +222,16 @@ impl<'a> NativeDenseIndexCursor<'a> {
         }
         let query_vector: QueryVector = VectorInternal::Dense(query.to_vec()).into();
         match select_dense_plan(vector_storage, quantized, &eligible, query, policy) {
+            NativeDensePlan::PerVectorScalarCertificate => {
+                build_per_vector_scalar_certificate_cursor(
+                    vector_storage,
+                    quantized.expect("PVS plan requires quantized vectors"),
+                    eligible,
+                    query,
+                    hardware_counter,
+                    stopped,
+                )
+            }
             NativeDensePlan::CompactCertificate => build_compact_certificate_cursor(
                 vector_storage,
                 quantized.expect("compact plan requires quantized vectors"),

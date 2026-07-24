@@ -58,14 +58,18 @@ struct ResultRow {
     compact_ordered_mismatches: usize,
     scalar_ordered_mismatches: usize,
     auto_ordered_mismatches: usize,
+    auto_vs_compact_ordered_mismatches: usize,
     auto_exact_prefix_queries: usize,
     auto_compact_queries: usize,
+    auto_per_vector_scalar_queries: usize,
     auto_scalar_queries: usize,
     auto_exact_scan_queries: usize,
     compact_quantized_scores: usize,
     compact_exact_scores: usize,
     scalar_quantized_scores: usize,
     scalar_exact_scores: usize,
+    auto_quantized_scores: usize,
+    auto_exact_scores: usize,
     compact_exact_score_ratio: f64,
     scalar_exact_score_ratio: f64,
     quantized_build_ns: u128,
@@ -174,11 +178,14 @@ fn main() {
     let mut compact_mismatches = 0;
     let mut scalar_mismatches = 0;
     let mut auto_mismatches = 0;
-    let mut auto_plan_queries = [0usize; 3];
+    let mut auto_vs_compact_mismatches = 0;
+    let mut auto_plan_queries = [0usize; 4];
     let mut compact_quantized_scores = 0;
     let mut compact_exact_scores = 0;
     let mut scalar_quantized_scores = 0;
     let mut scalar_exact_scores = 0;
+    let mut auto_quantized_scores = 0;
+    let mut auto_exact_scores = 0;
 
     for (query_index, row) in queries.iter().enumerate() {
         let orders = [[0, 1, 2, 3], [1, 2, 3, 0], [2, 3, 0, 1], [3, 0, 1, 2]];
@@ -222,6 +229,7 @@ fn main() {
         compact_mismatches += usize::from(compact != exact);
         scalar_mismatches += usize::from(scalar != exact);
         auto_mismatches += usize::from(auto != exact);
+        auto_vs_compact_mismatches += usize::from(auto != compact);
         assert_eq!(
             compact_telemetry.plan,
             Some(NativeDensePlan::CompactCertificate)
@@ -232,13 +240,16 @@ fn main() {
         );
         match auto_telemetry.plan.expect("auto plan records its executor") {
             NativeDensePlan::CompactCertificate => auto_plan_queries[0] += 1,
-            NativeDensePlan::ScalarCertificate => auto_plan_queries[1] += 1,
-            NativeDensePlan::ExactScan => auto_plan_queries[2] += 1,
+            NativeDensePlan::PerVectorScalarCertificate => auto_plan_queries[1] += 1,
+            NativeDensePlan::ScalarCertificate => auto_plan_queries[2] += 1,
+            NativeDensePlan::ExactScan => auto_plan_queries[3] += 1,
         }
         compact_quantized_scores += compact_telemetry.native_quantized_scores;
         compact_exact_scores += compact_telemetry.exact_scores;
         scalar_quantized_scores += scalar_telemetry.native_quantized_scores;
         scalar_exact_scores += scalar_telemetry.exact_scores;
+        auto_quantized_scores += auto_telemetry.native_quantized_scores;
+        auto_exact_scores += auto_telemetry.exact_scores;
     }
 
     let result = ResultRow {
@@ -252,14 +263,18 @@ fn main() {
         compact_ordered_mismatches: compact_mismatches,
         scalar_ordered_mismatches: scalar_mismatches,
         auto_ordered_mismatches: auto_mismatches,
+        auto_vs_compact_ordered_mismatches: auto_vs_compact_mismatches,
         auto_exact_prefix_queries: 0,
         auto_compact_queries: auto_plan_queries[0],
-        auto_scalar_queries: auto_plan_queries[1],
-        auto_exact_scan_queries: auto_plan_queries[2],
+        auto_per_vector_scalar_queries: auto_plan_queries[1],
+        auto_scalar_queries: auto_plan_queries[2],
+        auto_exact_scan_queries: auto_plan_queries[3],
         compact_quantized_scores,
         compact_exact_scores,
         scalar_quantized_scores,
         scalar_exact_scores,
+        auto_quantized_scores,
+        auto_exact_scores,
         compact_exact_score_ratio: compact_exact_scores as f64 / compact_quantized_scores as f64,
         scalar_exact_score_ratio: scalar_exact_scores as f64 / scalar_quantized_scores as f64,
         quantized_build_ns,
@@ -328,6 +343,7 @@ fn run_native(
                     scalar_min_points: 0,
                     compact_max_points: usize::MAX,
                     disable_compact_certificate,
+                    disable_per_vector_scalar_certificate: true,
                     ..NativeDensePolicy::default()
                 },
                 &segment_query_context,

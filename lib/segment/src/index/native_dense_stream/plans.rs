@@ -8,6 +8,15 @@ pub(super) fn select_dense_plan(
     policy: NativeDensePolicy,
 ) -> NativeDensePlan {
     let supported_distance = matches!(vector_storage.distance(), Distance::Dot | Distance::Cosine);
+    let pvs_available = !policy.force_exact_scan
+        && !policy.disable_per_vector_scalar_certificate
+        && eligible.len() >= policy.scalar_min_points
+        && supported_distance
+        && vector_storage.datatype() == VectorStorageDatatype::Float32
+        && quantized.is_some_and(|quantized| quantized.per_vector_scalar().is_some());
+    if pvs_available {
+        return NativeDensePlan::PerVectorScalarCertificate;
+    }
     let compact_available = !policy.force_exact_scan
         && !policy.disable_compact_certificate
         && eligible.len() >= policy.scalar_min_points
@@ -40,6 +49,25 @@ pub(super) fn select_dense_plan(
     } else {
         NativeDensePlan::ExactScan
     }
+}
+
+#[expect(clippy::too_many_arguments)]
+pub(super) fn build_per_vector_scalar_certificate_cursor<'a>(
+    vector_storage: &'a VectorStorageEnum,
+    quantized: &QuantizedVectors,
+    eligible: Vec<PointOffsetType>,
+    query: &[f32],
+    hardware_counter: &HardwareCounterCell,
+    stopped: &AtomicBool,
+) -> OperationResult<NativeDenseIndexCursor<'a>> {
+    quantized
+        .per_vector_scalar()
+        .ok_or_else(|| {
+            OperationError::inconsistent_storage(
+                "PerVectorScalar plan was selected without a persisted index",
+            )
+        })?
+        .cursor(vector_storage, eligible, query, hardware_counter, stopped)
 }
 
 #[expect(clippy::too_many_arguments)]

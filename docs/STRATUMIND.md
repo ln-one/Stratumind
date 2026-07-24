@@ -97,16 +97,18 @@ the bounded materialized exact plan at both 512 and 20,000 points. Internal expe
 it with `STRATUMIND_EXPERIMENTAL_PAIRED_NATIVE_WORKERS=1`; this switch is not part of the Production
 API contract.
 
-Dense uses an exact, metadata-only Router over Segment-owned exact scan, persisted compact
-signed-int8 residual certificate, and Qdrant Scalar reconstruction-bound plans. Every plan
-computes an outward-safe upper bound and full-precision-rescores unresolved competitors. The
-session owns the ordered continuation and ExactRank cache, so one query never pays for an
-independent Top-N prefix and then starts a second physical Dense truth. Unsupported storage falls
-back before emitting anything. Exact scan remains the universal fallback.
+Dense uses an exact, metadata-only Router over Segment-owned PVS V1, Qdrant Scalar bounds and
+authoritative exact scan. Compatible immutable Float32 Dot/Cosine Segments persist a per-vector
+signed-int8 PVS row and prefer it in `Auto`; missing, stale or corrupt PVS state is quarantined and
+falls back safely. Every certificate computes an outward-safe upper bound and full-precision
+rescores unresolved competitors. The session owns ordered continuation and ExactRank caching, so
+one query never pays for an independent Top-N prefix and then starts a second Dense truth.
 
-The compact certificate is built only below its 16,384-point production limit; large Segments do
-not pay its storage cost. Router thresholds are implementation profile values, not correctness
-assumptions: selecting a slower exact plan changes cost only, never ordered Top-K.
+Compact remains an internal comparison plan and is built only below its 16,384-point limit. On the
+local Apple Silicon TREC-COVID 100K gate, Production `Auto` selected PVS for all 50 Queries, matched
+Compact Top-20 exactly, and reduced p50 from `1.783 ms` to `1.730 ms`; Scalar measured `2.828 ms`.
+Router thresholds remain cost choices: selecting a slower exact plan changes work only, never the
+ordered result.
 
 Sparse uses one Qdrant `SearchContext`-backed native ranking session. It retains posting state,
 publishes only score groups whose order is certified against all unread posting contribution, and

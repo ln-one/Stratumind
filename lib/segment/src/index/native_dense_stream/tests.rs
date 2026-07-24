@@ -149,6 +149,7 @@ fn persisted_compact_certificate_matches_segment_exact_top_k() {
                     scalar_min_points: 0,
                     compact_max_points: usize::MAX,
                     disable_compact_certificate: false,
+                    disable_per_vector_scalar_certificate: true,
                     ..NativeDensePolicy::default()
                 },
                 &segment_query_context,
@@ -278,6 +279,7 @@ fn check_mixed_sign_persisted_certificate(distance: Distance) {
                         scalar_min_points: 0,
                         compact_max_points: usize::MAX,
                         disable_compact_certificate: false,
+                        disable_per_vector_scalar_certificate: true,
                         ..NativeDensePolicy::default()
                     },
                     &segment_query_context,
@@ -386,6 +388,7 @@ fn scalar_exact_rank_probes_share_the_native_scan_and_exact_score_cache() {
                 NativeDensePolicy {
                     scalar_min_points: 0,
                     disable_compact_certificate: true,
+                    disable_per_vector_scalar_certificate: true,
                     ..NativeDensePolicy::default()
                 },
                 &segment_query_context,
