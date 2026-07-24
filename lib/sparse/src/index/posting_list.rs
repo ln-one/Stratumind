@@ -225,6 +225,30 @@ impl PostingListIter for PostingListIterator<'_> {
         self.current_index = current_index;
     }
 
+    fn for_each_in_id_range<Ctx: ?Sized>(
+        &self,
+        start: PointOffsetType,
+        end: PointOffsetType,
+        ctx: &mut Ctx,
+        mut f: impl FnMut(&mut Ctx, PointOffsetType, DimWeight),
+    ) -> usize {
+        if start > end {
+            return 0;
+        }
+        let start_index = self
+            .elements
+            .partition_point(|element| element.record_id < start);
+        let mut visited = 0;
+        for element in self.elements[start_index..]
+            .iter()
+            .take_while(|element| element.record_id <= end)
+        {
+            f(ctx, element.record_id, element.weight);
+            visited += 1;
+        }
+        visited
+    }
+
     fn reliable_max_next_weight() -> bool {
         true
     }

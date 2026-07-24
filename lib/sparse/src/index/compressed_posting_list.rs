@@ -647,6 +647,73 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         self.pos = (pos, None);
     }
 
+    fn for_each_in_id_range<Ctx: ?Sized>(
+        &self,
+        start: PointOffsetType,
+        end: PointOffsetType,
+        ctx: &mut Ctx,
+        mut f: impl FnMut(&mut Ctx, PointOffsetType, DimWeight),
+    ) -> usize {
+        if start > end {
+            return 0;
+        }
+
+        let mut visited = 0;
+        let mut ids = [0; CHUNK_SIZE];
+        let mut weights_buf = [0.0; CHUNK_SIZE];
+        let first_chunk = self
+            .list
+            .chunks
+            .partition_point(|chunk| chunk.initial <= start)
+            .saturating_sub(1);
+
+        for chunk_index in first_chunk..self.list.chunks_len() {
+            let chunk = &self.list.chunks[chunk_index];
+            if chunk.initial > end {
+                break;
+            }
+            self.list.decompress_chunk(chunk_index, &mut ids);
+            let local_start = ids.partition_point(|id| *id < start);
+            let local_end = ids.partition_point(|id| *id <= end);
+            let count = local_end.saturating_sub(local_start);
+            if count == 0 {
+                continue;
+            }
+            let position = chunk_index * CHUNK_SIZE + local_start;
+            let weights = self.list.weights_range(position, count);
+            let weights =
+                W::into_f32_slice(self.list.multiplier, weights, &mut weights_buf[..count]);
+            for (&id, &weight) in std::iter::zip(&ids[local_start..local_end], weights.iter()) {
+                f(ctx, id, weight);
+            }
+            visited += count;
+            if local_end != CHUNK_SIZE {
+                break;
+            }
+        }
+
+        let remainder_start = self
+            .list
+            .remainders
+            .partition_point(|element| element.record_id < start);
+        for element in self.list.remainders[remainder_start..]
+            .iter()
+            .take_while(|element| element.record_id <= end)
+        {
+            self.list
+                .hw_counter
+                .vector_io_read()
+                .incr_delta(size_of::<GenericPostingElement<W>>());
+            f(
+                ctx,
+                element.record_id,
+                element.weight.to_f32(self.list.multiplier),
+            );
+            visited += 1;
+        }
+        visited
+    }
+
     fn reliable_max_next_weight() -> bool {
         false
     }
@@ -720,6 +787,46 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
                 .map(|chunk| decoded_chunk_max(chunk, self.list.multiplier))
         })?;
         Some((first, last))
+    }
+
+    fn fill_block_max_ranges(
+        &self,
+        range_start: PointOffsetType,
+        range_width: PointOffsetType,
+        maxima: &mut [DimWeight],
+    ) -> bool {
+        debug_assert!(range_width > 0);
+        maxima.fill(0.0);
+        for (chunk_index, chunk) in self.list.chunks.iter().enumerate() {
+            let covered_end = self
+                .list
+                .chunks
+                .get(chunk_index + 1)
+                .map(|next| next.initial.saturating_sub(1))
+                .or_else(|| {
+                    self.list
+                        .remainders
+                        .first()
+                        .map(|element| element.record_id.saturating_sub(1))
+                })
+                .or(self.list.last_id)
+                .unwrap_or(chunk.initial);
+            let first_range = chunk.initial.saturating_sub(range_start) / range_width;
+            let last_range = covered_end.saturating_sub(range_start) / range_width;
+            let maximum = decoded_chunk_max(chunk, self.list.multiplier);
+            for range in first_range..=last_range {
+                if let Some(bound) = maxima.get_mut(range as usize) {
+                    *bound = bound.max(maximum);
+                }
+            }
+        }
+        for element in self.list.remainders {
+            let range = element.record_id.saturating_sub(range_start) / range_width;
+            if let Some(bound) = maxima.get_mut(range as usize) {
+                *bound = bound.max(element.weight.to_f32(self.list.multiplier));
+            }
+        }
+        true
     }
 
     fn into_std_iter(self) -> impl Iterator<Item = PostingElement> {
@@ -799,6 +906,39 @@ mod tests {
                 assert_eq!(iter.len_to_end(), case.len() - count - 1);
                 count += 1;
             }
+        }
+    }
+
+    #[test]
+    fn direct_range_visit_matches_filtered_full_iteration() {
+        let records: Vec<_> = (0..333_u32)
+            .map(|offset| (10_000 + offset * 3, offset as f32 / 7.0))
+            .collect();
+        let list = CompressedPostingList::<f32>::from(records.clone());
+        let hw_counter = HardwareCounterCell::new();
+        let iter = list.iter(&hw_counter);
+
+        for (start, end) in [
+            (0, 9_999),
+            (10_000, 10_000),
+            (10_003, 10_380),
+            (10_381, 10_700),
+            (10_701, 11_500),
+            (20_000, 19_999),
+        ] {
+            let expected: Vec<_> = records
+                .iter()
+                .copied()
+                .filter(|(id, _)| *id >= start && *id <= end)
+                .collect();
+            let mut actual = Vec::new();
+            let visited =
+                iter.for_each_in_id_range(start, end, &mut actual, |actual, id, weight| {
+                    actual.push((id, weight))
+                });
+            assert_eq!(actual, expected);
+            assert_eq!(visited, expected.len());
+            assert_eq!(iter.current_index(), 0, "range visit must be read-only");
         }
     }
 

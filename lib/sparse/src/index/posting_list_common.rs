@@ -83,6 +83,20 @@ pub trait PostingListIter {
         f: impl FnMut(&mut Ctx, PointOffsetType, DimWeight),
     );
 
+    /// Visit postings in the inclusive document-id range without changing
+    /// this iterator's sequential position.
+    ///
+    /// Exact best-first executors use this for out-of-order range evaluation.
+    /// Implementations should jump directly to the first physical block that
+    /// can intersect the range instead of cloning a cursor and replaying it.
+    fn for_each_in_id_range<Ctx: ?Sized>(
+        &self,
+        start: PointOffsetType,
+        end: PointOffsetType,
+        ctx: &mut Ctx,
+        f: impl FnMut(&mut Ctx, PointOffsetType, DimWeight),
+    ) -> usize;
+
     /// Whether the max_next_weight is reliable.
     fn reliable_max_next_weight() -> bool;
 
@@ -99,6 +113,20 @@ pub trait PostingListIter {
 
     /// Maximum stored weights at the first and last physical posting blocks.
     fn block_max_endpoints(&self) -> Option<(DimWeight, DimWeight)>;
+
+    /// Fill one maximum stored weight per fixed document-id range.
+    ///
+    /// Immutable compressed postings can answer this from existing chunk
+    /// metadata without moving their sequential score cursor. Unsupported
+    /// representations return `false` and use the exact fallback planner.
+    fn fill_block_max_ranges(
+        &self,
+        _range_start: PointOffsetType,
+        _range_width: PointOffsetType,
+        _maxima: &mut [DimWeight],
+    ) -> bool {
+        false
+    }
 
     fn into_std_iter(self) -> impl Iterator<Item = PostingElement>;
 }

@@ -48,6 +48,7 @@ use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
+use sparse::index::posting_block_stream::{NativeSparsePhysicalPlan, NativeSparsePlan};
 use sparse::index::posting_list_common::PostingListIter as _;
 use tempfile::Builder;
 use uuid::Uuid;
@@ -111,6 +112,10 @@ fn check_persisted_native_sparse_cursor<I: InvertedIndex>() {
         .map(|_| cursor.next_result(&stopped).unwrap().unwrap())
         .collect();
     let prefix_telemetry = cursor.telemetry();
+    assert_eq!(
+        prefix_telemetry.plan,
+        NativeSparsePhysicalPlan::PostingBlockMax
+    );
     assert!(prefix_telemetry.batches_expanded < prefix_telemetry.batches);
 
     let mut resumed = first_prefix;
@@ -120,6 +125,25 @@ fn check_persisted_native_sparse_cursor<I: InvertedIndex>() {
 
     assert_eq!(resumed, exhaustive);
     assert_eq!(cursor.next_result(&stopped).unwrap(), None);
+
+    let mut eager_fallback = index
+        .native_exact_cursor_with_plan(
+            &query,
+            128,
+            NativeSparsePlan::EagerPostingBlock,
+            &arena,
+            &hardware_counter,
+        )
+        .unwrap();
+    let mut eager = Vec::new();
+    while let Some(point) = eager_fallback.next_result(&stopped).unwrap() {
+        eager.push(point);
+    }
+    assert_eq!(eager, exhaustive);
+    assert_eq!(
+        eager_fallback.telemetry().plan,
+        NativeSparsePhysicalPlan::EagerPostingBlock
+    );
 }
 
 #[test]

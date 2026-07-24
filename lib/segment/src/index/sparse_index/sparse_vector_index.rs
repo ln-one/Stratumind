@@ -13,7 +13,7 @@ use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 use sparse::index::native_rank_stream::NativeSearchContextRankStream;
 use sparse::index::posting_block_stream::{
-    ExactSparseCursor, NativeCertifiedSparseCursor, NativeSparsePlan,
+    ExactSparseCursor, NativeCertifiedSparseCursor, NativeSparsePlan, PostingBlockMaxVariant,
 };
 use sparse::{SearchScratchArena, SearchScratchPool};
 
@@ -250,10 +250,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             ));
         }
         let remapped_query = self.indices_tracker.remap_vector(query.clone());
-        Ok(NativeCertifiedSparseCursor::new(
+        Ok(NativeCertifiedSparseCursor::new_with_variant(
             &self.inverted_index,
             remapped_query,
             batch_size,
+            PostingBlockMaxVariant::CompressedMetadata,
             arena,
             hardware_counter,
         )?)
@@ -261,9 +262,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
     /// Opens one interchangeable exact Sparse physical plan.
     ///
-    /// Opens an exact Sparse cursor behind one internal physical-plan boundary.
-    /// `Auto` is the frozen production choice; explicit variants are used by
-    /// benchmarks and do not alter the public API.
+    /// `Auto` uses the promoted compressed-posting metadata planner. The eager
+    /// planner remains available as an explicit exact fallback.
     pub fn native_exact_cursor_with_plan<'a>(
         &'a self,
         query: &SparseVector,
@@ -289,8 +289,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         }
         let remapped_query = self.indices_tracker.remap_vector(query.clone());
         let plan = match plan {
-            // Production-facing Auto retains the validated eager exact plan.
-            NativeSparsePlan::Auto => NativeSparsePlan::EagerPostingBlock,
+            NativeSparsePlan::Auto => NativeSparsePlan::PostingBlockMax,
             explicit => explicit,
         };
         let cursor: Box<dyn ExactSparseCursor + 'a> = match plan {
@@ -308,6 +307,16 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 arena,
                 hardware_counter,
             )?),
+            NativeSparsePlan::PostingBlockMax => {
+                Box::new(NativeCertifiedSparseCursor::new_with_variant(
+                    &self.inverted_index,
+                    remapped_query,
+                    batch_size,
+                    PostingBlockMaxVariant::CompressedMetadata,
+                    arena,
+                    hardware_counter,
+                )?)
+            }
             NativeSparsePlan::Auto => unreachable!("Auto is resolved above"),
         };
         Ok(cursor)

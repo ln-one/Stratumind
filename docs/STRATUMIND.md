@@ -11,12 +11,12 @@ evidence; if descriptive implementation text differs from the V1.1 contract, the
 ## Build and run
 
 ```bash
-docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.0
+docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.2
 docker run --rm \
   --publish 6333:6333 \
   --publish 6334:6334 \
   --volume stratumind-storage:/qdrant/storage \
-  stratumind:api-v1.1.0
+  stratumind:api-v1.1.2
 ```
 
 The upstream image entrypoint, health endpoints and configuration environment variables remain
@@ -110,11 +110,23 @@ Compact Top-20 exactly, and reduced p50 from `1.783 ms` to `1.730 ms`; Scalar me
 Router thresholds remain cost choices: selecting a slower exact plan changes work only, never the
 ordered result.
 
-Sparse uses one Qdrant `SearchContext`-backed native ranking session. It retains posting state,
-publishes only score groups whose order is certified against all unread posting contribution, and
-resumes from the same state when fusion asks for another identity. Equal-score groups are ordered
-by frozen external point identity. It does not issue repeated geometric Top-N queries or prepend an
-independently materialized prefix.
+Sparse `Auto` uses `PostingBlockMax`: a Qdrant compressed-posting ranking session with a
+single-pass metadata planner. It retains posting state, publishes only score groups whose order is
+certified against all unread posting contribution, and resumes from the same state when fusion asks
+for another identity. Equal-score groups are ordered by frozen external point identity. It does not
+issue repeated geometric Top-N queries or prepend an independently materialized prefix.
+
+The planner reads existing compressed-posting block maxima; it adds no sidecar and changes no
+persisted index bytes. Unsupported, mutable, plain or Proxy representations use the existing exact
+Eager Posting Block fallback. Planner failure is never interpreted as exact EOF. The former Eager
+plan remains available as an explicit internal comparison and recovery plan.
+
+The Production promotion was an explicit cost decision rather than a semantic change. A release
+Top-20 gate over the existing local snapshots produced zero ordered mismatches and the following
+paired p50 reductions relative to Eager Posting Block: NFCorpus `10.42%` (323 Queries), SciFact
+`29.15%` (1,109 Queries), and TREC-COVID 100K `5.46%` (50 Queries). Corresponding p95 latency also
+improved on all three datasets. Posting visits and bound evaluations were unchanged; the gain comes
+from cheaper bound planning, not weaker pruning or approximate results.
 
 `sourcePulls` counts identities consumed by the WRRF state machine. `sourcePointsMaterialized`
 counts identities delivered to the fusion layer and `exhaustiveFallback` reports an internal
