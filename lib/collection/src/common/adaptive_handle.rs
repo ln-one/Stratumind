@@ -97,43 +97,41 @@ struct Inner {
 
 struct ReservedSessionCapacity {
     _permit: OwnedSemaphorePermit,
-    slots: usize,
-    spawned: AtomicUsize,
+    active: AtomicUsize,
 }
 
 /// One atomically capacity-reserved blocking session on a fixed Qdrant search
-/// runtime. Clones share the reservation and may spawn at most `slots` tasks
-/// in total. The caller computes the complete query task set before reserving.
+/// runtime. Clones share the reservation; short tasks may be queued freely on
+/// Qdrant's runtime instead of being mistaken for resident cursor slots.
 #[derive(Clone)]
 pub(crate) struct ReservedSearchSession {
     handle: Handle,
     _capacity: Arc<ReservedSessionCapacity>,
 }
 
-/// All capacity needed by one exact query, with cursor workers and their
-/// coordinator allowed to use different pre-built Qdrant search runtimes.
+/// All capacity needed by one exact query.
 ///
-/// A combined reservation is preferred. If the active pool fits every cursor
-/// but not the extra coordinator, the coordinator may use one atomically
-/// reserved slot from the other *distinct* Qdrant runtime. No task is spawned
-/// until both reservations exist.
+/// Production always separates the coordinator from the short reader tasks:
+/// each side uses one of Qdrant's two pre-built search runtimes. No task is
+/// spawned until both reservations exist.
 pub(crate) struct ReservedExactSearchSession {
-    workers: ReservedSearchSession,
+    _readers: ReservedSearchSession,
     coordinator: ReservedSearchSession,
-    worker_slots: usize,
+    reader_slots: usize,
 }
 
 impl ReservedExactSearchSession {
-    pub(crate) fn workers(&self) -> ReservedSearchSession {
-        self.workers.clone()
+    #[cfg(test)]
+    pub(crate) fn readers(&self) -> ReservedSearchSession {
+        self._readers.clone()
     }
 
     pub(crate) fn coordinator(&self) -> ReservedSearchSession {
         self.coordinator.clone()
     }
 
-    pub(crate) fn worker_slots(&self) -> usize {
-        self.worker_slots
+    pub(crate) fn reader_slots(&self) -> usize {
+        self.reader_slots
     }
 }
 
@@ -143,30 +141,18 @@ impl ReservedSearchSession {
         F: FnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
-        let mut spawned = self._capacity.spawned.load(Ordering::Relaxed);
-        loop {
-            if spawned >= self._capacity.slots {
-                return None;
-            }
-            match self._capacity.spawned.compare_exchange_weak(
-                spawned,
-                spawned + 1,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => {
-                    let capacity = self._capacity.clone();
-                    return Some(self.handle.spawn_blocking(move || {
-                        // Keep the physical reservation alive until the
-                        // blocking task itself exits, even if its async caller
-                        // is cancelled and drops the JoinHandle.
-                        let _capacity = capacity;
-                        task()
-                    }));
+        self._capacity.active.fetch_add(1, Ordering::AcqRel);
+        let capacity = self._capacity.clone();
+        Some(self.handle.spawn_blocking(move || {
+            struct ActiveTask(Arc<ReservedSessionCapacity>);
+            impl Drop for ActiveTask {
+                fn drop(&mut self) {
+                    self.0.active.fetch_sub(1, Ordering::AcqRel);
                 }
-                Err(current) => spawned = current,
             }
-        }
+            let _active = ActiveTask(capacity);
+            task()
+        }))
     }
 }
 
@@ -226,80 +212,67 @@ impl AdaptiveSearchHandle {
         SearchMode::from_u8(self.inner.mode.load(Ordering::Relaxed))
     }
 
-    /// Reserve every long-lived cursor worker plus its coordinator before
-    /// starting an exact query.
+    /// Reserve short reader-task capacity plus a coordinator before starting
+    /// an exact query.
     ///
-    /// The common path keeps all tasks on the active runtime. When the active
-    /// pool can hold all cursor workers but the additional coordinator would
-    /// be the only overflow, the coordinator is placed on the other Qdrant
-    /// search runtime. This avoids making a normal multi-Segment collection
-    /// miss the native plan solely because `workers + 1` crosses the active
-    /// pool boundary, while preserving all-or-nothing startup.
-    pub(crate) fn try_reserve_exact_workers(
+    /// Production currently executes bounded reads inline on the coordinator,
+    /// while reserving independent reader headroom for a future dispatched
+    /// plan. Keeping the reservations separate prevents either role from
+    /// depending on capacity already occupied by the other.
+    pub(crate) fn try_reserve_exact_session(
         &self,
-        worker_slots: usize,
+        reader_slots: usize,
     ) -> Option<ReservedExactSearchSession> {
-        if worker_slots == 0 || worker_slots >= u32::MAX as usize {
+        if reader_slots == 0 || reader_slots >= u32::MAX as usize {
             return None;
         }
         self.maybe_adjust();
         let primary = self.current_mode();
-        let total_slots = worker_slots.checked_add(1)?;
-        if let Some(combined) = self.try_reserve_exact_on_mode(primary, total_slots) {
-            log::debug!(
-                "exact search session reserved {worker_slots} workers plus coordinator on {} runtime",
-                primary.as_str(),
-            );
-            return Some(ReservedExactSearchSession {
-                workers: combined.clone(),
-                coordinator: combined,
-                worker_slots,
-            });
-        }
-
         let secondary = match primary {
             SearchMode::HighCpu => SearchMode::HighIo,
             SearchMode::HighIo => SearchMode::HighCpu,
         };
         if self.handle_for_mode(primary).id() == self.handle_for_mode(secondary).id() {
-            log::debug!(
-                "exact search session reservation miss: {worker_slots} workers plus coordinator exceed the single runtime capacity",
-            );
-            return None;
-        }
-        if let Some(combined) = self.try_reserve_exact_on_mode(secondary, total_slots) {
-            log::debug!(
-                "exact search session reserved {worker_slots} workers plus coordinator on fallback {} runtime",
-                secondary.as_str(),
-            );
-            return Some(ReservedExactSearchSession {
-                workers: combined.clone(),
-                coordinator: combined,
-                worker_slots,
-            });
+            #[cfg(any(test, feature = "testing"))]
+            {
+                let total_slots = reader_slots.checked_add(1)?;
+                let combined = self.try_reserve_exact_on_mode(primary, total_slots)?;
+                return Some(ReservedExactSearchSession {
+                    _readers: combined.clone(),
+                    coordinator: combined,
+                    reader_slots,
+                });
+            }
+            #[cfg(not(any(test, feature = "testing")))]
+            {
+                log::debug!(
+                    "exact search session reservation miss: coordinator and readers require distinct Qdrant runtimes",
+                );
+                return None;
+            }
         }
 
-        for (worker_mode, coordinator_mode) in [(primary, secondary), (secondary, primary)] {
-            let Some(workers) = self.try_reserve_exact_on_mode(worker_mode, worker_slots) else {
+        for (reader_mode, coordinator_mode) in [(primary, secondary), (secondary, primary)] {
+            let Some(readers) = self.try_reserve_exact_on_mode(reader_mode, reader_slots) else {
                 continue;
             };
             let Some(coordinator) = self.try_reserve_exact_on_mode(coordinator_mode, 1) else {
                 continue;
             };
             log::debug!(
-                "exact search session reserved {worker_slots} workers on {} runtime and coordinator on {} runtime",
-                worker_mode.as_str(),
+                "exact search session reserved {reader_slots} reader slots on {} runtime and coordinator on {} runtime",
+                reader_mode.as_str(),
                 coordinator_mode.as_str(),
             );
             return Some(ReservedExactSearchSession {
-                workers,
+                _readers: readers,
                 coordinator,
-                worker_slots,
+                reader_slots,
             });
         }
 
         log::debug!(
-            "exact search session reservation miss: {worker_slots} workers plus coordinator do not fit; {} capacity/available={}/{}, {} capacity/available={}/{}",
+            "exact search session reservation miss: {reader_slots} reader slots plus coordinator do not fit; {} capacity/available={}/{}, {} capacity/available={}/{}",
             primary.as_str(),
             self.capacity_for_mode(primary),
             self.semaphore_for_mode(primary).available_permits(),
@@ -335,8 +308,7 @@ impl AdaptiveSearchHandle {
             handle,
             _capacity: Arc::new(ReservedSessionCapacity {
                 _permit: permit,
-                slots,
-                spawned: AtomicUsize::new(0),
+                active: AtomicUsize::new(0),
             }),
         })
     }
@@ -500,12 +472,12 @@ mod tests {
             2,
         );
         let reservation = adaptive
-            .try_reserve_exact_workers(1)
+            .try_reserve_exact_session(1)
             .expect("entire exact session fits");
-        assert_eq!(reservation.worker_slots(), 1);
-        assert!(adaptive.try_reserve_exact_workers(1).is_none());
+        assert_eq!(reservation.reader_slots(), 1);
+        assert!(adaptive.try_reserve_exact_session(1).is_none());
         drop(reservation);
-        assert!(adaptive.try_reserve_exact_workers(1).is_some());
+        assert!(adaptive.try_reserve_exact_session(1).is_some());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -516,27 +488,39 @@ mod tests {
             3,
             3,
         );
-        assert!(adaptive.try_reserve_exact_workers(3).is_none());
+        assert!(adaptive.try_reserve_exact_session(3).is_none());
         let full = adaptive
-            .try_reserve_exact_workers(2)
+            .try_reserve_exact_session(2)
             .expect("failed oversized attempt consumed no slots");
-        assert_eq!(full.worker_slots(), 2);
+        assert_eq!(full.reader_slots(), 2);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn exact_session_cannot_spawn_beyond_reserved_task_set() {
+    async fn exact_session_reuses_reader_capacity_after_each_short_task() {
         let adaptive = AdaptiveSearchHandle::new_with_session_capacities(
             Handle::current(),
             Handle::current(),
             2,
             2,
         );
-        let reservation = adaptive.try_reserve_exact_workers(1).unwrap();
-        let first = reservation.workers().spawn_blocking(|| 7).unwrap();
-        let second = reservation.coordinator().spawn_blocking(|| 9).unwrap();
-        assert!(reservation.workers().spawn_blocking(|| 11).is_none());
+        let reservation = adaptive.try_reserve_exact_session(1).unwrap();
+        let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let coordinator_release = release.clone();
+        let coordinator = reservation
+            .coordinator()
+            .spawn_blocking(move || {
+                while !coordinator_release.load(Ordering::Relaxed) {
+                    std::thread::yield_now();
+                }
+                9
+            })
+            .unwrap();
+        let first = reservation.readers().spawn_blocking(|| 7).unwrap();
         assert_eq!(first.await.unwrap(), 7);
-        assert_eq!(second.await.unwrap(), 9);
+        let second = reservation.readers().spawn_blocking(|| 11).unwrap();
+        assert_eq!(second.await.unwrap(), 11);
+        release.store(true, Ordering::Relaxed);
+        assert_eq!(coordinator.await.unwrap(), 9);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -547,7 +531,7 @@ mod tests {
             2,
             2,
         );
-        let reservation = adaptive.try_reserve_exact_workers(1).unwrap();
+        let reservation = adaptive.try_reserve_exact_session(1).unwrap();
         let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let task_release = release.clone();
         let task = reservation
@@ -560,11 +544,11 @@ mod tests {
             .unwrap();
         drop(task);
         drop(reservation);
-        assert!(adaptive.try_reserve_exact_workers(1).is_none());
+        assert!(adaptive.try_reserve_exact_session(1).is_none());
         release.store(true, Ordering::Relaxed);
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                if adaptive.try_reserve_exact_workers(1).is_some() {
+                if adaptive.try_reserve_exact_session(1).is_some() {
                     break;
                 }
                 tokio::task::yield_now().await;
@@ -575,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_workers_use_the_other_qdrant_runtime_for_the_coordinator() {
+    fn exact_readers_use_the_other_qdrant_runtime_for_the_coordinator() {
         let high_cpu = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
             .max_blocking_threads(2)
@@ -596,24 +580,44 @@ mod tests {
         );
 
         let reservation = adaptive
-            .try_reserve_exact_workers(2)
-            .expect("two cursor workers and one coordinator fit across distinct runtimes");
-        assert_eq!(reservation.worker_slots(), 2);
-        assert!(reservation.workers().spawn_blocking(|| 7).is_some());
-        assert!(reservation.workers().spawn_blocking(|| 9).is_some());
-        assert!(reservation.workers().spawn_blocking(|| 11).is_none());
+            .try_reserve_exact_session(2)
+            .expect("two reader slots and one coordinator fit across distinct runtimes");
+        assert_eq!(reservation.reader_slots(), 2);
+        let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let first_release = release.clone();
+        let first = reservation
+            .readers()
+            .spawn_blocking(move || {
+                while !first_release.load(Ordering::Relaxed) {
+                    std::thread::yield_now();
+                }
+                7
+            })
+            .unwrap();
+        let second_release = release.clone();
+        let second = reservation
+            .readers()
+            .spawn_blocking(move || {
+                while !second_release.load(Ordering::Relaxed) {
+                    std::thread::yield_now();
+                }
+                9
+            })
+            .unwrap();
         assert!(reservation.coordinator().spawn_blocking(|| 13).is_some());
-        assert!(reservation.coordinator().spawn_blocking(|| 15).is_none());
+        release.store(true, Ordering::Relaxed);
+        assert_eq!(high_cpu.block_on(first).unwrap(), 7);
+        assert_eq!(high_cpu.block_on(second).unwrap(), 9);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn exact_workers_do_not_fake_split_capacity_on_one_runtime() {
+    async fn exact_readers_do_not_fake_split_capacity_on_one_runtime() {
         let adaptive = AdaptiveSearchHandle::new_with_session_capacities(
             Handle::current(),
             Handle::current(),
             2,
             2,
         );
-        assert!(adaptive.try_reserve_exact_workers(2).is_none());
+        assert!(adaptive.try_reserve_exact_session(2).is_none());
     }
 }

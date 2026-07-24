@@ -5,17 +5,17 @@ pub(super) fn select_dense_plan(
     quantized: Option<&QuantizedVectors>,
     eligible: &[PointOffsetType],
     query: &[f32],
-    policy: NativeDensePolicy,
-) -> NativeDensePlan {
+    policy: DenseExecutionPolicy,
+) -> DensePhysicalPlan {
     let supported_distance = matches!(vector_storage.distance(), Distance::Dot | Distance::Cosine);
-    let pvs_available = !policy.force_exact_scan
+    let per_vector_scalar_available = !policy.force_exact_scan
         && !policy.disable_per_vector_scalar_certificate
         && eligible.len() >= policy.scalar_min_points
         && supported_distance
         && vector_storage.datatype() == VectorStorageDatatype::Float32
         && quantized.is_some_and(|quantized| quantized.per_vector_scalar().is_some());
-    if pvs_available {
-        return NativeDensePlan::PerVectorScalarCertificate;
+    if per_vector_scalar_available {
+        return DensePhysicalPlan::PerVectorScalarCertificate;
     }
     let compact_available = !policy.force_exact_scan
         && !policy.disable_compact_certificate
@@ -32,7 +32,7 @@ pub(super) fn select_dense_plan(
                 })
         });
     if compact_available {
-        return NativeDensePlan::CompactCertificate;
+        return DensePhysicalPlan::CompactCertificate;
     }
     let scalar_available = !policy.force_exact_scan
         && eligible.len() >= policy.scalar_min_points
@@ -45,9 +45,9 @@ pub(super) fn select_dense_plan(
                     .is_some_and(|table| eligible.iter().all(|id| (*id as usize) < table.len()))
         });
     if scalar_available {
-        NativeDensePlan::ScalarCertificate
+        DensePhysicalPlan::ScalarCertificate
     } else {
-        NativeDensePlan::ExactScan
+        DensePhysicalPlan::ExactScan
     }
 }
 
@@ -59,7 +59,9 @@ pub(super) fn build_per_vector_scalar_certificate_cursor<'a>(
     query: &[f32],
     hardware_counter: &HardwareCounterCell,
     stopped: &AtomicBool,
-) -> OperationResult<NativeDenseIndexCursor<'a>> {
+    exact_refine_batch: usize,
+) -> OperationResult<ExactDenseCursor<'a>> {
+    const PRODUCTION_PVS_EXACT_REFINE_BATCH: usize = 16;
     quantized
         .per_vector_scalar()
         .ok_or_else(|| {
@@ -67,7 +69,14 @@ pub(super) fn build_per_vector_scalar_certificate_cursor<'a>(
                 "PerVectorScalar plan was selected without a persisted index",
             )
         })?
-        .cursor(vector_storage, eligible, query, hardware_counter, stopped)
+        .cursor_with_refine_batch(
+            vector_storage,
+            eligible,
+            query,
+            exact_refine_batch.max(PRODUCTION_PVS_EXACT_REFINE_BATCH),
+            hardware_counter,
+            stopped,
+        )
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -79,7 +88,8 @@ pub(super) fn build_compact_certificate_cursor<'a>(
     query_vector: QueryVector,
     hardware_counter: &HardwareCounterCell,
     stopped: &AtomicBool,
-) -> OperationResult<NativeDenseIndexCursor<'a>> {
+    exact_refine_batch: usize,
+) -> OperationResult<ExactDenseCursor<'a>> {
     let compact = quantized
         .compact_dense_certificate()
         .expect("compact plan availability checked");
@@ -112,11 +122,12 @@ pub(super) fn build_compact_certificate_cursor<'a>(
     }
     let point_count = eligible.len();
     let exact_scorer = new_raw_scorer(query_vector, vector_storage, hardware_counter.fork())?;
-    NativeDenseIndexCursor::from_certificate_bounds(
+    ExactDenseCursor::from_certificate_bounds_batched(
         eligible,
         bounds,
-        move |id| exact_scorer.score_point(id),
-        NativeDensePlan::CompactCertificate,
+        move |ids, scores| exact_scorer.score_points(ids, scores),
+        exact_refine_batch,
+        DensePhysicalPlan::CompactCertificate,
         point_count,
     )
 }
@@ -130,7 +141,8 @@ pub(super) fn build_scalar_certificate_cursor<'a>(
     query_vector: QueryVector,
     hardware_counter: &HardwareCounterCell,
     stopped: &AtomicBool,
-) -> OperationResult<NativeDenseIndexCursor<'a>> {
+    exact_refine_batch: usize,
+) -> OperationResult<ExactDenseCursor<'a>> {
     let reconstruction = quantized
         .scalar_reconstruction_table()
         .expect("Scalar plan availability checked");
@@ -176,11 +188,12 @@ pub(super) fn build_scalar_certificate_cursor<'a>(
     drop(approximate_scorer);
     let point_count = eligible.len();
     let exact_scorer = new_raw_scorer(query_vector, vector_storage, hardware_counter.fork())?;
-    NativeDenseIndexCursor::from_certificate_bounds(
+    ExactDenseCursor::from_certificate_bounds_batched(
         eligible,
         bounds,
-        move |id| exact_scorer.score_point(id),
-        NativeDensePlan::ScalarCertificate,
+        move |ids, scores| exact_scorer.score_points(ids, scores),
+        exact_refine_batch,
+        DensePhysicalPlan::ScalarCertificate,
         point_count,
     )
 }
@@ -191,7 +204,7 @@ pub(super) fn build_exact_scan_cursor<'a>(
     query_vector: QueryVector,
     hardware_counter: &HardwareCounterCell,
     stopped: &AtomicBool,
-) -> OperationResult<NativeDenseIndexCursor<'a>> {
+) -> OperationResult<ExactDenseCursor<'a>> {
     let scorer = new_raw_scorer(query_vector, vector_storage, hardware_counter.fork())?;
     let mut scores = vec![0.0; eligible.len()];
     for (points, scores) in eligible
@@ -213,11 +226,11 @@ pub(super) fn build_exact_scan_cursor<'a>(
             .then_with(|| left.idx.cmp(&right.idx))
     });
     let point_count = points.len();
-    Ok(NativeDenseIndexCursor {
-        inner: NativeDenseCursorInner::Scan(ExactScanCursor { points, next: 0 }),
-        eligible,
-        telemetry: NativeDenseTelemetry {
-            plan: Some(NativeDensePlan::ExactScan),
+    Ok(ExactDenseCursor {
+        inner: ExactDenseCursorInner::Scan(ExactScanCursor { points, next: 0 }),
+        eligible: EligibleUniverse::explicit(eligible),
+        telemetry: DenseExecutionTelemetry {
+            plan: Some(DensePhysicalPlan::ExactScan),
             eligible_points: point_count,
             exact_scores: point_count,
             ..Default::default()

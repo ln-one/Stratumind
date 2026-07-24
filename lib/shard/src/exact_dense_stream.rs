@@ -3,51 +3,49 @@
 
 //! Exact pull-based Dense stream merged across a frozen set of Segments.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use ordered_float::OrderedFloat;
+use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::ReadSegmentEntry;
-use segment::index::native_dense_stream::NativeDensePolicy;
+use segment::index::exact_dense_stream::DenseExecutionPolicy;
 use segment::types::{Filter, ScoredPoint, SearchParams, VectorNameBuf, WithPayload, WithVector};
 
-use crate::locked_segment::LockedSegment;
-use crate::native_score_stream::{
-    NativeScoreChannel, NativeShardPointVersions, NativeShardScoreStream,
-    NativeShardStreamTelemetry, NativeStreamWorkerMode, NativeWorkerSpawner, SegmentScoreSource,
-    WorkerCommand, WorkerCompletionSignal, serve_materialized, serve_native,
+use crate::exact_score_stream::{
+    BatchReply, ExactBatchExecutor, ExactShardPointVersions, ExactShardScoreStream,
+    ExactShardStreamTelemetry, ExactSourceMode, SegmentScoreSource,
 };
+use crate::locked_segment::LockedSegment;
 
-pub type NativeDenseShardTelemetry = NativeShardStreamTelemetry;
+pub type DenseShardTelemetry = ExactShardStreamTelemetry;
 
 /// One exact Dense rank stream for all Segments in a Shard snapshot.
 ///
 /// Original Segments use the native certified cursor. Proxy Segments are
 /// materialized exactly once as a safe fallback. Both plans are exhaustive
 /// order equivalent and no repeated Top-N query is issued.
-pub struct NativeDenseShardStream {
-    inner: NativeShardScoreStream,
+pub struct ExactDenseShardStream {
+    inner: ExactShardScoreStream,
 }
 
-impl NativeDenseShardStream {
+impl ExactDenseShardStream {
     #[allow(clippy::too_many_arguments)]
     pub fn open(
         segments: Vec<LockedSegment>,
         vector_name: VectorNameBuf,
         query: Vec<f32>,
         filter: Option<Filter>,
-        policy: NativeDensePolicy,
+        policy: DenseExecutionPolicy,
         batch_size: usize,
         stopped: Arc<AtomicBool>,
-        worker_spawner: NativeWorkerSpawner,
+        batch_executor: ExactBatchExecutor,
     ) -> OperationResult<Self> {
-        let point_versions = NativeShardPointVersions::build(&segments, &stopped)?;
+        let point_versions = ExactShardPointVersions::build(&segments, &stopped)?;
         Self::open_with_point_versions(
             segments,
             vector_name,
@@ -56,7 +54,7 @@ impl NativeDenseShardStream {
             policy,
             batch_size,
             stopped,
-            worker_spawner,
+            batch_executor,
             point_versions,
         )
     }
@@ -67,11 +65,11 @@ impl NativeDenseShardStream {
         vector_name: VectorNameBuf,
         query: Vec<f32>,
         filter: Option<Filter>,
-        policy: NativeDensePolicy,
+        policy: DenseExecutionPolicy,
         batch_size: usize,
         stopped: Arc<AtomicBool>,
-        worker_spawner: NativeWorkerSpawner,
-        point_versions: Arc<NativeShardPointVersions>,
+        batch_executor: ExactBatchExecutor,
+        point_versions: Arc<ExactShardPointVersions>,
     ) -> OperationResult<Self> {
         if batch_size == 0 {
             return Err(OperationError::validation_error(
@@ -81,7 +79,7 @@ impl NativeDenseShardStream {
 
         let mut sources = Vec::with_capacity(segments.len());
         for (source, segment) in segments.into_iter().enumerate() {
-            sources.push(spawn_segment_worker(
+            sources.push(open_segment_rank_source(
                 source,
                 segment,
                 vector_name.clone(),
@@ -89,21 +87,12 @@ impl NativeDenseShardStream {
                 filter.clone(),
                 policy,
                 stopped.clone(),
-                &worker_spawner,
+                &batch_executor,
             )?);
         }
 
-        Self::from_sources(sources, point_versions, batch_size, stopped)
-    }
-
-    pub(crate) fn from_sources(
-        sources: Vec<SegmentScoreSource>,
-        point_versions: Arc<NativeShardPointVersions>,
-        batch_size: usize,
-        stopped: Arc<AtomicBool>,
-    ) -> OperationResult<Self> {
         Ok(Self {
-            inner: NativeShardScoreStream::open(
+            inner: ExactShardScoreStream::open(
                 sources,
                 point_versions,
                 batch_size,
@@ -117,148 +106,106 @@ impl NativeDenseShardStream {
         self.inner.next_result()
     }
 
-    pub fn telemetry(&self) -> NativeDenseShardTelemetry {
+    pub fn telemetry(&self) -> DenseShardTelemetry {
         self.inner.telemetry()
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn spawn_segment_worker(
+fn open_segment_rank_source(
     source: usize,
     segment: LockedSegment,
     vector_name: VectorNameBuf,
     query: Vec<f32>,
     filter: Option<Filter>,
-    policy: NativeDensePolicy,
+    policy: DenseExecutionPolicy,
     stopped: Arc<AtomicBool>,
-    worker_spawner: &NativeWorkerSpawner,
+    batch_executor: &ExactBatchExecutor,
 ) -> OperationResult<SegmentScoreSource> {
-    let (command_tx, command_rx) = sync_channel(1);
-    let (ready_tx, ready_rx) = sync_channel(1);
-    let (completion_tx, completion_rx) = sync_channel(1);
-    worker_spawner.spawn(format!("native-dense-segment-{source}"), move || {
-        let _completion = WorkerCompletionSignal::new(completion_tx);
-        run_segment_worker(
-            segment,
-            vector_name,
-            query,
-            filter,
-            policy,
-            stopped,
-            command_rx,
-            ready_tx,
-        );
-    })?;
-
-    let mode = match ready_rx.recv() {
-        Ok(result) => result?,
-        Err(_) => {
-            let _ = completion_rx.recv();
-            return Err(OperationError::service_error_light(
-                "native Dense Segment worker stopped during initialization",
-            ));
-        }
-    };
-    Ok(SegmentScoreSource::new(
-        command_tx,
-        completion_rx,
-        mode,
-        NativeScoreChannel::Dense,
-    ))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn run_segment_worker(
-    segment: LockedSegment,
-    vector_name: VectorNameBuf,
-    query: Vec<f32>,
-    filter: Option<Filter>,
-    policy: NativeDensePolicy,
-    stopped: Arc<AtomicBool>,
-    commands: Receiver<WorkerCommand>,
-    ready: SyncSender<OperationResult<NativeStreamWorkerMode>>,
-) {
     match segment {
         LockedSegment::Original(segment) => {
-            let segment = segment.read();
             let mut query_context = QueryContext::new(usize::MAX, HwMeasurementAcc::disposable())
-                .with_is_stopped(stopped);
-            if let Err(error) = segment.fill_query_context(&mut query_context) {
-                let _ = ready.send(Err(error));
-                return;
-            }
-            let segment_query_context = query_context.get_segment_query_context();
-            let mut ready = Some(ready);
-            let native = segment.with_view(|view| {
-                view.with_native_dense_stream(
-                    &vector_name,
-                    &query,
-                    filter.as_ref(),
-                    policy,
-                    &segment_query_context,
-                    |next| {
-                        ready
-                            .take()
-                            .expect("native worker sends readiness once")
-                            .send(Ok(NativeStreamWorkerMode::Native))
-                            .map_err(|_| {
-                                OperationError::cancelled(
-                                    "native Dense Shard stream closed during initialization",
+                .with_is_stopped(stopped.clone());
+            let state = {
+                let segment = segment.read();
+                segment.fill_query_context(&mut query_context)?;
+                let segment_query_context = query_context.get_segment_query_context();
+                segment.with_view(|view| {
+                    view.open_exact_dense_segment_state(
+                        &vector_name,
+                        &query,
+                        filter.as_ref(),
+                        policy,
+                        &segment_query_context,
+                    )
+                })?
+            };
+            let state = Arc::new(Mutex::new(state));
+            let query_context = Arc::new(query_context);
+            let spawner = batch_executor.clone();
+            Ok(SegmentScoreSource::on_demand(
+                move |limit| {
+                    let segment = segment.clone();
+                    let state = state.clone();
+                    let vector_name = vector_name.clone();
+                    let query = query.clone();
+                    let query_context = query_context.clone();
+                    spawner.run_batch(format!("exact-dense-segment-{source}-pull"), move || {
+                        let segment = segment.read();
+                        let mut state = state.lock();
+                        let segment_query_context = query_context.get_segment_query_context();
+                        segment
+                            .with_view(|view| {
+                                view.advance_exact_dense_segment_state(
+                                    &vector_name,
+                                    &query,
+                                    &mut state,
+                                    limit,
+                                    &segment_query_context,
                                 )
-                            })?;
-                        serve_native(next, &commands, NativeScoreChannel::Dense)
-                    },
-                )
-            });
-            if let Err(error) = native
-                && let Some(ready) = ready
-            {
-                let _ = ready.send(Err(error));
-            }
+                            })
+                            .map(|points| BatchReply {
+                                eof: points.is_empty(),
+                                points,
+                            })
+                    })
+                },
+                ExactSourceMode::Exact,
+                "Dense",
+            ))
         }
         LockedSegment::Proxy(proxy) => {
             let proxy = proxy.read();
             let query_context = QueryContext::new(usize::MAX, HwMeasurementAcc::disposable())
                 .with_is_stopped(stopped);
-            run_materialized_worker(
+            let points = materialize_exact(
                 &*proxy,
                 &vector_name,
                 &query,
                 filter.as_ref(),
                 &query_context,
-                &commands,
-                ready,
-            );
+            )?;
+            let points = Arc::new(Mutex::new((points, 0usize)));
+            Ok(SegmentScoreSource::on_demand(
+                move |limit| {
+                    let mut state = points.lock();
+                    let start = state.1;
+                    let end = start.saturating_add(limit).min(state.0.len());
+                    let batch = state.0[start..end].to_vec();
+                    state.1 = end;
+                    Ok(BatchReply {
+                        points: batch,
+                        eof: end == state.0.len(),
+                    })
+                },
+                ExactSourceMode::ExhaustiveFallback,
+                "Dense",
+            ))
         }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn run_materialized_worker(
-    segment: &dyn ReadSegmentEntry,
-    vector_name: &str,
-    query: &[f32],
-    filter: Option<&Filter>,
-    query_context: &QueryContext,
-    commands: &Receiver<WorkerCommand>,
-    ready: SyncSender<OperationResult<NativeStreamWorkerMode>>,
-) {
-    match materialize_exact(segment, vector_name, query, filter, query_context) {
-        Ok(points) => {
-            if ready
-                .send(Ok(NativeStreamWorkerMode::ExhaustiveFallback))
-                .is_ok()
-            {
-                serve_materialized(points, commands, NativeScoreChannel::Dense);
-            }
-        }
-        Err(error) => {
-            let _ = ready.send(Err(error));
-        }
-    }
-}
-
-pub(crate) fn materialize_exact(
+fn materialize_exact(
     segment: &dyn ReadSegmentEntry,
     vector_name: &str,
     query: &[f32],
@@ -291,46 +238,6 @@ pub(crate) fn materialize_exact(
             .then_with(|| right.version.cmp(&left.version))
     });
     Ok(result)
-}
-
-/// Materialize one Shard's complete authoritative Dense order without
-/// keeping one blocking cursor worker per Segment. This is the exact bounded-
-/// concurrency fallback when the native session cannot reserve every cursor.
-#[allow(clippy::too_many_arguments)]
-pub fn materialize_shard_exact(
-    segments: &[LockedSegment],
-    vector_name: &str,
-    query: &[f32],
-    filter: Option<&Filter>,
-    stopped: Arc<AtomicBool>,
-    point_versions: &NativeShardPointVersions,
-) -> OperationResult<Vec<ScoredPoint>> {
-    let mut points = Vec::new();
-    for (source, segment) in segments.iter().enumerate() {
-        let segment = segment.get().read();
-        let mut query_context = QueryContext::new(usize::MAX, HwMeasurementAcc::disposable())
-            .with_is_stopped(stopped.clone());
-        segment.fill_query_context(&mut query_context)?;
-        points.extend(
-            materialize_exact(&*segment, vector_name, query, filter, &query_context)?
-                .into_iter()
-                .filter(|point| point_versions.contains(source, point)),
-        );
-    }
-    points.sort_unstable_by(|left, right| {
-        OrderedFloat(right.score)
-            .cmp(&OrderedFloat(left.score))
-            .then_with(|| left.id.cmp(&right.id))
-            .then_with(|| right.version.cmp(&left.version))
-    });
-    let mut seen = HashSet::with_capacity(points.len());
-    if let Some(duplicate) = points.iter().find(|point| !seen.insert(point.id)) {
-        return Err(OperationError::inconsistent_storage(format!(
-            "materialized Dense Shard order contains authoritative point {} more than once",
-            duplicate.id,
-        )));
-    }
-    Ok(points)
 }
 
 #[cfg(test)]
@@ -381,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn shard_stream_merges_native_segments_exactly_and_resumes() {
+    fn shard_stream_merges_exact_segments_exactly_and_resumes() {
         let first_dir = tempfile::tempdir().unwrap();
         let second_dir = tempfile::tempdir().unwrap();
         let (first, mut expected) = make_segment(&first_dir, 0);
@@ -398,23 +305,35 @@ mod tests {
             true.into(),
         )));
         let stopped = Arc::new(AtomicBool::new(false));
-        let mut stream = NativeDenseShardStream::open(
-            vec![LockedSegment::new(first), LockedSegment::new(second)],
+        let first = LockedSegment::new(first);
+        let LockedSegment::Original(first_handle) = first.clone() else {
+            unreachable!()
+        };
+        let mut stream = ExactDenseShardStream::open(
+            vec![first, LockedSegment::new(second)],
             DEFAULT_VECTOR_NAME.to_owned(),
             vec![1.0, 0.0],
             Some(filter),
-            NativeDensePolicy::default(),
+            DenseExecutionPolicy::default(),
             17,
             stopped,
-            NativeWorkerSpawner::dedicated_threads_for_tests(),
+            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
-        assert_eq!(stream.telemetry().worker_pull_batches, 2);
-        assert_eq!(stream.telemetry().worker_points_received, 2);
+        assert!(
+            first_handle.try_write().is_some(),
+            "session initialization must release the Segment read guard"
+        );
+        assert_eq!(stream.telemetry().batch_requests, 2);
+        assert_eq!(stream.telemetry().points_received, 2);
 
         let mut actual = Vec::new();
         for _ in 0..9 {
             actual.push(stream.next_result().unwrap().unwrap());
+            assert!(
+                first_handle.try_write().is_some(),
+                "each completed pull must release the Segment read guard"
+            );
         }
         while let Some(point) = stream.next_result().unwrap() {
             actual.push(point);
@@ -428,7 +347,7 @@ mod tests {
             expected
         );
         let telemetry = stream.telemetry();
-        assert_eq!(telemetry.native_sources, 2);
+        assert_eq!(telemetry.exact_sources, 2);
         assert_eq!(telemetry.exhaustive_fallback_sources, 0);
         assert_eq!(telemetry.points_emitted, expected.len());
     }
@@ -438,15 +357,15 @@ mod tests {
         let segment_dir = tempfile::tempdir().unwrap();
         let (segment, _) = make_segment(&segment_dir, 0);
         let stopped = Arc::new(AtomicBool::new(false));
-        let mut stream = NativeDenseShardStream::open(
+        let mut stream = ExactDenseShardStream::open(
             vec![LockedSegment::new(segment)],
             DEFAULT_VECTOR_NAME.to_owned(),
             vec![1.0, 0.0],
             None,
-            NativeDensePolicy::default(),
+            DenseExecutionPolicy::default(),
             8,
             stopped.clone(),
-            NativeWorkerSpawner::dedicated_threads_for_tests(),
+            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
         stopped.store(true, AtomicOrdering::Relaxed);
@@ -494,15 +413,15 @@ mod tests {
             )
             .unwrap();
 
-        let mut stream = NativeDenseShardStream::open(
+        let mut stream = ExactDenseShardStream::open(
             vec![LockedSegment::new(first), LockedSegment::new(second)],
             DEFAULT_VECTOR_NAME.to_owned(),
             vec![1.0, 0.0],
             None,
-            NativeDensePolicy::default(),
+            DenseExecutionPolicy::default(),
             8,
             Arc::new(AtomicBool::new(false)),
-            NativeWorkerSpawner::dedicated_threads_for_tests(),
+            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
         let ranking = std::iter::from_fn(|| stream.next_result().transpose())
@@ -535,15 +454,15 @@ mod tests {
                 )
                 .unwrap();
         }
-        let error = NativeDenseShardStream::open(
+        let error = ExactDenseShardStream::open(
             vec![LockedSegment::new(first), LockedSegment::new(second)],
             DEFAULT_VECTOR_NAME.to_owned(),
             vec![1.0, 0.0],
             None,
-            NativeDensePolicy::default(),
+            DenseExecutionPolicy::default(),
             8,
             Arc::new(AtomicBool::new(false)),
-            NativeWorkerSpawner::dedicated_threads_for_tests(),
+            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .err()
         .expect("duplicate authoritative versions must fail");

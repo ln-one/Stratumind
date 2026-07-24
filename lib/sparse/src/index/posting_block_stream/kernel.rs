@@ -103,8 +103,8 @@ struct WeightedPosting<T> {
     query_weight: DimWeight,
 }
 
-pub(super) struct PostingBlockMaxKernel<'a, I: InvertedIndex> {
-    postings: Vec<WeightedPosting<I::Iter<'a>>>,
+pub(super) struct PostingBlockMaxKernel {
+    query: RemappedSparseVector,
     active_batches: Vec<ActiveBatch>,
     scores: Vec<ScoreType>,
     #[cfg(feature = "stratumind-research")]
@@ -114,8 +114,8 @@ pub(super) struct PostingBlockMaxKernel<'a, I: InvertedIndex> {
     phase_telemetry: bool,
 }
 
-impl<'a, I: InvertedIndex> PostingBlockMaxKernel<'a, I> {
-    pub(super) fn new(
+impl PostingBlockMaxKernel {
+    pub(super) fn new<'a, I: InvertedIndex>(
         index: &'a I,
         query: &RemappedSparseVector,
         batch_size: usize,
@@ -167,7 +167,7 @@ impl<'a, I: InvertedIndex> PostingBlockMaxKernel<'a, I> {
 
         Ok((
             Self {
-                postings,
+                query: query.clone(),
                 active_batches: Vec::new(),
                 scores: Vec::new(),
                 #[cfg(feature = "stratumind-research")]
@@ -180,8 +180,11 @@ impl<'a, I: InvertedIndex> PostingBlockMaxKernel<'a, I> {
         ))
     }
 
-    pub(super) fn expand(
+    pub(super) fn expand<'a, I: InvertedIndex>(
         &mut self,
+        index: &'a I,
+        arena: &'a SearchScratchArena,
+        hardware_counter: &'a HardwareCounterCell,
         batch: PendingBatch,
         stopped: &AtomicBool,
         telemetry: &mut PostingBlockStreamTelemetry,
@@ -191,23 +194,25 @@ impl<'a, I: InvertedIndex> PostingBlockMaxKernel<'a, I> {
         }
         telemetry.batches_expanded += 1;
         let batch_len = (batch.end - batch.start + 1) as usize;
+        let postings = open_postings(index, &self.query, arena, hardware_counter)
+            .map_err(|error| NativeSparseCursorError::ReaderFailure(error.to_string()))?;
 
         #[cfg(feature = "stratumind-research")]
         let score_started = self.phase_telemetry.then(Instant::now);
         match self.variant {
             PostingBlockMaxVariant::V1 => {
-                self.score_v1(batch, batch_len, telemetry);
+                self.score_v1(&postings, batch, batch_len, telemetry);
             }
             PostingBlockMaxVariant::CompressedMetadata => {
                 // P1.3 changes only bound planning. Range scoring remains the
                 // frozen exact V1 path.
-                self.score_v1(batch, batch_len, telemetry);
+                self.score_v1(&postings, batch, batch_len, telemetry);
             }
             #[cfg(feature = "stratumind-research")]
             PostingBlockMaxVariant::RangeDirectDense
             | PostingBlockMaxVariant::RangeDirectSorted => {
                 telemetry.posting_elements_visited += score_posting_range_dense(
-                    self.postings
+                    postings
                         .iter()
                         .map(|posting| (&posting.iterator, posting.query_weight)),
                     batch.start,
@@ -221,7 +226,7 @@ impl<'a, I: InvertedIndex> PostingBlockMaxKernel<'a, I> {
             #[cfg(feature = "stratumind-research")]
             PostingBlockMaxVariant::RangeDirectTouched => {
                 telemetry.posting_elements_visited += score_posting_range_touched(
-                    self.postings
+                    postings
                         .iter()
                         .map(|posting| (&posting.iterator, posting.query_weight)),
                     batch.start,
@@ -312,13 +317,14 @@ impl<'a, I: InvertedIndex> PostingBlockMaxKernel<'a, I> {
         Ok(Some((PendingPoint { point, batch_index }, buffered)))
     }
 
-    fn score_v1(
+    fn score_v1<T: PostingListIter + Clone>(
         &mut self,
+        postings: &[WeightedPosting<T>],
         batch: PendingBatch,
         batch_len: usize,
         telemetry: &mut PostingBlockStreamTelemetry,
     ) {
-        let mut postings = self.postings.clone();
+        let mut postings = postings.to_vec();
         telemetry.posting_elements_visited += score_posting_batch(
             postings
                 .iter_mut()

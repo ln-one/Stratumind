@@ -9,8 +9,7 @@ use common::universal_io::Result;
 
 use super::inverted_index::InvertedIndex;
 use super::posting_block_stream::{
-    ExactSparseCursor, NativeSparseCursorError, NativeSparsePhysicalPlan,
-    PostingBlockStreamTelemetry,
+    ExactSparseCursor, NativeSparseCursorError, PostingBlockStreamTelemetry, SparsePhysicalPlan,
 };
 use super::posting_list_common::PostingListIter;
 use crate::SearchScratchArena;
@@ -131,7 +130,7 @@ impl<'a, T: PostingListIter> NativeSearchContextRankStream<'a, T> {
                 .expect("native Sparse rank-stream batch size exceeds PointOffsetType"),
             hardware_counter,
             telemetry: PostingBlockStreamTelemetry {
-                plan: NativeSparsePhysicalPlan::NativeSearchContext,
+                plan: SparsePhysicalPlan::NativeSearchContext,
                 cursor_started: true,
                 query_terms: query.indices.len(),
                 query_posting_elements: posting_elements,
@@ -333,6 +332,24 @@ impl<'a, T: PostingListIter> NativeSearchContextRankStream<'a, T> {
         &mut self,
         stopped: &AtomicBool,
     ) -> std::result::Result<Option<ScoredPointOffset>, NativeSparseCursorError> {
+        Ok(self.next_batch(1, stopped)?.pop())
+    }
+
+    /// Advance Qdrant posting iterators only until at least one new rank is
+    /// certified, then drain the currently certified contiguous prefix.
+    ///
+    /// Returning fewer than `max_results` is intentional: once useful proof
+    /// exists, the caller gets a pause point instead of paying extra work only
+    /// to fill a transport batch.
+    pub fn next_batch(
+        &mut self,
+        max_results: usize,
+        stopped: &AtomicBool,
+    ) -> std::result::Result<Vec<ScoredPointOffset>, NativeSparseCursorError> {
+        assert!(
+            max_results > 0,
+            "native Sparse result batch must be positive"
+        );
         if let Some(error) = &self.terminal_error {
             return Err(error.clone());
         }
@@ -344,13 +361,20 @@ impl<'a, T: PostingListIter> NativeSearchContextRankStream<'a, T> {
 
         loop {
             self.promote_certified_prefix();
-            if let Some(point) = self.certified_prefix.get(self.delivered_prefix).copied() {
-                self.delivered_prefix += 1;
-                self.telemetry.points_emitted += 1;
-                return Ok(Some(point));
+            let available = self
+                .certified_prefix
+                .len()
+                .saturating_sub(self.delivered_prefix);
+            if available != 0 {
+                let take = available.min(max_results);
+                let end = self.delivered_prefix + take;
+                let points = self.certified_prefix[self.delivered_prefix..end].to_vec();
+                self.delivered_prefix = end;
+                self.telemetry.points_emitted += points.len();
+                return Ok(points);
             }
             if self.min_record_id.is_none() {
-                return Ok(None);
+                return Ok(Vec::new());
             }
             if let Err(error) = self.advance_one_batch(stopped) {
                 self.pending_points.clear();
@@ -371,6 +395,14 @@ impl<T: PostingListIter> ExactSparseCursor for NativeSearchContextRankStream<'_,
         stopped: &AtomicBool,
     ) -> std::result::Result<Option<ScoredPointOffset>, NativeSparseCursorError> {
         NativeSearchContextRankStream::next_result(self, stopped)
+    }
+
+    fn next_batch(
+        &mut self,
+        max_results: usize,
+        stopped: &AtomicBool,
+    ) -> std::result::Result<Vec<ScoredPointOffset>, NativeSparseCursorError> {
+        NativeSearchContextRankStream::next_batch(self, max_results, stopped)
     }
 
     fn telemetry(&self) -> PostingBlockStreamTelemetry {

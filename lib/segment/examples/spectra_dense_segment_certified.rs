@@ -16,7 +16,7 @@ use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, QueryVector, VectorInternal, only_default_vector,
 };
 use segment::entry::{ReadSegmentEntry, SegmentEntry};
-use segment::index::native_dense_stream::{NativeDensePlan, NativeDensePolicy};
+use segment::index::exact_dense_stream::{DenseExecutionPolicy, DensePhysicalPlan};
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
     Distance, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
@@ -179,7 +179,7 @@ fn main() {
     let mut scalar_mismatches = 0;
     let mut auto_mismatches = 0;
     let mut auto_vs_compact_mismatches = 0;
-    let mut auto_plan_queries = [0usize; 4];
+    let mut auto_plan_queries = [0usize; 5];
     let mut compact_quantized_scores = 0;
     let mut compact_exact_scores = 0;
     let mut scalar_quantized_scores = 0;
@@ -232,23 +232,24 @@ fn main() {
         auto_vs_compact_mismatches += usize::from(auto != compact);
         assert_eq!(
             compact_telemetry.plan,
-            Some(NativeDensePlan::CompactCertificate)
+            Some(DensePhysicalPlan::CompactCertificate)
         );
         assert_eq!(
             scalar_telemetry.plan,
-            Some(NativeDensePlan::ScalarCertificate)
+            Some(DensePhysicalPlan::ScalarCertificate)
         );
         match auto_telemetry.plan.expect("auto plan records its executor") {
-            NativeDensePlan::CompactCertificate => auto_plan_queries[0] += 1,
-            NativeDensePlan::PerVectorScalarCertificate => auto_plan_queries[1] += 1,
-            NativeDensePlan::ScalarCertificate => auto_plan_queries[2] += 1,
-            NativeDensePlan::ExactScan => auto_plan_queries[3] += 1,
+            DensePhysicalPlan::ExactPrefix => auto_plan_queries[0] += 1,
+            DensePhysicalPlan::CompactCertificate => auto_plan_queries[1] += 1,
+            DensePhysicalPlan::PerVectorScalarCertificate => auto_plan_queries[2] += 1,
+            DensePhysicalPlan::ScalarCertificate => auto_plan_queries[3] += 1,
+            DensePhysicalPlan::ExactScan => auto_plan_queries[4] += 1,
         }
-        compact_quantized_scores += compact_telemetry.native_quantized_scores;
+        compact_quantized_scores += compact_telemetry.quantized_scores;
         compact_exact_scores += compact_telemetry.exact_scores;
-        scalar_quantized_scores += scalar_telemetry.native_quantized_scores;
+        scalar_quantized_scores += scalar_telemetry.quantized_scores;
         scalar_exact_scores += scalar_telemetry.exact_scores;
-        auto_quantized_scores += auto_telemetry.native_quantized_scores;
+        auto_quantized_scores += auto_telemetry.quantized_scores;
         auto_exact_scores += auto_telemetry.exact_scores;
     }
 
@@ -264,11 +265,11 @@ fn main() {
         scalar_ordered_mismatches: scalar_mismatches,
         auto_ordered_mismatches: auto_mismatches,
         auto_vs_compact_ordered_mismatches: auto_vs_compact_mismatches,
-        auto_exact_prefix_queries: 0,
-        auto_compact_queries: auto_plan_queries[0],
-        auto_per_vector_scalar_queries: auto_plan_queries[1],
-        auto_scalar_queries: auto_plan_queries[2],
-        auto_exact_scan_queries: auto_plan_queries[3],
+        auto_exact_prefix_queries: auto_plan_queries[0],
+        auto_compact_queries: auto_plan_queries[1],
+        auto_per_vector_scalar_queries: auto_plan_queries[2],
+        auto_scalar_queries: auto_plan_queries[3],
+        auto_exact_scan_queries: auto_plan_queries[4],
         compact_quantized_scores,
         compact_exact_scores,
         scalar_quantized_scores,
@@ -327,7 +328,7 @@ fn run_native(
     latencies: &mut Vec<Duration>,
 ) -> (
     Vec<segment::types::ExtendedPointId>,
-    segment::index::native_dense_stream::NativeDenseTelemetry,
+    segment::index::exact_dense_stream::DenseExecutionTelemetry,
 ) {
     let mut query_context = QueryContext::default();
     segment.fill_query_context(&mut query_context).unwrap();
@@ -335,16 +336,17 @@ fn run_native(
     let started = Instant::now();
     let (points, telemetry) = segment
         .with_view(|view| {
-            view.with_native_dense_stream(
+            view.with_exact_dense_stream(
                 DEFAULT_VECTOR_NAME,
                 query,
                 None,
-                NativeDensePolicy {
+                0,
+                DenseExecutionPolicy {
                     scalar_min_points: 0,
                     compact_max_points: usize::MAX,
                     disable_compact_certificate,
                     disable_per_vector_scalar_certificate: true,
-                    ..NativeDensePolicy::default()
+                    ..DenseExecutionPolicy::default()
                 },
                 &segment_query_context,
                 |next| {
@@ -369,7 +371,7 @@ fn run_auto(
     latencies: &mut Vec<Duration>,
 ) -> (
     Vec<segment::types::ExtendedPointId>,
-    segment::index::native_dense_stream::NativeDenseTelemetry,
+    segment::index::exact_dense_stream::DenseExecutionTelemetry,
 ) {
     let mut query_context = QueryContext::default();
     segment.fill_query_context(&mut query_context).unwrap();
@@ -377,11 +379,12 @@ fn run_auto(
     let started = Instant::now();
     let (points, telemetry) = segment
         .with_view(|view| {
-            view.with_native_dense_stream(
+            view.with_exact_dense_stream(
                 DEFAULT_VECTOR_NAME,
                 query,
                 None,
-                NativeDensePolicy::default(),
+                64,
+                DenseExecutionPolicy::default(),
                 &segment_query_context,
                 |next| {
                     (0..top_k)

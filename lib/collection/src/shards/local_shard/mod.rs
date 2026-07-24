@@ -45,17 +45,16 @@ use itertools::Itertools;
 use parking_lot::Mutex as ParkingMutex;
 use segment::common::operation_error::OperationResult;
 use segment::entry::ReadSegmentEntry as _;
+use segment::index::exact_dense_stream::DenseExecutionPolicy;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
-use segment::index::native_dense_stream::NativeDensePolicy;
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
     SeqNumberType, StrictModeConfig, VectorNameBuf,
 };
-use shard::NativeShardPointVersionsCache;
+use shard::exact_dense_stream::ExactDenseShardStream;
+use shard::exact_sparse_stream::ExactSparseShardStream;
 use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
-use shard::native_dense_stream::NativeDenseShardStream;
-use shard::native_sparse_stream::NativeSparseShardStream;
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::optimization::{OptimizationSegmentInfo, PendingOptimization};
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
@@ -145,19 +144,14 @@ pub struct LocalShard {
     /// Write lock must be held for updates, while read lock must be held for critical sections
     pub(super) update_operation_lock: Arc<tokio::sync::RwLock<()>>,
 
-    /// Authoritative point ownership for the latest frozen Segment generation.
-    /// The cache validates Segment identity and update version on every use.
-    native_point_versions_cache: Arc<NativeShardPointVersionsCache>,
-
     /// Persist the applied op_num sequence number
     applied_seq_handler: Arc<AppliedSeqHandler>,
 }
 
-/// Segment handles plus the Shard update barrier that makes them one frozen
-/// read generation for a native exact query.
-pub(crate) struct NativeSegmentSnapshot {
+/// Owned Segment reader handles plus the Shard update barrier that makes them
+/// one frozen read generation for an ExactRankSession.
+pub(crate) struct ExactSegmentReadSet {
     pub(crate) segments: Vec<LockedSegment>,
-    pub(crate) point_versions_cache: Arc<NativeShardPointVersionsCache>,
     _update_guard: OwnedRwLockReadGuard<()>,
 }
 
@@ -352,7 +346,6 @@ impl LocalShard {
             write_rate_limiter,
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
-            native_point_versions_cache: Arc::new(NativeShardPointVersionsCache::default()),
             applied_seq_handler,
         }
     }
@@ -362,7 +355,7 @@ impl LocalShard {
         self.segments.clone()
     }
 
-    fn native_segment_handles(&self) -> Vec<LockedSegment> {
+    fn exact_segment_handles(&self) -> Vec<LockedSegment> {
         self.segments
             .read()
             .iter()
@@ -371,22 +364,20 @@ impl LocalShard {
     }
 
     /// Freeze both updates and Segment identities for a native exact read.
-    /// The owned update guard must travel with the handles until every channel
-    /// worker and the fusion coordinator have stopped.
-    pub(crate) async fn native_segment_snapshot(&self) -> NativeSegmentSnapshot {
+    /// The owned update guard travels with the handles until all short reader
+    /// tasks and the fusion coordinator have stopped.
+    pub(crate) async fn exact_segment_read_set(&self) -> ExactSegmentReadSet {
         let update_guard = self.update_operation_lock.clone().read_owned().await;
-        NativeSegmentSnapshot {
-            segments: self.native_segment_handles(),
-            point_versions_cache: self.native_point_versions_cache.clone(),
+        ExactSegmentReadSet {
+            segments: self.exact_segment_handles(),
             _update_guard: update_guard,
         }
     }
 
     /// Opens one exact Sparse rank stream over the current local Shard
     /// Segment snapshot. Segment identities are cloned under the holder read
-    /// lock; each worker then pins its own Segment read view for the stream
-    /// lifetime.
-    pub fn native_sparse_stream(
+    /// lock; each batch temporarily acquires a Segment read view.
+    pub fn exact_sparse_stream(
         &self,
         vector_name: VectorNameBuf,
         query: SparseVector,
@@ -394,10 +385,10 @@ impl LocalShard {
         source_batch_size: usize,
         posting_batch_size: usize,
         stopped: Arc<AtomicBool>,
-        worker_spawner: shard::NativeWorkerSpawner,
-    ) -> OperationResult<NativeSparseShardStream> {
-        let segments = self.native_segment_handles();
-        NativeSparseShardStream::open(
+        batch_executor: shard::ExactBatchExecutor,
+    ) -> OperationResult<ExactSparseShardStream> {
+        let segments = self.exact_segment_handles();
+        ExactSparseShardStream::open(
             segments,
             vector_name,
             query,
@@ -405,24 +396,24 @@ impl LocalShard {
             source_batch_size,
             posting_batch_size,
             stopped,
-            worker_spawner,
+            batch_executor,
         )
     }
 
     /// Opens one exact Dense rank stream over the current local Shard
     /// Segment snapshot. Every physical plan is exhaustive-order equivalent.
-    pub fn native_dense_stream(
+    pub fn exact_dense_stream(
         &self,
         vector_name: VectorNameBuf,
         query: Vec<f32>,
         filter: Option<Filter>,
-        policy: NativeDensePolicy,
+        policy: DenseExecutionPolicy,
         batch_size: usize,
         stopped: Arc<AtomicBool>,
-        worker_spawner: shard::NativeWorkerSpawner,
-    ) -> OperationResult<NativeDenseShardStream> {
-        let segments = self.native_segment_handles();
-        NativeDenseShardStream::open(
+        batch_executor: shard::ExactBatchExecutor,
+    ) -> OperationResult<ExactDenseShardStream> {
+        let segments = self.exact_segment_handles();
+        ExactDenseShardStream::open(
             segments,
             vector_name,
             query,
@@ -430,7 +421,7 @@ impl LocalShard {
             policy,
             batch_size,
             stopped,
-            worker_spawner,
+            batch_executor,
         )
     }
 

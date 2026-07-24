@@ -14,8 +14,8 @@ use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::Inve
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
+use super::exact_sparse_stream::ExactSparseIndexCursor;
 use super::hnsw_index::hnsw::HNSWIndex;
-use super::native_sparse_stream::NativeSparseIndexCursor;
 use super::plain_vector_index::PlainVectorIndex;
 use super::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::common::operation_error::OperationResult;
@@ -73,13 +73,13 @@ pub trait VectorIndexRead {
 
     /// Open a resumable exact Sparse stream when this index is Sparse.
     /// Dense and read-only implementations reject this by default.
-    fn native_sparse_cursor<'a>(
+    fn exact_sparse_cursor<'a>(
         &'a self,
         _query: &SparseVector,
         _batch_size: usize,
         _arena: &'a sparse::SearchScratchArena,
         _hardware_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<NativeSparseIndexCursor<'a>> {
+    ) -> OperationResult<ExactSparseIndexCursor<'a>> {
         Err(crate::common::operation_error::OperationError::WrongSparse)
     }
 }
@@ -308,14 +308,14 @@ impl VectorIndexRead for VectorIndexEnum {
         }
     }
 
-    fn native_sparse_cursor<'a>(
+    fn exact_sparse_cursor<'a>(
         &'a self,
         query: &SparseVector,
         batch_size: usize,
         arena: &'a sparse::SearchScratchArena,
         hardware_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<NativeSparseIndexCursor<'a>> {
-        NativeSparseIndexCursor::open(self, query, batch_size, arena, hardware_counter)
+    ) -> OperationResult<ExactSparseIndexCursor<'a>> {
+        ExactSparseIndexCursor::open(self, query, batch_size, arena, hardware_counter)
     }
 
     fn fill_idf_statistics(

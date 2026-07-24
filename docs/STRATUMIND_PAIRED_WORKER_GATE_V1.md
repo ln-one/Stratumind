@@ -1,5 +1,8 @@
 # Paired Dense/Sparse Worker Gate V1
 
+> Historical negative result. Production V1.1.3 supersedes this resident-worker candidate with
+> reader-independent `ExactRankSession`; the measurements below remain unchanged as an ablation.
+
 This gate evaluates the internal one-worker-per-Segment Dense/Sparse session candidate. It does
 not change Production API V1.1 or the ordered Top-K guarantee.
 

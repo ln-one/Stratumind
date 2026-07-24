@@ -15,14 +15,14 @@ use super::ShardReplicaSet;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::*;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
-use crate::shards::local_shard::NativeSegmentSnapshot;
+use crate::shards::local_shard::ExactSegmentReadSet;
 
 impl ShardReplicaSet {
     /// Return one readable local replica's frozen Segment identities.
     /// `None` asks the exact-plan router to use the ordinary remote path.
-    pub(crate) async fn native_segment_snapshot(
+    pub(crate) async fn exact_segment_read_set(
         &self,
-    ) -> CollectionResult<Option<NativeSegmentSnapshot>> {
+    ) -> CollectionResult<Option<ExactSegmentReadSet>> {
         if !self.peer_is_readable(self.this_peer_id()) {
             return Ok(None);
         }
@@ -35,7 +35,7 @@ impl ShardReplicaSet {
         let Some(local_shard) = shard.local_shard() else {
             return Ok(None);
         };
-        Ok(Some(local_shard.native_segment_snapshot().await))
+        Ok(Some(local_shard.exact_segment_read_set().await))
     }
 
     pub async fn scroll_by(

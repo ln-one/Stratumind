@@ -48,7 +48,7 @@ use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
-use sparse::index::posting_block_stream::{NativeSparsePhysicalPlan, NativeSparsePlan};
+use sparse::index::posting_block_stream::{SparseExecutionPlan, SparsePhysicalPlan};
 use sparse::index::posting_list_common::PostingListIter as _;
 use tempfile::Builder;
 use uuid::Uuid;
@@ -105,17 +105,14 @@ fn check_persisted_native_sparse_cursor<I: InvertedIndex>() {
     let hardware_counter = HardwareCounterCell::disposable();
     let stopped = AtomicBool::new(false);
     let mut cursor = index
-        .native_exact_cursor(&query, 128, &arena, &hardware_counter)
+        .exact_cursor(&query, 128, &arena, &hardware_counter)
         .unwrap();
 
     let first_prefix: Vec<_> = (0..37)
         .map(|_| cursor.next_result(&stopped).unwrap().unwrap())
         .collect();
     let prefix_telemetry = cursor.telemetry();
-    assert_eq!(
-        prefix_telemetry.plan,
-        NativeSparsePhysicalPlan::PostingBlockMax
-    );
+    assert_eq!(prefix_telemetry.plan, SparsePhysicalPlan::PostingBlockMax);
     assert!(prefix_telemetry.batches_expanded < prefix_telemetry.batches);
 
     let mut resumed = first_prefix;
@@ -127,10 +124,10 @@ fn check_persisted_native_sparse_cursor<I: InvertedIndex>() {
     assert_eq!(cursor.next_result(&stopped).unwrap(), None);
 
     let mut eager_fallback = index
-        .native_exact_cursor_with_plan(
+        .exact_cursor_with_plan(
             &query,
             128,
-            NativeSparsePlan::EagerPostingBlock,
+            SparseExecutionPlan::EagerPostingBlock,
             &arena,
             &hardware_counter,
         )
@@ -142,14 +139,14 @@ fn check_persisted_native_sparse_cursor<I: InvertedIndex>() {
     assert_eq!(eager, exhaustive);
     assert_eq!(
         eager_fallback.telemetry().plan,
-        NativeSparsePhysicalPlan::EagerPostingBlock
+        SparsePhysicalPlan::EagerPostingBlock
     );
 }
 
 #[test]
-fn segment_native_sparse_stream_applies_filter_and_external_identity_ties() {
+fn segment_exact_sparse_stream_applies_filter_and_external_identity_ties() {
     let dir = Builder::new()
-        .prefix("segment_native_sparse_stream")
+        .prefix("segment_exact_sparse_stream")
         .tempdir()
         .unwrap();
     let config = SegmentConfig {
@@ -238,10 +235,11 @@ fn segment_native_sparse_stream_applies_filter_and_external_identity_ties() {
 
     let actual = segment
         .with_view(|view| {
-            view.with_native_sparse_stream(
+            view.with_exact_sparse_stream(
                 SPARSE_VECTOR_NAME,
                 &query,
                 Some(&filter),
+                32,
                 4_096,
                 &segment_query_context,
                 |next| {

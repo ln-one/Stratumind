@@ -15,6 +15,8 @@ workspace = true
 default = []
 testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing"]
 gpu = ["gpu/gpu"]
+# Fork-only diagnostics remain opt-in. Production builds never enable this.
+stratumind-research = ["sparse/stratumind-research"]
 
 [build-dependencies]
 cc = { workspace = true }

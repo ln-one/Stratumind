@@ -31,7 +31,7 @@ use kernel::{PendingBatch, PostingBlockMaxKernel};
 #[cfg(feature = "stratumind-research")]
 pub use telemetry::PostingBlockPhaseTelemetry;
 pub use telemetry::{
-    NativeSparsePhysicalPlan, NativeSparsePlan, PostingBlockMaxVariant, PostingBlockStreamTelemetry,
+    PostingBlockMaxVariant, PostingBlockStreamTelemetry, SparseExecutionPlan, SparsePhysicalPlan,
 };
 
 /// Object-safe contract shared by all exact resumable Sparse physical plans.
@@ -91,7 +91,14 @@ impl PartialOrd for PendingPoint {
 }
 
 pub struct PostingBlockMaxCursor<'a, I: InvertedIndex> {
-    kernel: PostingBlockMaxKernel<'a, I>,
+    index: &'a I,
+    arena: &'a SearchScratchArena,
+    hardware_counter: &'a HardwareCounterCell,
+    state: PostingBlockMaxState,
+}
+
+pub struct PostingBlockMaxState {
+    kernel: PostingBlockMaxKernel,
     pending_batches: BinaryHeap<PendingBatch>,
     pending_points: BinaryHeap<PendingPoint>,
     buffered_points: usize,
@@ -99,6 +106,20 @@ pub struct PostingBlockMaxCursor<'a, I: InvertedIndex> {
     terminal_error: Option<NativeSparseCursorError>,
     #[cfg(feature = "stratumind-research")]
     phase_telemetry: bool,
+}
+
+impl<I: InvertedIndex> std::ops::Deref for PostingBlockMaxCursor<'_, I> {
+    type Target = PostingBlockMaxState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
+impl<I: InvertedIndex> std::ops::DerefMut for PostingBlockMaxCursor<'_, I> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
+    }
 }
 
 /// Legacy research name retained for source compatibility.
@@ -109,6 +130,7 @@ pub type PostingBlockStream<'a, I> = PostingBlockMaxCursor<'a, I>;
 #[derive(Clone, Debug, PartialEq)]
 pub enum NativeSparseCursorError {
     Cancelled,
+    ReaderFailure(String),
     CertificateViolation {
         point: PointOffsetType,
         score: f32,
@@ -120,6 +142,9 @@ impl Display for NativeSparseCursorError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Cancelled => formatter.write_str("native Sparse cursor was cancelled"),
+            Self::ReaderFailure(message) => {
+                write!(formatter, "native Sparse reader failed: {message}")
+            }
             Self::CertificateViolation {
                 point,
                 score,
@@ -202,19 +227,28 @@ impl<'a, I: InvertedIndex> PostingBlockMaxCursor<'a, I> {
             phase_telemetry,
         )?;
         Ok(Self {
-            kernel,
-            pending_batches,
-            pending_points: BinaryHeap::new(),
-            buffered_points: 0,
-            telemetry,
-            terminal_error: None,
-            #[cfg(feature = "stratumind-research")]
-            phase_telemetry,
+            index,
+            arena,
+            hardware_counter,
+            state: PostingBlockMaxState {
+                kernel,
+                pending_batches,
+                pending_points: BinaryHeap::new(),
+                buffered_points: 0,
+                telemetry,
+                terminal_error: None,
+                #[cfg(feature = "stratumind-research")]
+                phase_telemetry,
+            },
         })
     }
 
     pub fn telemetry(&self) -> PostingBlockStreamTelemetry {
         self.telemetry
+    }
+
+    pub fn into_rank_state(self) -> PostingBlockMaxState {
+        self.state
     }
 
     fn next_point_is_fixed(&mut self) -> bool {
@@ -249,16 +283,29 @@ impl<'a, I: InvertedIndex> PostingBlockMaxCursor<'a, I> {
         let Some(batch) = self.pending_batches.pop() else {
             return Ok(());
         };
-        if let Some((point, buffered)) = self.kernel.expand(batch, stopped, &mut self.telemetry)? {
-            self.buffered_points += buffered;
-            self.pending_points.push(point);
+        let index = self.index;
+        let arena = self.arena;
+        let hardware_counter = self.hardware_counter;
+        let state = &mut self.state;
+        if let Some((point, buffered)) = state.kernel.expand(
+            index,
+            arena,
+            hardware_counter,
+            batch,
+            stopped,
+            &mut state.telemetry,
+        )? {
+            state.buffered_points += buffered;
+            state.pending_points.push(point);
         }
-        self.telemetry.max_pending_points = self
+        state.telemetry.max_pending_points = state
             .telemetry
             .max_pending_points
-            .max(self.pending_points.len());
-        self.telemetry.max_buffered_points =
-            self.telemetry.max_buffered_points.max(self.buffered_points);
+            .max(state.pending_points.len());
+        state.telemetry.max_buffered_points = state
+            .telemetry
+            .max_buffered_points
+            .max(state.buffered_points);
         Ok(())
     }
 
@@ -382,6 +429,121 @@ impl<'a, I: InvertedIndex> PostingBlockMaxCursor<'a, I> {
     }
 }
 
+impl PostingBlockMaxState {
+    fn next_point_is_fixed(&self) -> bool {
+        let Some(point) = self.pending_points.peek() else {
+            return false;
+        };
+        let Some(batch) = self.pending_batches.peek() else {
+            return true;
+        };
+        point.point.score > batch.upper_bound
+            || (point.point.score == batch.upper_bound && point.point.idx < batch.start)
+    }
+
+    fn pop_next_point(&mut self) -> Option<ScoredPointOffset> {
+        let pending = self.pending_points.pop()?;
+        self.buffered_points -= 1;
+        if let Some(point) = self.kernel.pop_active(pending.batch_index) {
+            self.pending_points.push(PendingPoint {
+                point,
+                batch_index: pending.batch_index,
+            });
+        }
+        self.telemetry.points_emitted += 1;
+        Some(pending.point)
+    }
+
+    fn finish_batch(&mut self, points: Vec<ScoredPointOffset>) -> Vec<ScoredPointOffset> {
+        if !points.is_empty()
+            && (!self.pending_batches.is_empty() || !self.pending_points.is_empty())
+        {
+            self.telemetry.pause_count += 1;
+        }
+        points
+    }
+
+    /// Advance reader-independent Sparse state with an index borrowed only for
+    /// this batch.
+    pub fn next_batch_with<'a, I: InvertedIndex>(
+        &mut self,
+        index: &'a I,
+        arena: &'a SearchScratchArena,
+        hardware_counter: &'a HardwareCounterCell,
+        max_results: usize,
+        stopped: &AtomicBool,
+    ) -> std::result::Result<Vec<ScoredPointOffset>, NativeSparseCursorError> {
+        assert!(
+            max_results > 0,
+            "native Sparse result batch must be positive"
+        );
+        if let Some(error) = &self.terminal_error {
+            return Err(error.clone());
+        }
+        if stopped.load(Relaxed) {
+            let error = NativeSparseCursorError::Cancelled;
+            self.terminal_error = Some(error.clone());
+            return Err(error);
+        }
+        let mut points = Vec::with_capacity(max_results);
+        loop {
+            if self.next_point_is_fixed() {
+                points.push(self.pop_next_point().expect("fixed point exists"));
+                if points.len() == max_results {
+                    return Ok(self.finish_batch(points));
+                }
+                continue;
+            }
+            if self.pending_batches.is_empty() {
+                while points.len() < max_results {
+                    let Some(point) = self.pop_next_point() else {
+                        break;
+                    };
+                    points.push(point);
+                }
+                return Ok(self.finish_batch(points));
+            }
+            if !points.is_empty() {
+                return Ok(self.finish_batch(points));
+            }
+            let batch = self.pending_batches.pop().expect("pending batch exists");
+            let expanded = self.kernel.expand(
+                index,
+                arena,
+                hardware_counter,
+                batch,
+                stopped,
+                &mut self.telemetry,
+            );
+            match expanded {
+                Ok(Some((point, buffered))) => {
+                    self.buffered_points += buffered;
+                    self.pending_points.push(point);
+                    self.telemetry.max_pending_points = self
+                        .telemetry
+                        .max_pending_points
+                        .max(self.pending_points.len());
+                    self.telemetry.max_buffered_points =
+                        self.telemetry.max_buffered_points.max(self.buffered_points);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    self.pending_batches.clear();
+                    self.pending_points.clear();
+                    self.kernel.clear();
+                    self.buffered_points = 0;
+                    self.terminal_error = Some(error.clone());
+                    return Err(error);
+                }
+            }
+        }
+    }
+
+    pub fn telemetry(&self) -> PostingBlockStreamTelemetry {
+        self.telemetry
+    }
+}
+
 #[cfg(feature = "stratumind-research")]
 fn phase_telemetry_enabled() -> bool {
     std::env::var_os("SPECTRA_PBM_PHASE_TELEMETRY").is_some_and(|value| value == "1")
@@ -436,6 +598,89 @@ mod tests {
     use super::*;
     use crate::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
     use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
+
+    #[test]
+    fn reader_independent_state_resumes_on_different_workers() {
+        let mut builder = InvertedIndexBuilder::new();
+        for id in 0..257u32 {
+            builder.add(
+                id,
+                RemappedSparseVector {
+                    indices: vec![0],
+                    values: vec![257.0 - id as f32],
+                },
+            );
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let index = std::sync::Arc::new(
+            InvertedIndexCompressedImmutableRam::<f32>::from_ram_index(
+                Cow::Owned(builder.build()),
+                temp.path(),
+            )
+            .unwrap(),
+        );
+        let query = RemappedSparseVector {
+            indices: vec![0],
+            values: vec![1.0],
+        };
+        let arena = SearchScratchArena::new_slow();
+        let hardware_counter = HardwareCounterCell::disposable();
+        let state = PostingBlockMaxCursor::new_with_variant(
+            index.as_ref(),
+            query,
+            32,
+            PostingBlockMaxVariant::CompressedMetadata,
+            &arena,
+            &hardware_counter,
+        )
+        .unwrap()
+        .into_rank_state();
+
+        let index_for_first = index.clone();
+        let first = std::thread::spawn(move || {
+            let mut state = state;
+            let arena = SearchScratchArena::new_slow();
+            let hardware_counter = HardwareCounterCell::disposable();
+            let points = state
+                .next_batch_with(
+                    index_for_first.as_ref(),
+                    &arena,
+                    &hardware_counter,
+                    7,
+                    &AtomicBool::new(false),
+                )
+                .unwrap();
+            (state, points)
+        })
+        .join()
+        .unwrap();
+        let second = std::thread::spawn(move || {
+            let (mut state, mut points) = first;
+            let arena = SearchScratchArena::new_slow();
+            let hardware_counter = HardwareCounterCell::disposable();
+            while points.len() < 257 {
+                let batch = state
+                    .next_batch_with(
+                        index.as_ref(),
+                        &arena,
+                        &hardware_counter,
+                        64,
+                        &AtomicBool::new(false),
+                    )
+                    .unwrap();
+                if batch.is_empty() {
+                    break;
+                }
+                points.extend(batch);
+            }
+            points
+        })
+        .join()
+        .unwrap();
+
+        assert_eq!(second.len(), 257);
+        assert!(second.windows(2).all(|pair| pair[0].score > pair[1].score));
+    }
 
     #[test]
     fn compressed_posting_stream_matches_exhaustive_order() {
@@ -665,7 +910,7 @@ mod tests {
     }
 
     #[test]
-    fn native_cursor_distinguishes_cancellation_from_exact_eof() {
+    fn exact_cursor_distinguishes_cancellation_from_exact_eof() {
         let mut builder = InvertedIndexBuilder::new();
         for id in 0..128u32 {
             builder.add(

@@ -13,7 +13,8 @@ use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 use sparse::index::native_rank_stream::NativeSearchContextRankStream;
 use sparse::index::posting_block_stream::{
-    ExactSparseCursor, NativeCertifiedSparseCursor, NativeSparsePlan, PostingBlockMaxVariant,
+    ExactSparseCursor, NativeCertifiedSparseCursor, NativeSparseCursorError, PostingBlockMaxState,
+    PostingBlockMaxVariant, SparseExecutionPlan,
 };
 use sparse::{SearchScratchArena, SearchScratchPool};
 
@@ -227,7 +228,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     /// state between pulls and reports exact EOF separately from failure. The
     /// caller owns the scratch arena for the cursor lifetime so a Shard-level
     /// merger can keep several Segment cursors paused at once.
-    pub fn native_exact_cursor<'a>(
+    pub fn exact_cursor<'a>(
         &'a self,
         query: &SparseVector,
         batch_size: usize,
@@ -262,13 +263,13 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
     /// Opens one interchangeable exact Sparse physical plan.
     ///
-    /// `Auto` uses the promoted compressed-posting metadata planner. The eager
-    /// planner remains available as an explicit exact fallback.
-    pub fn native_exact_cursor_with_plan<'a>(
+    /// `Auto` uses the promoted compressed-metadata planner. The frozen eager
+    /// cursor remains available as an explicit exact fallback.
+    pub fn exact_cursor_with_plan<'a>(
         &'a self,
         query: &SparseVector,
         batch_size: usize,
-        plan: NativeSparsePlan,
+        plan: SparseExecutionPlan,
         arena: &'a SearchScratchArena,
         hardware_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Box<dyn ExactSparseCursor + 'a>> {
@@ -289,25 +290,33 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         }
         let remapped_query = self.indices_tracker.remap_vector(query.clone());
         let plan = match plan {
-            NativeSparsePlan::Auto => NativeSparsePlan::PostingBlockMax,
+            SparseExecutionPlan::Auto => SparseExecutionPlan::PostingBlockMax,
             explicit => explicit,
         };
         let cursor: Box<dyn ExactSparseCursor + 'a> = match plan {
-            NativeSparsePlan::EagerPostingBlock => Box::new(NativeCertifiedSparseCursor::new(
+            SparseExecutionPlan::EagerPostingBlock => Box::new(NativeCertifiedSparseCursor::new(
                 &self.inverted_index,
                 remapped_query,
                 batch_size,
                 arena,
                 hardware_counter,
             )?),
-            NativeSparsePlan::NativeSearchContext => Box::new(NativeSearchContextRankStream::new(
-                remapped_query,
-                batch_size,
-                &self.inverted_index,
-                arena,
-                hardware_counter,
-            )?),
-            NativeSparsePlan::PostingBlockMax => {
+            SparseExecutionPlan::NativeSearchContext => {
+                Box::new(NativeSearchContextRankStream::new(
+                    remapped_query,
+                    batch_size,
+                    &self.inverted_index,
+                    arena,
+                    hardware_counter,
+                )?)
+            }
+            #[cfg(feature = "stratumind-research")]
+            SparseExecutionPlan::FlatBmp | SparseExecutionPlan::SuperblockBmp => {
+                return Err(OperationError::validation_error(
+                    "BMP research plans are not part of the production Segment",
+                ));
+            }
+            SparseExecutionPlan::PostingBlockMax => {
                 Box::new(NativeCertifiedSparseCursor::new_with_variant(
                     &self.inverted_index,
                     remapped_query,
@@ -317,9 +326,66 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     hardware_counter,
                 )?)
             }
-            NativeSparsePlan::Auto => unreachable!("Auto is resolved above"),
+            SparseExecutionPlan::Auto => unreachable!("Auto is resolved above"),
         };
         Ok(cursor)
+    }
+
+    pub fn exact_rank_state(
+        &self,
+        query: &SparseVector,
+        batch_size: usize,
+        arena: &SearchScratchArena,
+        hardware_counter: &HardwareCounterCell,
+    ) -> OperationResult<PostingBlockMaxState> {
+        if batch_size == 0
+            || query.indices.len() != query.values.len()
+            || query
+                .values
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight < 0.0)
+        {
+            return Err(OperationError::validation_error(
+                "native Sparse rank state requires a positive batch and finite non-negative impacts",
+            ));
+        }
+        let remapped_query = self.indices_tracker.remap_vector(query.clone());
+        Ok(NativeCertifiedSparseCursor::new_with_variant(
+            &self.inverted_index,
+            remapped_query,
+            batch_size,
+            PostingBlockMaxVariant::CompressedMetadata,
+            arena,
+            hardware_counter,
+        )?
+        .into_rank_state())
+    }
+
+    pub fn advance_exact_rank_state(
+        &self,
+        state: &mut PostingBlockMaxState,
+        max_results: usize,
+        arena: &SearchScratchArena,
+        hardware_counter: &HardwareCounterCell,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Vec<common::types::ScoredPointOffset>> {
+        state
+            .next_batch_with(
+                &self.inverted_index,
+                arena,
+                hardware_counter,
+                max_results,
+                stopped,
+            )
+            .map_err(|error| match error {
+                NativeSparseCursorError::Cancelled => {
+                    OperationError::cancelled("native Sparse rank state was cancelled")
+                }
+                NativeSparseCursorError::ReaderFailure(_)
+                | NativeSparseCursorError::CertificateViolation { .. } => {
+                    OperationError::inconsistent_storage(error.to_string())
+                }
+            })
     }
 
     /// Returns the maximum number of results that can be returned by the index for a given sparse vector

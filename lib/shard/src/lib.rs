@@ -1,15 +1,12 @@
 pub mod common;
 pub mod count;
+pub mod exact_dense_stream;
+mod exact_score_stream;
 pub mod facet;
 pub mod files;
 pub mod locked_segment;
-pub mod native_dense_sparse_stream;
-pub mod native_dense_stream;
-mod native_score_stream;
-pub use native_score_stream::{
-    NativeShardPointVersions, NativeShardPointVersionsCache, NativeWorkerSpawner,
-};
-pub mod native_sparse_stream;
+pub use exact_score_stream::{ExactBatchExecutor, ExactShardPointVersions};
+pub mod exact_sparse_stream;
 pub mod operation_rate_cost;
 pub mod operations;
 pub mod optimize;
@@ -17,6 +14,7 @@ pub mod optimizers;
 pub mod payload_index_schema;
 pub mod proxy_segment;
 pub mod query;
+mod read_segment_handle;
 pub mod retrieve;
 pub mod scroll;
 pub mod search;

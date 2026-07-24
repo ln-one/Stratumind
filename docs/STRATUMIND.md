@@ -11,12 +11,12 @@ evidence; if descriptive implementation text differs from the V1.1 contract, the
 ## Build and run
 
 ```bash
-docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.2
+docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.3
 docker run --rm \
   --publish 6333:6333 \
   --publish 6334:6334 \
   --volume stratumind-storage:/qdrant/storage \
-  stratumind:api-v1.1.2
+  stratumind:api-v1.1.3
 ```
 
 The upstream image entrypoint, health endpoints and configuration environment variables remain
@@ -90,12 +90,12 @@ dynamic WRRF; it never fuses shard-local RRF results. Remote replicas and explic
 requests use the older exact adaptive-prefix plan. Router choice may change cost but not ordered
 Top-K.
 
-The paired-worker candidate can host independent canonical Dense and Sparse sessions over one
-pinned Segment read view. Its channels share only the Qdrant runtime worker and lifetime, never
-scores or certificates. It is disabled in the production profile after its latency gate lost to
-the bounded materialized exact plan at both 512 and 20,000 points. Internal experiments may enable
-it with `STRATUMIND_EXPERIMENTAL_PAIRED_NATIVE_WORKERS=1`; this switch is not part of the Production
-API contract.
+Production V1.1.3 uses `ExactRankSession`. Dense and Sparse each retain an owned, reader-independent
+ranking state. When fusion requests more results, the session acquires a temporary Qdrant Segment
+read view, advances one bounded batch, releases the guard, and later resumes from the same state.
+There is no resident worker per Segment and no cursor that borrows a Segment across checkpoints.
+The two channels share the frozen authoritative identity/version map and session lifetime, but
+never scores or certificates.
 
 Dense uses an exact, metadata-only Router over Segment-owned PVS V1, Qdrant Scalar bounds and
 authoritative exact scan. Compatible immutable Float32 Dot/Cosine Segments persist a per-vector
@@ -134,17 +134,28 @@ one-shot Qdrant fallback, including an IDF-configured Sparse source. These field
 confused with Dense quantized dots, exact rescoring, Sparse posting visits, or prefix overfetch;
 kernel experiments report those counters separately.
 
-When enabled, the paired plan atomically reserves Qdrant search-runtime capacity for its coordinator
-and one worker per Segment before starting. Workers and coordinator may occupy the two existing
-Qdrant search runtimes when neither runtime can hold the complete task set alone. The production
-default, or any reservation miss, uses one bounded materialized exact plan over the same frozen
-snapshot instead of partially starting a session.
-Segment read views remain pinned for the session lifetime. Producer failure and cancellation are
-errors, never exact EOF. The remote adaptive plan still checks visible point count before and after
-execution. A cross-replica MVCC snapshot token remains outside the current scope.
+`ExactRankSession` reserves one coordinator slot and bounded reader headroom before it starts. The
+measured production plan executes each short reader action inline on the coordinator's Qdrant
+blocking worker; this preserves the transient-read-view boundary while avoiding an extra Tokio
+enqueue and channel wake-up per batch. Segment count no longer multiplies resident worker demand,
+and a reservation miss occurs before any session state starts, allowing the existing exact remote
+path to take over safely.
 
-The native Dense/Sparse producers, fallible exact EOF streams, safe Router, Segment/Shard/global
-k-way merges, and dynamic WRRF certificate are wired into the Collection request hot path.
+The Shard update barrier remains held for the complete session, while individual Segment guards
+exist only during bounded reads. Producer failure and cancellation are errors, never exact EOF.
+The remote adaptive plan still checks visible point count before and after execution. A
+cross-replica MVCC snapshot token remains outside the current scope.
+
+The Dense/Sparse exact rank states, fallible exact EOF streams, safe Router,
+Segment/Shard/global k-way merges, and dynamic WRRF certificate are wired into the Collection
+request hot path.
+
+The production promotion gate compared the reader-independent session with the previous resident
+worker implementation over NFCorpus, SciFact and TREC-COVID 100K. Every comparable ordered Top-20
+matched. Single-query p50 improved by `2.38%` to `21.57%`; with four concurrent requests over eight
+Segments, exact success rose from `64.40%` to `100%`, p50 improved `21.78%`, and throughput improved
+`61.61%`. Full evidence is recorded in
+[ExactRankSession Production Promotion V1.1.3](spectra/results/exact-rank-session-production-promotion-v1.1.3.md).
 
 The named Sparse vector used here must store document impacts compatible with the caller's frozen
 Sparse Query profile. External non-negative impacts use `modifier: none`. A collection configured

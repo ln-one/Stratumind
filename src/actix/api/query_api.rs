@@ -4,9 +4,8 @@ use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::models::InferenceUsage;
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
-use collection::collection::native_exact_rrf::{
-    DEFAULT_NATIVE_EXACT_BATCH_SIZE, DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE,
-    NativeExactRrfRequest,
+use collection::collection::exact_rrf::{
+    DEFAULT_NATIVE_EXACT_BATCH_SIZE, DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE, ExactRrfRequest,
 };
 use collection::operations::point_ops::VectorPersisted;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -20,7 +19,7 @@ use segment::common::reciprocal_rank_fusion::{
     DynamicRrfStopReason, ExactRrfStream, infallible_exact_rrf_stream,
 };
 use segment::data_types::vectors::VectorInternal;
-use segment::index::native_dense_stream::NativeDensePolicy;
+use segment::index::exact_dense_stream::DenseExecutionPolicy;
 use segment::types::{
     ExtendedPointId, Filter, SearchParams, VectorNameBuf, WithPayloadInterface, WithVector,
 };
@@ -421,7 +420,7 @@ async fn query_points_exact_rrf(
             weights,
         } = request.exact_rrf;
         let sparse_query = resolve_exact_sparse_query(sparse.query)?;
-        let native_request = NativeExactRrfRequest {
+        let exact_request = ExactRrfRequest {
             dense_query: dense.query.clone(),
             dense_using: dense.using.clone(),
             sparse_query: sparse_query.clone(),
@@ -432,7 +431,7 @@ async fn query_points_exact_rrf(
             weights,
             batch_size: DEFAULT_NATIVE_EXACT_BATCH_SIZE,
             sparse_posting_batch_size: DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE,
-            dense_policy: NativeDensePolicy::default(),
+            dense_policy: DenseExecutionPolicy::default(),
         };
         let channel_requests = vec![
             exact_channel_request(
@@ -534,7 +533,7 @@ async fn query_points_exact_rrf(
                 .get_collection(&collection_pass)
                 .await?;
             if let Some(execution) = collection_ref
-                .native_exact_rrf(native_request, &shard_selection, params.timeout())
+                .exact_rrf(exact_request, &shard_selection, params.timeout())
                 .await?
             {
                 let stop_reason = match execution.stop_reason {

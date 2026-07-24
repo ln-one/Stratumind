@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
-pub enum NativeSparsePhysicalPlan {
+pub enum SparsePhysicalPlan {
     #[default]
     EagerPostingBlock,
     /// Qdrant's original document-at-a-time kernel retained as a resumable
@@ -21,7 +21,7 @@ pub enum NativeSparsePhysicalPlan {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NativeSparsePlan {
+pub enum SparseExecutionPlan {
     Auto,
     EagerPostingBlock,
     NativeSearchContext,
@@ -34,7 +34,7 @@ pub enum NativeSparsePlan {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PostingBlockStreamTelemetry {
-    pub plan: NativeSparsePhysicalPlan,
+    pub plan: SparsePhysicalPlan,
     pub cursor_started: bool,
     pub query_terms: usize,
     pub query_posting_elements: usize,
@@ -95,16 +95,16 @@ pub enum PostingBlockMaxVariant {
 }
 
 impl PostingBlockMaxVariant {
-    pub(super) fn physical_plan(self) -> NativeSparsePhysicalPlan {
+    pub(super) fn physical_plan(self) -> SparsePhysicalPlan {
         match self {
-            Self::V1 => NativeSparsePhysicalPlan::EagerPostingBlock,
+            Self::V1 => SparsePhysicalPlan::EagerPostingBlock,
             #[cfg(feature = "stratumind-research")]
-            Self::RangeDirectDense => NativeSparsePhysicalPlan::RangeDirectDense,
+            Self::RangeDirectDense => SparsePhysicalPlan::RangeDirectDense,
             #[cfg(feature = "stratumind-research")]
-            Self::RangeDirectTouched => NativeSparsePhysicalPlan::RangeDirectTouched,
+            Self::RangeDirectTouched => SparsePhysicalPlan::RangeDirectTouched,
             #[cfg(feature = "stratumind-research")]
-            Self::RangeDirectSorted => NativeSparsePhysicalPlan::RangeDirectSorted,
-            Self::CompressedMetadata => NativeSparsePhysicalPlan::PostingBlockMax,
+            Self::RangeDirectSorted => SparsePhysicalPlan::RangeDirectSorted,
+            Self::CompressedMetadata => SparsePhysicalPlan::PostingBlockMax,
         }
     }
 }
