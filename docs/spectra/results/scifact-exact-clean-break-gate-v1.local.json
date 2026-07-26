@@ -1,0 +1,104 @@
+{
+  "schema_version": 2,
+  "experiment": "stratumind-exact-clean-break-dataset-gate-v1",
+  "dataset": "scifact",
+  "dataset_manifest_sha256": "d512aadb9a3485d61e3903d6ec0da10314a0c0e2be0d10338a8b7c63681a8e28",
+  "documents": 5183,
+  "queries": 1109,
+  "dimension": 384,
+  "requested_shards": 2,
+  "observed_segments": {
+    "candidate": 4,
+    "baseline": 4
+  },
+  "top_k": 20,
+  "rrf_k": 60,
+  "warmup_sweeps_per_round": 1,
+  "measured_rounds": 5,
+  "concurrency": 1,
+  "candidate": {
+    "binary": "/private/tmp/stratumind-clean-gate-binaries.qIo6eH/qdrant-candidate",
+    "sha256": "ddb179350cf4acf79e3d81d9b683983bfb81d47351430f180c9b37e0e8d1293e",
+    "latency": {
+      "p50_ns": 1460375,
+      "p95_ns": 3500017,
+      "p99_ns": 5078120,
+      "mean_ns": 1739723
+    },
+    "throughput_qps": 573.676818491823,
+    "exact_successes": 5545,
+    "errors": 0,
+    "first_error": null,
+    "execution": {
+      "exhaustive_fallback_rate": 0.0,
+      "mean_source_points_materialized": [
+        429.5302073940487,
+        361.05229936880073
+      ],
+      "mean_source_pulls": [
+        429.5302073940487,
+        361.05229936880073
+      ],
+      "mean_query_rounds": 1
+    }
+  },
+  "baseline": {
+    "binary": "/private/tmp/stratumind-clean-gate-binaries.qIo6eH/qdrant-baseline",
+    "sha256": "5826b141958dacace6e2ab057cdc6a6755811ccaa301029d25d566da0698ee8c",
+    "latency": {
+      "p50_ns": 1546542,
+      "p95_ns": 4174866,
+      "p99_ns": 6732963,
+      "mean_ns": 1975157
+    },
+    "throughput_qps": 505.37661402789996,
+    "exact_successes": 5545,
+    "errors": 0,
+    "first_error": null,
+    "execution": {
+      "exhaustive_fallback_rate": 0.0,
+      "mean_source_points_materialized": [
+        429.5302073940487,
+        361.05229936880073
+      ],
+      "mean_source_pulls": [
+        429.5302073940487,
+        361.05229936880073
+      ],
+      "mean_query_rounds": 1
+    }
+  },
+  "paired": {
+    "mean_delta_ns": -235434,
+    "median_delta_ns": -84334,
+    "win_rate": 0.7235347159603246,
+    "query_cluster_bootstrap_mean_delta_95_ci_ns": [
+      -261908,
+      -210853
+    ]
+  },
+  "comparable_exact_results": 5545,
+  "ordered_top_k_mismatches": 0,
+  "gate": {
+    "passed": true,
+    "failed_checks": [],
+    "checks": {
+      "ordered_top_k_mismatches_zero": true,
+      "candidate_errors_zero": true,
+      "baseline_errors_zero": true,
+      "all_exact_results_comparable": true,
+      "candidate_exhaustive_fallback_zero": true,
+      "baseline_exhaustive_fallback_zero": true,
+      "source_points_materialized_not_increased": true,
+      "source_pulls_not_increased": true,
+      "p50_regression_within_limit": true,
+      "p95_regression_within_limit": true
+    },
+    "limits": {
+      "max_p50_regression": 0.03,
+      "max_p95_regression": 0.05
+    },
+    "expected_exact_results": 5545
+  },
+  "workdir": null
+}

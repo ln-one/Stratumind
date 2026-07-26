@@ -256,6 +256,59 @@ mod exact_rank_config_tests {
             ExactRankProfile::DenseSparseV1
         );
     }
+
+    #[test]
+    fn exact_rank_profile_roundtrip_requires_segment_rebuild_in_both_directions() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = CollectionConfigInternal {
+            params: CollectionParams::empty(),
+            hnsw_config: HnswConfig::default(),
+            optimizer_config: OptimizersConfig::fixture(),
+            wal_config: WalConfig::default(),
+            quantization_config: None,
+            exact_rank_config: ExactRankConfig::default(),
+            strict_mode_config: None,
+            uuid: None,
+            metadata: None,
+        };
+
+        config.save(directory.path()).unwrap();
+        let disabled = CollectionConfigInternal::load(directory.path()).unwrap();
+        assert_eq!(
+            disabled.exact_rank_config.profile,
+            ExactRankProfile::Disabled
+        );
+
+        config.exact_rank_config.profile = ExactRankProfile::DenseSparseV1;
+        config.save(directory.path()).unwrap();
+        let enabled = CollectionConfigInternal::load(directory.path()).unwrap();
+        assert_eq!(
+            enabled.exact_rank_config.profile,
+            ExactRankProfile::DenseSparseV1
+        );
+        assert!(
+            disabled
+                .to_base_segment_config()
+                .check_compatible(&enabled.to_base_segment_config())
+                .is_err(),
+            "enabling the profile must make existing Segments rebuildable"
+        );
+
+        config.exact_rank_config.profile = ExactRankProfile::Disabled;
+        config.save(directory.path()).unwrap();
+        let disabled_again = CollectionConfigInternal::load(directory.path()).unwrap();
+        assert_eq!(
+            disabled_again.exact_rank_config.profile,
+            ExactRankProfile::Disabled
+        );
+        assert!(
+            enabled
+                .to_base_segment_config()
+                .check_compatible(&disabled_again.to_base_segment_config())
+                .is_err(),
+            "disabling the profile must remove PVS through a Segment rebuild"
+        );
+    }
 }
 
 pub fn default_shard_number() -> NonZeroU32 {

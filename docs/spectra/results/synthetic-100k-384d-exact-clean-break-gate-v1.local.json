@@ -1,0 +1,104 @@
+{
+  "schema_version": 2,
+  "experiment": "stratumind-exact-clean-break-dataset-gate-v1",
+  "dataset": "synthetic-100k-384d",
+  "dataset_manifest_sha256": "f04c443f8f9173a57fa7994b040cfac345babf3a7f1a685ab0fccd4536ccbd42",
+  "documents": 100000,
+  "queries": 100,
+  "dimension": 384,
+  "requested_shards": 2,
+  "observed_segments": {
+    "candidate": 4,
+    "baseline": 4
+  },
+  "top_k": 20,
+  "rrf_k": 60,
+  "warmup_sweeps_per_round": 1,
+  "measured_rounds": 5,
+  "concurrency": 1,
+  "candidate": {
+    "binary": "/private/tmp/stratumind-clean-gate-binaries.qIo6eH/qdrant-candidate",
+    "sha256": "ddb179350cf4acf79e3d81d9b683983bfb81d47351430f180c9b37e0e8d1293e",
+    "latency": {
+      "p50_ns": 131414438,
+      "p95_ns": 198214717,
+      "p99_ns": 222240343,
+      "mean_ns": 133779548
+    },
+    "throughput_qps": 7.4746814414968945,
+    "exact_successes": 500,
+    "errors": 0,
+    "first_error": null,
+    "execution": {
+      "exhaustive_fallback_rate": 0.0,
+      "mean_source_points_materialized": [
+        81582.67,
+        195.31
+      ],
+      "mean_source_pulls": [
+        81582.67,
+        195.31
+      ],
+      "mean_query_rounds": 1
+    }
+  },
+  "baseline": {
+    "binary": "/private/tmp/stratumind-clean-gate-binaries.qIo6eH/qdrant-baseline",
+    "sha256": "5826b141958dacace6e2ab057cdc6a6755811ccaa301029d25d566da0698ee8c",
+    "latency": {
+      "p50_ns": 136283521,
+      "p95_ns": 201067600,
+      "p99_ns": 224027827,
+      "mean_ns": 136976743
+    },
+    "throughput_qps": 7.300200995263051,
+    "exact_successes": 500,
+    "errors": 0,
+    "first_error": null,
+    "execution": {
+      "exhaustive_fallback_rate": 0.0,
+      "mean_source_points_materialized": [
+        81582.67,
+        195.31
+      ],
+      "mean_source_pulls": [
+        81582.67,
+        195.31
+      ],
+      "mean_query_rounds": 1
+    }
+  },
+  "paired": {
+    "mean_delta_ns": -3197195,
+    "median_delta_ns": -2810896,
+    "win_rate": 0.674,
+    "query_cluster_bootstrap_mean_delta_95_ci_ns": [
+      -3899039,
+      -2497287
+    ]
+  },
+  "comparable_exact_results": 500,
+  "ordered_top_k_mismatches": 0,
+  "gate": {
+    "passed": true,
+    "failed_checks": [],
+    "checks": {
+      "ordered_top_k_mismatches_zero": true,
+      "candidate_errors_zero": true,
+      "baseline_errors_zero": true,
+      "all_exact_results_comparable": true,
+      "candidate_exhaustive_fallback_zero": true,
+      "baseline_exhaustive_fallback_zero": true,
+      "source_points_materialized_not_increased": true,
+      "source_pulls_not_increased": true,
+      "p50_regression_within_limit": true,
+      "p95_regression_within_limit": true
+    },
+    "limits": {
+      "max_p50_regression": 0.03,
+      "max_p95_regression": 0.05
+    },
+    "expected_exact_results": 500
+  },
+  "workdir": null
+}

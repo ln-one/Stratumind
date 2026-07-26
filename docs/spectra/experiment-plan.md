@@ -108,7 +108,12 @@ may legitimately scan the full corpus; it may not return a different result.
 
 ## Historical implementation status
 
-`DynamicRrfState` is implemented next to Qdrant's exhaustive RRF primitive in
+Everything in this section describes the retired implementation at
+`b26cbf157`. The referenced types, examples, binaries, and commands are not
+present in the active crate tree; use that Git revision only when reproducing
+the historical experiments.
+
+`DynamicRrfState` was implemented next to Qdrant's exhaustive RRF primitive in
 `lib/segment/src/common/reciprocal_rank_fusion.rs`. It accepts one point at a time
 from each exact stream, tracks the greatest possible unseen contribution, and
 returns an ordered Top-K only when the order is fixed.
@@ -246,9 +251,10 @@ its admissible Node Value must augment the inverted/WAND path. Raw results are i
 
 The original two-channel `spectra_exact_server` smoke is preserved in
 `docs/spectra/results/scifact-exact-server-smoke-v1.local.json` as implementation
-history. It has been superseded by the actual N-channel server. The v2 HTTP gate
-accepts `channels[]`, calls `NChannelExactIndex`, returns per-channel progress and
-physical-stream telemetry, rejects a stale generation with HTTP 400, and declares
+history. The later, now-retired N-channel server superseded it at that revision.
+The v2 HTTP gate accepted `channels[]`, called `NChannelExactIndex`, returned
+per-channel progress and physical-stream telemetry, rejected a stale generation
+with HTTP 400, and declared
 the full-corpus ordered-exact guarantee. On its first SciFact request the Dense
 channel pulled 4,936 identities without exhausting, while the Sparse channel
 exhausted after 1,703; the Dynamic WRRF result was certified after 67 checks. The

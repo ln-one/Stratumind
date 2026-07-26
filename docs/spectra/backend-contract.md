@@ -157,16 +157,16 @@ oracle at `POST /spectra/query`:
 }
 ```
 
-It returns stable snapshot point IDs, ranks, the exactness declaration, stopping
+It returned stable snapshot point IDs, ranks, the exactness declaration, stopping
 reason, source pulls, certification checks, and physical access telemetry.
 Spectra then resolves those point IDs through its authoritative retrieval
 catalog. This identity recovery does not alter retrieval order and prevents the
 research snapshot from fabricating production Chunk metadata.
 
 The retired reference server accepted `channels[]`, validated every channel
-before execution, and returns per-channel plus physical-stream telemetry. Dense
-and Sparse channels are freely interleaved; the request shape does not encode a
-fixed two-channel assumption. It uses the same Adaptive Native(4096) Sparse
+before execution, and returned per-channel plus physical-stream telemetry. Dense
+and Sparse channels were freely interleaved; the request shape did not encode a
+fixed two-channel assumption. It used the same Adaptive Native(4096) Sparse
 default as `NChannelExactIndex`.
 
 At `b26cbf157`, it was run with:
