@@ -17,7 +17,7 @@ use quantization::{
 };
 
 use super::exact_dense_stream::{
-    DenseExecutionPolicy, DensePhysicalPlan, ExactDenseCursor, PendingBound,
+    DenseExecutionPolicy, DensePhysicalPlan, DenseRankState, PendingBound,
 };
 use crate::common::check_stopped;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -33,7 +33,6 @@ use crate::vector_storage::quantized::quantized_ram_storage::{
 use crate::vector_storage::quantized::quantized_storage::{
     QuantizedStorage, QuantizedStorageBuilder,
 };
-use crate::vector_storage::raw_scorer::new_raw_scorer_preprocessed;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 pub(crate) const DATA_FILE: &str = "per_vector_scalar.data";
@@ -67,19 +66,19 @@ impl fmt::Debug for PerVectorScalarIndexVariant {
 
 impl PerVectorScalarIndexVariant {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn cursor_with_refine_batch<'a>(
+    pub(crate) fn rank_state_with_refine_batch(
         &self,
-        vector_storage: &'a VectorStorageEnum,
+        vector_storage: &VectorStorageEnum,
         eligible: Vec<PointOffsetType>,
         raw_query: &[f32],
         exact_refine_batch: usize,
         hardware_counter: &HardwareCounterCell,
         stopped: &AtomicBool,
-    ) -> OperationResult<ExactDenseCursor<'a>> {
+    ) -> OperationResult<DenseRankState> {
         match self {
             Self::Ram(index) => {
                 if is_complete_contiguous_universe(index, &eligible) {
-                    index.cursor_contiguous_with_refine_batch(
+                    index.rank_state_contiguous_with_refine_batch(
                         vector_storage,
                         raw_query,
                         exact_refine_batch,
@@ -87,7 +86,7 @@ impl PerVectorScalarIndexVariant {
                         stopped,
                     )
                 } else {
-                    index.cursor_with_refine_batch(
+                    index.rank_state_with_refine_batch(
                         vector_storage,
                         eligible,
                         raw_query,
@@ -99,7 +98,7 @@ impl PerVectorScalarIndexVariant {
             }
             Self::Mmap(index) => {
                 if is_complete_contiguous_universe(index, &eligible) {
-                    index.cursor_contiguous_with_refine_batch(
+                    index.rank_state_contiguous_with_refine_batch(
                         vector_storage,
                         raw_query,
                         exact_refine_batch,
@@ -107,7 +106,7 @@ impl PerVectorScalarIndexVariant {
                         stopped,
                     )
                 } else {
-                    index.cursor_with_refine_batch(
+                    index.rank_state_with_refine_batch(
                         vector_storage,
                         eligible,
                         raw_query,
@@ -171,11 +170,11 @@ fn is_complete_contiguous_universe<TStorage: EncodedStorage>(
 }
 
 mod contiguous;
-mod cursor;
+mod rank_state;
 mod storage;
 
 #[cfg(feature = "stratumind-research")]
-pub use cursor::PerVectorScalarCursorProfile;
+pub use rank_state::PerVectorScalarBuildProfile;
 
 #[cfg(test)]
 mod production_tests;

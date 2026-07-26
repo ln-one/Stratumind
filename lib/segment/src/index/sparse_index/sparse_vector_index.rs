@@ -11,10 +11,8 @@ use fs_err as fs;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-use sparse::index::native_rank_stream::NativeSearchContextRankStream;
-use sparse::index::posting_block_stream::{
-    ExactSparseCursor, NativeCertifiedSparseCursor, NativeSparseCursorError, PostingBlockMaxState,
-    PostingBlockMaxVariant, SparseExecutionPlan,
+use sparse::index::posting_block_max::{
+    ExactSparseStreamError, PostingBlockMaxState, PostingBlockMaxVariant,
 };
 use sparse::{SearchScratchArena, SearchScratchPool};
 
@@ -221,116 +219,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         &self.inverted_index
     }
 
-    /// Opens an exact, score-ordered cursor directly over this persisted
-    /// Segment index.
-    ///
-    /// Unlike `search(top)`, the cursor preserves its posting and certificate
-    /// state between pulls and reports exact EOF separately from failure. The
-    /// caller owns the scratch arena for the cursor lifetime so a Shard-level
-    /// merger can keep several Segment cursors paused at once.
-    pub fn exact_cursor<'a>(
-        &'a self,
-        query: &SparseVector,
-        batch_size: usize,
-        arena: &'a SearchScratchArena,
-        hardware_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<NativeCertifiedSparseCursor<'a, TInvertedIndex>> {
-        if batch_size == 0 {
-            return Err(OperationError::validation_error(
-                "native Sparse cursor batch size must be positive",
-            ));
-        }
-        if query.indices.len() != query.values.len()
-            || query
-                .values
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight < 0.0)
-        {
-            return Err(OperationError::validation_error(
-                "native Sparse cursor requires aligned finite non-negative impacts",
-            ));
-        }
-        let remapped_query = self.indices_tracker.remap_vector(query.clone());
-        Ok(NativeCertifiedSparseCursor::new_with_variant(
-            &self.inverted_index,
-            remapped_query,
-            batch_size,
-            PostingBlockMaxVariant::CompressedMetadata,
-            arena,
-            hardware_counter,
-        )?)
-    }
-
-    /// Opens one interchangeable exact Sparse physical plan.
-    ///
-    /// `Auto` uses the promoted compressed-metadata planner. The frozen eager
-    /// cursor remains available as an explicit exact fallback.
-    pub fn exact_cursor_with_plan<'a>(
-        &'a self,
-        query: &SparseVector,
-        batch_size: usize,
-        plan: SparseExecutionPlan,
-        arena: &'a SearchScratchArena,
-        hardware_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Box<dyn ExactSparseCursor + 'a>> {
-        if batch_size == 0 {
-            return Err(OperationError::validation_error(
-                "native Sparse cursor batch size must be positive",
-            ));
-        }
-        if query.indices.len() != query.values.len()
-            || query
-                .values
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight < 0.0)
-        {
-            return Err(OperationError::validation_error(
-                "native Sparse cursor requires aligned finite non-negative impacts",
-            ));
-        }
-        let remapped_query = self.indices_tracker.remap_vector(query.clone());
-        let plan = match plan {
-            SparseExecutionPlan::Auto => SparseExecutionPlan::PostingBlockMax,
-            explicit => explicit,
-        };
-        let cursor: Box<dyn ExactSparseCursor + 'a> = match plan {
-            SparseExecutionPlan::EagerPostingBlock => Box::new(NativeCertifiedSparseCursor::new(
-                &self.inverted_index,
-                remapped_query,
-                batch_size,
-                arena,
-                hardware_counter,
-            )?),
-            SparseExecutionPlan::NativeSearchContext => {
-                Box::new(NativeSearchContextRankStream::new(
-                    remapped_query,
-                    batch_size,
-                    &self.inverted_index,
-                    arena,
-                    hardware_counter,
-                )?)
-            }
-            #[cfg(feature = "stratumind-research")]
-            SparseExecutionPlan::FlatBmp | SparseExecutionPlan::SuperblockBmp => {
-                return Err(OperationError::validation_error(
-                    "BMP research plans are not part of the production Segment",
-                ));
-            }
-            SparseExecutionPlan::PostingBlockMax => {
-                Box::new(NativeCertifiedSparseCursor::new_with_variant(
-                    &self.inverted_index,
-                    remapped_query,
-                    batch_size,
-                    PostingBlockMaxVariant::CompressedMetadata,
-                    arena,
-                    hardware_counter,
-                )?)
-            }
-            SparseExecutionPlan::Auto => unreachable!("Auto is resolved above"),
-        };
-        Ok(cursor)
-    }
-
     pub fn exact_rank_state(
         &self,
         query: &SparseVector,
@@ -346,19 +234,18 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 .any(|weight| !weight.is_finite() || *weight < 0.0)
         {
             return Err(OperationError::validation_error(
-                "native Sparse rank state requires a positive batch and finite non-negative impacts",
+                "exact Sparse rank state requires a positive batch and finite non-negative impacts",
             ));
         }
         let remapped_query = self.indices_tracker.remap_vector(query.clone());
-        Ok(NativeCertifiedSparseCursor::new_with_variant(
+        Ok(PostingBlockMaxState::new_with_variant(
             &self.inverted_index,
             remapped_query,
             batch_size,
             PostingBlockMaxVariant::CompressedMetadata,
             arena,
             hardware_counter,
-        )?
-        .into_rank_state())
+        )?)
     }
 
     pub fn advance_exact_rank_state(
@@ -378,11 +265,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 stopped,
             )
             .map_err(|error| match error {
-                NativeSparseCursorError::Cancelled => {
-                    OperationError::cancelled("native Sparse rank state was cancelled")
+                ExactSparseStreamError::Cancelled => {
+                    OperationError::cancelled("exact Sparse rank state was cancelled")
                 }
-                NativeSparseCursorError::ReaderFailure(_)
-                | NativeSparseCursorError::CertificateViolation { .. } => {
+                ExactSparseStreamError::ReaderFailure(_)
+                | ExactSparseStreamError::CertificateViolation { .. } => {
                     OperationError::inconsistent_storage(error.to_string())
                 }
             })

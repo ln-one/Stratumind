@@ -10,8 +10,8 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::Result;
 use ordered_float::OrderedFloat;
 
-use super::telemetry::{PostingBlockMaxVariant, PostingBlockStreamTelemetry};
-use super::{NativeSparseCursorError, PendingPoint};
+use super::telemetry::{PostingBlockMaxTelemetry, PostingBlockMaxVariant};
+use super::{ExactSparseStreamError, PendingPoint};
 use crate::SearchScratchArena;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimWeight};
@@ -122,7 +122,7 @@ impl PostingBlockMaxKernel {
         variant: PostingBlockMaxVariant,
         arena: &'a SearchScratchArena,
         hardware_counter: &'a HardwareCounterCell,
-        telemetry: &mut PostingBlockStreamTelemetry,
+        telemetry: &mut PostingBlockMaxTelemetry,
         phase_telemetry: bool,
     ) -> Result<(Self, BinaryHeap<PendingBatch>)> {
         #[cfg(not(feature = "stratumind-research"))]
@@ -187,15 +187,15 @@ impl PostingBlockMaxKernel {
         hardware_counter: &'a HardwareCounterCell,
         batch: PendingBatch,
         stopped: &AtomicBool,
-        telemetry: &mut PostingBlockStreamTelemetry,
-    ) -> std::result::Result<Option<(PendingPoint, usize)>, NativeSparseCursorError> {
+        telemetry: &mut PostingBlockMaxTelemetry,
+    ) -> std::result::Result<Option<(PendingPoint, usize)>, ExactSparseStreamError> {
         if stopped.load(Relaxed) {
-            return Err(NativeSparseCursorError::Cancelled);
+            return Err(ExactSparseStreamError::Cancelled);
         }
         telemetry.batches_expanded += 1;
         let batch_len = (batch.end - batch.start + 1) as usize;
         let postings = open_postings(index, &self.query, arena, hardware_counter)
-            .map_err(|error| NativeSparseCursorError::ReaderFailure(error.to_string()))?;
+            .map_err(|error| ExactSparseStreamError::ReaderFailure(error.to_string()))?;
 
         #[cfg(feature = "stratumind-research")]
         let score_started = self.phase_telemetry.then(Instant::now);
@@ -322,7 +322,7 @@ impl PostingBlockMaxKernel {
         postings: &[WeightedPosting<T>],
         batch: PendingBatch,
         batch_len: usize,
-        telemetry: &mut PostingBlockStreamTelemetry,
+        telemetry: &mut PostingBlockMaxTelemetry,
     ) {
         let mut postings = postings.to_vec();
         telemetry.posting_elements_visited += score_posting_batch(
@@ -352,7 +352,7 @@ impl PostingBlockMaxKernel {
 fn plan_batches<T: PostingListIter + Clone>(
     postings: &[WeightedPosting<T>],
     batch_size: usize,
-    telemetry: &mut PostingBlockStreamTelemetry,
+    telemetry: &mut PostingBlockMaxTelemetry,
 ) -> Vec<PendingBatch> {
     let batch_width: PointOffsetType = batch_size
         .try_into()
@@ -404,7 +404,7 @@ fn plan_batches<T: PostingListIter + Clone>(
 fn plan_batches_native<T: PostingListIter + Clone>(
     postings: &[WeightedPosting<T>],
     batch_size: usize,
-    telemetry: &mut PostingBlockStreamTelemetry,
+    telemetry: &mut PostingBlockMaxTelemetry,
 ) -> Option<Vec<PendingBatch>> {
     let batch_width: PointOffsetType = batch_size.try_into().ok()?;
     let min_id = postings
@@ -479,19 +479,19 @@ fn collect_scored_points(
     batch_start: PointOffsetType,
     batch_upper_bound: ScoreType,
     stopped: &AtomicBool,
-    telemetry: &mut PostingBlockStreamTelemetry,
-) -> std::result::Result<Vec<ScoredPointOffset>, NativeSparseCursorError> {
+    telemetry: &mut PostingBlockMaxTelemetry,
+) -> std::result::Result<Vec<ScoredPointOffset>, ExactSparseStreamError> {
     let mut points = Vec::new();
     for (offset, score) in scores {
         if stopped.load(Relaxed) {
-            return Err(NativeSparseCursorError::Cancelled);
+            return Err(ExactSparseStreamError::Cancelled);
         }
         if score == 0.0 {
             continue;
         }
         let id = batch_start + offset as PointOffsetType;
         if score > batch_upper_bound {
-            return Err(NativeSparseCursorError::CertificateViolation {
+            return Err(ExactSparseStreamError::CertificateViolation {
                 point: id,
                 score,
                 upper_bound: batch_upper_bound,

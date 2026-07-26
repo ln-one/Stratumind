@@ -1,6 +1,6 @@
 use quantization::EncodedStorage;
 
-use super::cursor::compact_style_guard_factor;
+use super::rank_state::compact_style_guard_factor;
 use super::*;
 use crate::data_types::vectors::{
     DEFAULT_VECTOR_NAME, QueryVector, VectorInternal, only_default_vector,
@@ -46,8 +46,8 @@ fn exact_cursor_matches_authoritative_cosine_order() {
         .map(|coordinate| ((coordinate * 53 % 997) as f32 - 498.0) / 503.0)
         .collect();
     let eligible: Vec<_> = (0..257).collect();
-    let mut cursor = index
-        .cursor_with_refine_batch(
+    let mut state = index
+        .rank_state_with_refine_batch(
             &storage,
             eligible.clone(),
             &query,
@@ -56,12 +56,20 @@ fn exact_cursor_matches_authoritative_cosine_order() {
             &AtomicBool::new(false),
         )
         .unwrap();
+    let query_vector: QueryVector = VectorInternal::Dense(query.clone()).into();
+    let scorer = new_raw_scorer(query_vector, &storage, hardware_counter.fork()).unwrap();
     let mut actual = Vec::new();
-    while let Some(point) = cursor.next_result().unwrap() {
-        actual.push(point);
+    loop {
+        let batch = state
+            .next_batch_with(64, |ids, scores| scorer.score_points(ids, scores))
+            .unwrap();
+        if batch.is_empty() {
+            break;
+        }
+        actual.extend(batch);
     }
     let (mut contiguous, profile) = index
-        .cursor_contiguous_with_refine_batch_profiled(
+        .rank_state_contiguous_with_refine_batch_profiled(
             &storage,
             &query,
             16,
@@ -69,9 +77,17 @@ fn exact_cursor_matches_authoritative_cosine_order() {
             &AtomicBool::new(false),
         )
         .unwrap();
+    let query_vector: QueryVector = VectorInternal::Dense(query.clone()).into();
+    let scorer = new_raw_scorer(query_vector, &storage, hardware_counter.fork()).unwrap();
     let mut contiguous_actual = Vec::new();
-    while let Some(point) = contiguous.next_result().unwrap() {
-        contiguous_actual.push(point);
+    loop {
+        let batch = contiguous
+            .next_batch_with(64, |ids, scores| scorer.score_points(ids, scores))
+            .unwrap();
+        if batch.is_empty() {
+            break;
+        }
+        contiguous_actual.extend(batch);
     }
     assert_eq!(contiguous_actual, actual);
     assert_eq!(profile.bound_id_reserved_bytes, 0);
@@ -373,8 +389,8 @@ fn collect_order<TStorage: EncodedStorage>(
     hardware_counter: &HardwareCounterCell,
     stopped: &AtomicBool,
 ) -> Vec<common::types::ScoredPointOffset> {
-    let mut cursor = index
-        .cursor_with_refine_batch(
+    let mut state = index
+        .rank_state_with_refine_batch(
             storage,
             eligible.to_vec(),
             query,
@@ -383,9 +399,17 @@ fn collect_order<TStorage: EncodedStorage>(
             stopped,
         )
         .unwrap();
+    let query_vector: QueryVector = VectorInternal::Dense(query.to_vec()).into();
+    let scorer = new_raw_scorer(query_vector, storage, hardware_counter.fork()).unwrap();
     let mut actual = Vec::new();
-    while let Some(point) = cursor.next_result().unwrap() {
-        actual.push(point);
+    loop {
+        let batch = state
+            .next_batch_with(64, |ids, scores| scorer.score_points(ids, scores))
+            .unwrap();
+        if batch.is_empty() {
+            break;
+        }
+        actual.extend(batch);
     }
     actual
 }

@@ -7,14 +7,12 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use common::universal_io::MmapFile;
 use half::f16;
-use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
-use super::exact_sparse_stream::ExactSparseIndexCursor;
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_vector_index::PlainVectorIndex;
 use super::sparse_index::sparse_vector_index::SparseVectorIndex;
@@ -69,18 +67,6 @@ pub trait VectorIndexRead {
     /// read-only implementations safely expose no certificate source.
     fn quantized_vectors(&self) -> Option<Arc<AtomicRefCell<Option<QuantizedVectors>>>> {
         None
-    }
-
-    /// Open a resumable exact Sparse stream when this index is Sparse.
-    /// Dense and read-only implementations reject this by default.
-    fn exact_sparse_cursor<'a>(
-        &'a self,
-        _query: &SparseVector,
-        _batch_size: usize,
-        _arena: &'a sparse::SearchScratchArena,
-        _hardware_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<ExactSparseIndexCursor<'a>> {
-        Err(crate::common::operation_error::OperationError::WrongSparse)
     }
 }
 
@@ -306,16 +292,6 @@ impl VectorIndexRead for VectorIndexEnum {
             | Self::SparseCompressedMmapF16(_)
             | Self::SparseCompressedMmapU8(_) => None,
         }
-    }
-
-    fn exact_sparse_cursor<'a>(
-        &'a self,
-        query: &SparseVector,
-        batch_size: usize,
-        arena: &'a sparse::SearchScratchArena,
-        hardware_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<ExactSparseIndexCursor<'a>> {
-        ExactSparseIndexCursor::open(self, query, batch_size, arena, hardware_counter)
     }
 
     fn fill_idf_statistics(

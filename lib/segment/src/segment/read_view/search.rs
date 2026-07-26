@@ -1,4 +1,6 @@
-use std::collections::{HashSet, VecDeque};
+#[cfg(feature = "stratumind-research")]
+use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
@@ -17,9 +19,7 @@ use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
 use crate::data_types::vectors::VectorInternal;
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
-use crate::index::exact_dense_stream::{
-    DenseExecutionPolicy, DenseExecutionTelemetry, DenseRankState, ExactDenseCursor,
-};
+use crate::index::exact_dense_stream::{DenseExecutionPolicy, DenseRankState};
 use crate::index::exact_sparse_stream::ExactSparseIndexState;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
@@ -58,15 +58,47 @@ impl SegmentReadViewFor<'_> {
         policy: DenseExecutionPolicy,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<DenseRankState> {
-        self.with_exact_dense_session(
-            vector_name,
+        if query.is_empty() || query.iter().any(|coordinate| !coordinate.is_finite()) {
+            return Err(OperationError::validation_error(
+                "exact Dense session requires a non-empty finite Query",
+            ));
+        }
+        let vector_data = self
+            .vector_data
+            .get(vector_name)
+            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
+        let vector_query_context = query_context.get_vector_context(vector_name);
+        let hardware_counter = vector_query_context.hardware_counter();
+        let stopped = vector_query_context.is_stopped();
+        let vector_index = vector_data.vector_index();
+        let quantized = vector_index.quantized_vectors();
+        let quantized = quantized.as_ref().map(|quantized| quantized.borrow());
+        let quantized = quantized.as_ref().and_then(|quantized| quantized.as_ref());
+        let vector_storage = vector_data.vector_storage();
+        let deleted_vectors = vector_storage.deleted_vector_bitslice();
+        let deleted_points = self.id_tracker.deleted_point_bitslice();
+        let deferred_from = self.id_tracker.deferred_internal_id();
+        let filter_context = filter
+            .map(|filter| self.payload_index.filter_context(filter, &hardware_counter))
+            .transpose()?;
+        let eligible = (0..vector_storage.total_vector_count() as u32)
+            .filter(|&point| {
+                check_deleted_condition(point, deleted_vectors, deleted_points)
+                    && deferred_from.is_none_or(|deferred| point < deferred)
+                    && filter_context
+                        .as_ref()
+                        .is_none_or(|context| context.check(point))
+            })
+            .collect();
+        DenseRankState::new(
+            &vector_storage,
+            quantized,
+            eligible,
             query,
-            filter,
             policy,
-            query_context,
-            |cursor| Ok(cursor.take_rank_state()),
+            &hardware_counter,
+            &stopped,
         )
-        .map(|(state, _)| state)
     }
 
     /// Advance owned Dense state while borrowing this Segment only for the
@@ -126,7 +158,7 @@ impl SegmentReadViewFor<'_> {
     ) -> OperationResult<Vec<ScoredPoint>> {
         if max_results == 0 {
             return Err(OperationError::validation_error(
-                "native Dense delivery batch must be positive",
+                "exact Dense delivery batch must be positive",
             ));
         }
         let mut pull_visible = || -> OperationResult<Option<ScoredPoint>> {
@@ -148,13 +180,13 @@ impl SegmentReadViewFor<'_> {
                 .expect("non-empty Dense internal batch");
             let id = self.id_tracker.external_id(point.idx).ok_or_else(|| {
                 OperationError::inconsistent_storage(format!(
-                    "native Dense rank state returned unmapped internal point {}",
+                    "exact Dense rank state returned unmapped internal point {}",
                     point.idx
                 ))
             })?;
             let version = self.id_tracker.internal_version(point.idx).ok_or_else(|| {
                 OperationError::inconsistent_storage(format!(
-                    "native Dense rank state returned unversioned point {id}"
+                    "exact Dense rank state returned unversioned point {id}"
                 ))
             })?;
             Ok(Some(ScoredPoint {
@@ -362,6 +394,7 @@ impl SegmentReadViewFor<'_> {
     /// Unlike `with_exact_dense_stream`, this low-level entry point does not
     /// prepend an independently materialized exact prefix. It is intended for
     /// certificate schedulers that need one canonical physical Dense state.
+    #[cfg(feature = "stratumind-research")]
     pub fn with_exact_dense_session<R>(
         &self,
         vector_name: &VectorName,
@@ -369,7 +402,7 @@ impl SegmentReadViewFor<'_> {
         filter: Option<&Filter>,
         policy: DenseExecutionPolicy,
         query_context: &SegmentQueryContext,
-        consume: impl FnOnce(&mut ExactDenseCursor<'_>) -> OperationResult<R>,
+        consume: impl FnOnce(&mut DenseRankState) -> OperationResult<R>,
     ) -> OperationResult<(R, DenseExecutionTelemetry)> {
         if query.is_empty() || query.iter().any(|coordinate| !coordinate.is_finite()) {
             return Err(OperationError::validation_error(
@@ -403,7 +436,7 @@ impl SegmentReadViewFor<'_> {
                         .is_none_or(|context| context.check(point))
             })
             .collect::<Vec<_>>();
-        let mut cursor = ExactDenseCursor::new(
+        let mut state = DenseRankState::new(
             &vector_storage,
             quantized,
             eligible,
@@ -412,13 +445,14 @@ impl SegmentReadViewFor<'_> {
             &hardware_counter,
             &stopped,
         )?;
-        let result = consume(&mut cursor)?;
-        Ok((result, cursor.telemetry()))
+        let result = consume(&mut state)?;
+        Ok((result, state.telemetry()))
     }
 
     /// Drives one exact Dense stream over the Segment's frozen read view.
     /// The physical router selects an exact prefix, Compact certificate,
     /// Scalar certificate, or exact scan from frozen Segment metadata.
+    #[cfg(feature = "stratumind-research")]
     pub fn with_exact_dense_stream<R>(
         &self,
         vector_name: &VectorName,
@@ -697,6 +731,7 @@ where
     /// worker implement pull-based pause/resume without moving a borrowing
     /// cursor out of the Segment lock. Returned points use external identities
     /// and exclude deleted, deferred, and filter-invisible records.
+    #[cfg(feature = "stratumind-research")]
     pub fn with_exact_sparse_stream<R>(
         &self,
         vector_name: &VectorName,
@@ -733,6 +768,7 @@ where
     ///
     /// One call returns at most one newly certified external-identity score
     /// group. It may therefore return fewer than `max_results` without EOF.
+    #[cfg(feature = "stratumind-research")]
     pub fn with_exact_sparse_batch_stream<R>(
         &self,
         vector_name: &VectorName,

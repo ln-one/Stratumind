@@ -52,15 +52,15 @@ pub(super) fn select_dense_plan(
 }
 
 #[expect(clippy::too_many_arguments)]
-pub(super) fn build_per_vector_scalar_certificate_cursor<'a>(
-    vector_storage: &'a VectorStorageEnum,
+pub(super) fn build_per_vector_scalar_certificate_state(
+    vector_storage: &VectorStorageEnum,
     quantized: &QuantizedVectors,
     eligible: Vec<PointOffsetType>,
     query: &[f32],
     hardware_counter: &HardwareCounterCell,
     stopped: &AtomicBool,
     exact_refine_batch: usize,
-) -> OperationResult<ExactDenseCursor<'a>> {
+) -> OperationResult<DenseRankState> {
     const PRODUCTION_PVS_EXACT_REFINE_BATCH: usize = 16;
     quantized
         .per_vector_scalar()
@@ -69,7 +69,7 @@ pub(super) fn build_per_vector_scalar_certificate_cursor<'a>(
                 "PerVectorScalar plan was selected without a persisted index",
             )
         })?
-        .cursor_with_refine_batch(
+        .rank_state_with_refine_batch(
             vector_storage,
             eligible,
             query,
@@ -80,16 +80,14 @@ pub(super) fn build_per_vector_scalar_certificate_cursor<'a>(
 }
 
 #[expect(clippy::too_many_arguments)]
-pub(super) fn build_compact_certificate_cursor<'a>(
-    vector_storage: &'a VectorStorageEnum,
+pub(super) fn build_compact_certificate_state(
+    vector_storage: &VectorStorageEnum,
     quantized: &QuantizedVectors,
     eligible: Vec<PointOffsetType>,
     query: &[f32],
-    query_vector: QueryVector,
-    hardware_counter: &HardwareCounterCell,
     stopped: &AtomicBool,
     exact_refine_batch: usize,
-) -> OperationResult<ExactDenseCursor<'a>> {
+) -> OperationResult<DenseRankState> {
     let compact = quantized
         .compact_dense_certificate()
         .expect("compact plan availability checked");
@@ -121,11 +119,9 @@ pub(super) fn build_compact_certificate_cursor<'a>(
         ));
     }
     let point_count = eligible.len();
-    let exact_scorer = new_raw_scorer(query_vector, vector_storage, hardware_counter.fork())?;
-    ExactDenseCursor::from_certificate_bounds_batched(
+    DenseRankState::from_certificate_bounds_batched(
         eligible,
         bounds,
-        move |ids, scores| exact_scorer.score_points(ids, scores),
         exact_refine_batch,
         DensePhysicalPlan::CompactCertificate,
         point_count,
@@ -133,16 +129,15 @@ pub(super) fn build_compact_certificate_cursor<'a>(
 }
 
 #[expect(clippy::too_many_arguments)]
-pub(super) fn build_scalar_certificate_cursor<'a>(
-    vector_storage: &'a VectorStorageEnum,
+pub(super) fn build_scalar_certificate_state(
+    vector_storage: &VectorStorageEnum,
     quantized: &QuantizedVectors,
     eligible: Vec<PointOffsetType>,
     query: &[f32],
-    query_vector: QueryVector,
     hardware_counter: &HardwareCounterCell,
     stopped: &AtomicBool,
     exact_refine_batch: usize,
-) -> OperationResult<ExactDenseCursor<'a>> {
+) -> OperationResult<DenseRankState> {
     let reconstruction = quantized
         .scalar_reconstruction_table()
         .expect("Scalar plan availability checked");
@@ -156,7 +151,8 @@ pub(super) fn build_scalar_certificate_cursor<'a>(
                 "Scalar quantization did not expose Query reconstruction statistics",
             )
         })?;
-    let approximate_scorer = quantized.raw_scorer(query_vector.clone(), hardware_counter.fork())?;
+    let query_vector: QueryVector = VectorInternal::Dense(query.to_vec()).into();
+    let approximate_scorer = quantized.raw_scorer(query_vector, hardware_counter.fork())?;
     let mut approximate = vec![0.0; eligible.len()];
     for (points, scores) in eligible
         .chunks(NATIVE_DENSE_SCORE_CHUNK_SIZE)
@@ -185,54 +181,29 @@ pub(super) fn build_scalar_certificate_cursor<'a>(
             )
         })
         .collect();
-    drop(approximate_scorer);
     let point_count = eligible.len();
-    let exact_scorer = new_raw_scorer(query_vector, vector_storage, hardware_counter.fork())?;
-    ExactDenseCursor::from_certificate_bounds_batched(
+    DenseRankState::from_certificate_bounds_batched(
         eligible,
         bounds,
-        move |ids, scores| exact_scorer.score_points(ids, scores),
         exact_refine_batch,
         DensePhysicalPlan::ScalarCertificate,
         point_count,
     )
 }
 
-pub(super) fn build_exact_scan_cursor<'a>(
-    vector_storage: &'a VectorStorageEnum,
+pub(super) fn build_exact_scan_state(
     eligible: Vec<PointOffsetType>,
-    query_vector: QueryVector,
-    hardware_counter: &HardwareCounterCell,
-    stopped: &AtomicBool,
-) -> OperationResult<ExactDenseCursor<'a>> {
-    let scorer = new_raw_scorer(query_vector, vector_storage, hardware_counter.fork())?;
-    let mut scores = vec![0.0; eligible.len()];
-    for (points, scores) in eligible
-        .chunks(NATIVE_DENSE_SCORE_CHUNK_SIZE)
-        .zip(scores.chunks_mut(NATIVE_DENSE_SCORE_CHUNK_SIZE))
-    {
-        check_stopped(stopped)?;
-        scorer.score_points(points, scores);
-    }
-    let mut points: Vec<_> = eligible
-        .iter()
-        .copied()
-        .zip(scores)
-        .map(|(idx, score)| ScoredPointOffset { idx, score })
-        .collect();
-    points.sort_unstable_by(|left, right| {
-        OrderedFloat(right.score)
-            .cmp(&OrderedFloat(left.score))
-            .then_with(|| left.idx.cmp(&right.idx))
-    });
-    let point_count = points.len();
-    Ok(ExactDenseCursor {
-        inner: ExactDenseCursorInner::Scan(ExactScanCursor { points, next: 0 }),
+) -> OperationResult<DenseRankState> {
+    let point_count = eligible.len();
+    Ok(DenseRankState {
+        inner: DenseRankStateInner::Scan(ExactScanState {
+            points: None,
+            next: 0,
+        }),
         eligible: EligibleUniverse::explicit(eligible),
         telemetry: DenseExecutionTelemetry {
             plan: Some(DensePhysicalPlan::ExactScan),
             eligible_points: point_count,
-            exact_scores: point_count,
             ..Default::default()
         },
     })

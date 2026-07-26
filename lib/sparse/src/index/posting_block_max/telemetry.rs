@@ -33,7 +33,7 @@ pub enum SparseExecutionPlan {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
-pub struct PostingBlockStreamTelemetry {
+pub struct PostingBlockMaxTelemetry {
     pub plan: SparsePhysicalPlan,
     pub cursor_started: bool,
     pub query_terms: usize,

@@ -8,10 +8,6 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::Result;
 use serde::Serialize;
 
-#[cfg(test)]
-use super::native_rank_stream::{NativeSearchContextRankStream, SparseIncrementalRankCertificate};
-#[cfg(test)]
-use super::posting_block_stream::NativeSparseCursorError;
 use super::posting_list_common::PostingListIter;
 use crate::SearchScratch;
 use crate::common::sparse_vector::{RemappedSparseVector, score_vectors};
@@ -627,7 +623,3 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             .expect("sparse batch size exceeds PointOffsetType");
     }
 }
-
-#[cfg(test)]
-#[path = "search_context/native_rank_stream_tests.rs"]
-mod native_rank_stream_tests;

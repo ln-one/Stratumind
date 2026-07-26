@@ -108,7 +108,7 @@ fn persisted_pvs_is_selected_by_production_auto_and_preserves_exact_order() {
     let eligible = (0..POINTS as PointOffsetType).collect::<Vec<_>>();
     let hardware_counter = HardwareCounterCell::new();
     let expected = authoritative_order(&storage, &query, &eligible, &hardware_counter);
-    let mut cursor = ExactDenseCursor::new(
+    let mut state = DenseRankState::new(
         &storage,
         Some(&quantized),
         eligible,
@@ -122,13 +122,22 @@ fn persisted_pvs_is_selected_by_production_auto_and_preserves_exact_order() {
         &stopped,
     )
     .unwrap();
-    let actual = std::iter::from_fn(|| cursor.next_result().transpose())
-        .collect::<OperationResult<Vec<_>>>()
-        .unwrap();
+    let query_vector: QueryVector = VectorInternal::Dense(query.clone()).into();
+    let scorer = new_raw_scorer(query_vector, &storage, hardware_counter.fork()).unwrap();
+    let mut actual = Vec::new();
+    loop {
+        let batch = state
+            .next_batch_with(64, |ids, scores| scorer.score_points(ids, scores))
+            .unwrap();
+        if batch.is_empty() {
+            break;
+        }
+        actual.extend(batch);
+    }
 
     assert_eq!(actual, expected);
     assert_eq!(
-        cursor.telemetry().plan,
+        state.telemetry().plan,
         Some(DensePhysicalPlan::PerVectorScalarCertificate),
     );
 }
@@ -174,7 +183,7 @@ fn invalid_pvs_is_quarantined_and_auto_falls_back_to_scalar() {
     let query = vec![0.25; DIMENSION];
     let eligible = (0..POINTS as PointOffsetType).collect::<Vec<_>>();
     let hardware_counter = HardwareCounterCell::new();
-    let mut cursor = ExactDenseCursor::new(
+    let state = DenseRankState::new(
         &storage,
         Some(&quantized),
         eligible,
@@ -188,9 +197,8 @@ fn invalid_pvs_is_quarantined_and_auto_falls_back_to_scalar() {
         &stopped,
     )
     .unwrap();
-    assert!(cursor.next_result().unwrap().is_some());
     assert_eq!(
-        cursor.telemetry().plan,
+        state.telemetry().plan,
         Some(DensePhysicalPlan::ScalarCertificate),
     );
 }

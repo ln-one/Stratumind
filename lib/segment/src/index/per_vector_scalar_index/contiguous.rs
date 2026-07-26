@@ -1,20 +1,20 @@
 use std::time::Instant;
 
-use super::cursor::{PerVectorScalarCursorProfile, compact_style_guard_factor};
+use super::rank_state::{PerVectorScalarBuildProfile, compact_style_guard_factor};
 use super::storage::validate_storage;
 use super::*;
 
 impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
     #[allow(clippy::too_many_arguments)]
-    pub fn cursor_contiguous_with_refine_batch<'a>(
+    pub fn rank_state_contiguous_with_refine_batch(
         &self,
-        vector_storage: &'a VectorStorageEnum,
+        vector_storage: &VectorStorageEnum,
         raw_query: &[f32],
         exact_refine_batch: usize,
         hardware_counter: &HardwareCounterCell,
         stopped: &AtomicBool,
-    ) -> OperationResult<ExactDenseCursor<'a>> {
-        self.cursor_contiguous_with_refine_batch_impl(
+    ) -> OperationResult<DenseRankState> {
+        self.rank_state_contiguous_with_refine_batch_impl(
             vector_storage,
             raw_query,
             exact_refine_batch,
@@ -26,16 +26,16 @@ impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
 
     #[cfg(feature = "stratumind-research")]
     #[allow(clippy::too_many_arguments)]
-    pub fn cursor_contiguous_with_refine_batch_profiled<'a>(
+    pub fn rank_state_contiguous_with_refine_batch_profiled(
         &self,
-        vector_storage: &'a VectorStorageEnum,
+        vector_storage: &VectorStorageEnum,
         raw_query: &[f32],
         exact_refine_batch: usize,
         hardware_counter: &HardwareCounterCell,
         stopped: &AtomicBool,
-    ) -> OperationResult<(ExactDenseCursor<'a>, PerVectorScalarCursorProfile)> {
-        let mut profile = PerVectorScalarCursorProfile::default();
-        let cursor = self.cursor_contiguous_with_refine_batch_impl(
+    ) -> OperationResult<(DenseRankState, PerVectorScalarBuildProfile)> {
+        let mut profile = PerVectorScalarBuildProfile::default();
+        let state = self.rank_state_contiguous_with_refine_batch_impl(
             vector_storage,
             raw_query,
             exact_refine_batch,
@@ -43,19 +43,19 @@ impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
             stopped,
             Some(&mut profile),
         )?;
-        Ok((cursor, profile))
+        Ok((state, profile))
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cursor_contiguous_with_refine_batch_impl<'a>(
+    fn rank_state_contiguous_with_refine_batch_impl(
         &self,
-        vector_storage: &'a VectorStorageEnum,
+        vector_storage: &VectorStorageEnum,
         raw_query: &[f32],
         exact_refine_batch: usize,
         hardware_counter: &HardwareCounterCell,
         stopped: &AtomicBool,
-        mut profile: Option<&mut PerVectorScalarCursorProfile>,
-    ) -> OperationResult<ExactDenseCursor<'a>> {
+        mut profile: Option<&mut PerVectorScalarBuildProfile>,
+    ) -> OperationResult<DenseRankState> {
         let total_started = profile.as_ref().map(|_| Instant::now());
         let phase_started = profile.as_ref().map(|_| Instant::now());
         check_stopped(stopped)?;
@@ -75,7 +75,7 @@ impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
             || raw_query.iter().any(|coordinate| !coordinate.is_finite())
         {
             return Err(OperationError::validation_error(
-                "PerVectorScalar cursor requires a finite Query of matching dimension",
+                "PerVectorScalar rank state requires a finite Query of matching dimension",
             ));
         }
         if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_started) {
@@ -150,18 +150,10 @@ impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
             profile.eligible_reserved_bytes = 0;
         }
 
-        let phase_started = profile.as_ref().map(|_| Instant::now());
-        let exact_scorer =
-            new_raw_scorer_preprocessed(prepared_query, vector_storage, hardware_counter.fork())?;
-        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_started) {
-            profile.exact_scorer_construction_ns = started.elapsed().as_nanos();
-        }
-
-        let cursor = if profile.is_some() {
-            let (cursor, native) = ExactDenseCursor::from_contiguous_pending_batched_profiled(
+        let state = if profile.is_some() {
+            let (state, native) = DenseRankState::from_contiguous_pending_batched_profiled(
                 point_count,
                 pending,
-                move |ids, scores| exact_scorer.score_points(ids, scores),
                 exact_refine_batch,
                 DensePhysicalPlan::PerVectorScalarCertificate,
                 point_count,
@@ -180,20 +172,19 @@ impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
                 .saturating_add(profile.bounds_reserved_bytes)
                 .saturating_add(profile.bound_id_reserved_bytes)
                 .saturating_add(profile.pending_reserved_bytes);
-            cursor
+            state
         } else {
-            ExactDenseCursor::from_contiguous_pending_batched(
+            DenseRankState::from_contiguous_pending_batched(
                 point_count,
                 pending,
-                move |ids, scores| exact_scorer.score_points(ids, scores),
                 exact_refine_batch,
                 DensePhysicalPlan::PerVectorScalarCertificate,
                 point_count,
             )?
         };
         if let (Some(profile), Some(started)) = (profile.as_deref_mut(), total_started) {
-            profile.total_cursor_ns = started.elapsed().as_nanos();
+            profile.total_build_ns = started.elapsed().as_nanos();
         }
-        Ok(cursor)
+        Ok(state)
     }
 }

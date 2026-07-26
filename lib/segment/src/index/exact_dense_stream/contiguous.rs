@@ -1,10 +1,9 @@
 use super::*;
 
-impl<'a> ExactDenseCursor<'a> {
+impl DenseRankState {
     pub(crate) fn from_contiguous_pending_batched(
         point_count: usize,
         pending: Vec<PendingBound>,
-        exact_scorer: impl FnMut(&[PointOffsetType], &mut [f32]) + 'a,
         exact_refine_batch: usize,
         plan: DensePhysicalPlan,
         quantized_scores: usize,
@@ -12,7 +11,6 @@ impl<'a> ExactDenseCursor<'a> {
         Self::from_contiguous_pending_batched_impl(
             point_count,
             pending,
-            exact_scorer,
             exact_refine_batch,
             plan,
             quantized_scores,
@@ -23,7 +21,6 @@ impl<'a> ExactDenseCursor<'a> {
     pub(crate) fn from_contiguous_pending_batched_profiled(
         point_count: usize,
         pending: Vec<PendingBound>,
-        exact_scorer: impl FnMut(&[PointOffsetType], &mut [f32]) + 'a,
         exact_refine_batch: usize,
         plan: DensePhysicalPlan,
         quantized_scores: usize,
@@ -32,7 +29,6 @@ impl<'a> ExactDenseCursor<'a> {
         let cursor = Self::from_contiguous_pending_batched_impl(
             point_count,
             pending,
-            exact_scorer,
             exact_refine_batch,
             plan,
             quantized_scores,
@@ -44,7 +40,6 @@ impl<'a> ExactDenseCursor<'a> {
     fn from_contiguous_pending_batched_impl(
         point_count: usize,
         pending: Vec<PendingBound>,
-        exact_scorer: impl FnMut(&[PointOffsetType], &mut [f32]) + 'a,
         exact_refine_batch: usize,
         plan: DensePhysicalPlan,
         quantized_scores: usize,
@@ -91,15 +86,12 @@ impl<'a> ExactDenseCursor<'a> {
 
         let profile_refinement = profile.is_some();
         Ok(Self {
-            inner: ExactDenseCursorInner::Certificate(CertificateCursor {
-                exact_scorer: Box::new(exact_scorer),
-                state: CertificateState {
-                    exact_refine_batch,
-                    bounds,
-                    exact: BinaryHeap::new(),
-                    exact_scores: HashMap::new(),
-                    profile_refinement,
-                },
+            inner: DenseRankStateInner::Certificate(CertificateState {
+                exact_refine_batch,
+                bounds,
+                exact: BinaryHeap::new(),
+                exact_scores: HashMap::new(),
+                profile_refinement,
             }),
             eligible: EligibleUniverse::contiguous(point_count),
             telemetry: DenseExecutionTelemetry {
