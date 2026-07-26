@@ -11,12 +11,12 @@ evidence; if descriptive implementation text differs from the V1.1 contract, the
 ## Build and run
 
 ```bash
-docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.5
+docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.6
 docker run --rm \
   --publish 6333:6333 \
   --publish 6334:6334 \
   --volume stratumind-storage:/qdrant/storage \
-  stratumind:api-v1.1.5
+  stratumind:api-v1.1.6
 ```
 
 The upstream image entrypoint, health endpoints and configuration environment variables remain
@@ -90,7 +90,7 @@ before dynamic WRRF. It never fuses shard-local RRF results. Remote replicas and
 consistency requests use the exact adaptive-prefix plan. Router choice may change cost but not
 ordered Top-K.
 
-Production V1.1.5 uses the clean-break path
+Production V1.1.6 uses the clean-break path
 `ExactRrfService → ExactHybridSession → ExactShardStream → DenseRankState /
 PostingBlockMaxState`. Dense and Sparse retain owned, reader-independent ranking state. When fusion
 requests more results, a batch temporarily borrows a Qdrant `SegmentReadView`, advances, releases
