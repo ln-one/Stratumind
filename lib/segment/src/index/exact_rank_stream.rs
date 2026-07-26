@@ -9,12 +9,12 @@
 //! identity-only `ExactRrfStream` for cross-channel fusion.
 
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{BinaryHeap, HashSet, VecDeque};
 
 use ordered_float::OrderedFloat;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::reciprocal_rank_fusion::ExactRrfStream;
+use crate::common::reciprocal_rank_fusion::{ChannelRankBatch, ExactRrfStream};
 use crate::types::ExtendedPointId;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -29,6 +29,23 @@ pub struct ExactScoredIdentity {
 /// remote producers must own their lifecycle outside this fusion contract and
 /// adapt their pull replies at the coordinator boundary.
 pub type ExactScoreStream<'a> = Box<dyn Iterator<Item = OperationResult<ExactScoredIdentity>> + 'a>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExactScoreBatch {
+    pub points: Vec<ExactScoredIdentity>,
+    pub exhausted: bool,
+}
+
+pub type ExactScoreBatchStream<'a> = Box<dyn FnMut(usize) -> OperationResult<ExactScoreBatch> + 'a>;
+
+enum ExactScoreSource<'a> {
+    Point(ExactScoreStream<'a>),
+    Batch {
+        pull: ExactScoreBatchStream<'a>,
+        buffer: VecDeque<ExactScoredIdentity>,
+        exhausted: bool,
+    },
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ExactScoreMergeTelemetry {
@@ -68,7 +85,8 @@ impl PartialOrd for PendingExactScore {
 /// scores, cancellation, and storage failures all fail closed instead of being
 /// mistaken for EOF.
 pub struct KWayExactScoreStream<'a> {
-    sources: Vec<ExactScoreStream<'a>>,
+    sources: Vec<ExactScoreSource<'a>>,
+    source_refill_batch_size: usize,
     pending: BinaryHeap<PendingExactScore>,
     previous: Vec<Option<ExactScoredIdentity>>,
     refill_source: Option<usize>,
@@ -80,14 +98,43 @@ pub struct KWayExactScoreStream<'a> {
 
 impl<'a> KWayExactScoreStream<'a> {
     pub fn new(sources: Vec<ExactScoreStream<'a>>) -> OperationResult<Self> {
+        let sources = sources.into_iter().map(ExactScoreSource::Point).collect();
+        Self::new_with_sources(sources, 1)
+    }
+
+    pub fn new_batched(
+        sources: Vec<ExactScoreBatchStream<'a>>,
+        source_refill_batch_size: usize,
+    ) -> OperationResult<Self> {
+        let sources = sources
+            .into_iter()
+            .map(|pull| ExactScoreSource::Batch {
+                pull,
+                buffer: VecDeque::new(),
+                exhausted: false,
+            })
+            .collect();
+        Self::new_with_sources(sources, source_refill_batch_size)
+    }
+
+    fn new_with_sources(
+        sources: Vec<ExactScoreSource<'a>>,
+        source_refill_batch_size: usize,
+    ) -> OperationResult<Self> {
         if sources.is_empty() {
             return Err(OperationError::validation_error(
                 "exact score merge requires at least one source",
             ));
         }
+        if source_refill_batch_size == 0 {
+            return Err(OperationError::validation_error(
+                "exact score merge source refill batch size must be positive",
+            ));
+        }
         let source_count = sources.len();
         let mut stream = Self {
             sources,
+            source_refill_batch_size,
             pending: BinaryHeap::with_capacity(source_count),
             previous: vec![None; source_count],
             refill_source: None,
@@ -110,6 +157,43 @@ impl<'a> KWayExactScoreStream<'a> {
         &self.telemetry
     }
 
+    /// Pull one contiguous channel-global exact-rank batch.
+    ///
+    /// An error commits no identities to the caller. Internal failure is
+    /// sticky, and a later call returns the same error instead of EOF.
+    pub fn next_rank_batch(&mut self, max_results: usize) -> OperationResult<ChannelRankBatch> {
+        if max_results == 0 {
+            return Err(OperationError::validation_error(
+                "exact score merge batch size must be positive",
+            ));
+        }
+        if let Some(error) = &self.terminal_error {
+            return Err(error.clone());
+        }
+
+        let start_rank = self.telemetry.points_emitted;
+        let mut point_ids = Vec::with_capacity(max_results);
+        let mut exhausted = false;
+        while point_ids.len() < max_results {
+            match self.next_inner() {
+                Ok(Some(point)) => point_ids.push(point.id),
+                Ok(None) => {
+                    exhausted = true;
+                    break;
+                }
+                Err(error) => {
+                    self.fail(error.clone());
+                    return Err(error);
+                }
+            }
+        }
+        Ok(ChannelRankBatch {
+            start_rank,
+            point_ids,
+            exhausted,
+        })
+    }
+
     /// Erase scores only after every visible source for this channel has been
     /// included in the merge. A Segment- or Shard-local instance is not a
     /// global rank stream and must not be passed to WRRF.
@@ -127,7 +211,58 @@ impl<'a> KWayExactScoreStream<'a> {
         if self.telemetry.source_exhausted[source] {
             return Ok(());
         }
-        let Some(point) = self.sources[source].next().transpose()? else {
+        let previous_before_refill = self.previous[source];
+        let point = match &mut self.sources[source] {
+            ExactScoreSource::Point(stream) => stream.next().transpose()?,
+            ExactScoreSource::Batch {
+                pull,
+                buffer,
+                exhausted,
+            } => {
+                if buffer.is_empty() && !*exhausted {
+                    let batch = pull(self.source_refill_batch_size)?;
+                    if batch.points.len() > self.source_refill_batch_size {
+                        return Err(OperationError::validation_error(format!(
+                            "exact score source {source} returned {} points for a maximum refill size of {}",
+                            batch.points.len(),
+                            self.source_refill_batch_size,
+                        )));
+                    }
+                    if batch.points.is_empty() && !batch.exhausted {
+                        return Err(OperationError::validation_error(format!(
+                            "exact score source {source} returned an empty non-exhausted batch"
+                        )));
+                    }
+                    let mut previous = previous_before_refill;
+                    let mut batch_ids = HashSet::with_capacity(batch.points.len());
+                    for point in &batch.points {
+                        if !point.score.is_finite() {
+                            return Err(OperationError::validation_error(format!(
+                                "exact score source {source} produced a non-finite score"
+                            )));
+                        }
+                        if previous
+                            .is_some_and(|previous| exact_score_order(previous, *point).is_gt())
+                        {
+                            return Err(OperationError::validation_error(format!(
+                                "exact score source {source} violated descending score/identity order inside a batch"
+                            )));
+                        }
+                        if self.seen.contains(&point.id) || !batch_ids.insert(point.id) {
+                            return Err(OperationError::validation_error(format!(
+                                "exact score source {source} repeated visible identity {} inside a batch",
+                                point.id
+                            )));
+                        }
+                        previous = Some(*point);
+                    }
+                    *buffer = VecDeque::from(batch.points);
+                    *exhausted = batch.exhausted;
+                }
+                buffer.pop_front()
+            }
+        };
+        let Some(point) = point else {
             self.telemetry.source_exhausted[source] = true;
             return Ok(());
         };
@@ -213,6 +348,19 @@ mod tests {
         Box::new(points.into_iter().map(Ok))
     }
 
+    fn batch_stream(points: Vec<ExactScoredIdentity>) -> ExactScoreBatchStream<'static> {
+        let mut points = VecDeque::from(points);
+        Box::new(move |max_results| {
+            let batch = (0..max_results)
+                .filter_map(|_| points.pop_front())
+                .collect();
+            Ok(ExactScoreBatch {
+                points: batch,
+                exhausted: points.is_empty(),
+            })
+        })
+    }
+
     #[test]
     fn merges_local_exact_orders_into_one_global_channel_order() {
         let merged = KWayExactScoreStream::new(vec![
@@ -227,6 +375,74 @@ mod tests {
             merged.iter().map(|point| point.id).collect::<Vec<_>>(),
             vec![1.into(), 2.into(), 4.into(), 3.into()]
         );
+    }
+
+    #[test]
+    fn emits_contiguous_channel_rank_batches_and_explicit_eof() {
+        let mut merged = KWayExactScoreStream::new(vec![
+            stream(vec![point(2, 9.0), point(3, 7.0)]),
+            stream(vec![point(1, 9.0), point(4, 8.0)]),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            merged.next_rank_batch(3).unwrap(),
+            ChannelRankBatch {
+                start_rank: 0,
+                point_ids: vec![1.into(), 2.into(), 4.into()],
+                exhausted: false,
+            }
+        );
+        assert_eq!(
+            merged.next_rank_batch(3).unwrap(),
+            ChannelRankBatch {
+                start_rank: 3,
+                point_ids: vec![3.into()],
+                exhausted: true,
+            }
+        );
+    }
+
+    #[test]
+    fn batched_sources_preserve_global_score_order() {
+        let mut merged = KWayExactScoreStream::new_batched(
+            vec![
+                batch_stream(vec![point(2, 9.0), point(3, 7.0)]),
+                batch_stream(vec![point(1, 9.0), point(4, 8.0)]),
+            ],
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(
+            merged.next_rank_batch(8).unwrap(),
+            ChannelRankBatch {
+                start_rank: 0,
+                point_ids: vec![1.into(), 2.into(), 4.into(), 3.into()],
+                exhausted: true,
+            }
+        );
+    }
+
+    #[test]
+    fn batch_failure_is_sticky_and_commits_no_partial_reply() {
+        let failed: ExactScoreStream<'_> = Box::new(
+            vec![
+                Ok(point(1, 9.0)),
+                Err(OperationError::cancelled("segment stopped")),
+            ]
+            .into_iter(),
+        );
+        let mut merged = KWayExactScoreStream::new(vec![failed]).unwrap();
+
+        assert!(matches!(
+            merged.next_rank_batch(8),
+            Err(OperationError::Cancelled { .. })
+        ));
+        assert!(matches!(
+            merged.next_rank_batch(8),
+            Err(OperationError::Cancelled { .. })
+        ));
     }
 
     #[test]

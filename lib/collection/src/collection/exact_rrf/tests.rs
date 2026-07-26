@@ -39,15 +39,19 @@ fn conflicting_channel_versions_fail_closed() {
         version: 41,
         ..scored(id, 2.0)
     });
-    let mut first_stream = exact_rank_stream(move || Ok(first.take()), versions.clone());
-    assert!(first_stream.next().unwrap().is_ok());
+    let mut first_stream = exact_score_batch_stream(
+        move |_| Ok(first.take().into_iter().collect()),
+        versions.clone(),
+    );
+    assert_eq!(first_stream(1).unwrap().points.len(), 1);
 
     let mut second = Some(ScoredPoint {
         version: 42,
         ..scored(id, 1.0)
     });
-    let mut second_stream = exact_rank_stream(move || Ok(second.take()), versions);
-    let error = second_stream.next().unwrap().unwrap_err();
+    let mut second_stream =
+        exact_score_batch_stream(move |_| Ok(second.take().into_iter().collect()), versions);
+    let error = second_stream(1).unwrap_err();
     assert!(error.to_string().contains("conflicting versions 41 and 42"));
 }
 

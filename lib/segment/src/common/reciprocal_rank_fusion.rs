@@ -4,7 +4,7 @@
 
 use std::collections::hash_map::Entry;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use itertools::Either;
 use ordered_float::OrderedFloat;
 
@@ -71,6 +71,25 @@ pub struct DynamicRrfState {
 /// channel. This identity-only contract must never be used to hide a local
 /// rank and then feed that rank directly into WRRF.
 pub type ExactRrfStream<'a> = Box<dyn Iterator<Item = OperationResult<ExtendedPointId>> + 'a>;
+
+/// One contiguous prefix extension from a channel-global exact rank stream.
+///
+/// `start_rank` is zero-based. `exhausted` proves that no later rank exists.
+/// Empty non-exhausted batches are forbidden.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChannelRankBatch {
+    pub start_rank: usize,
+    pub point_ids: Vec<ExtendedPointId>,
+    pub exhausted: bool,
+}
+
+/// Recoverable batch pull boundary for one channel-global exact rank stream.
+pub type ExactRrfBatchStream<'a> = Box<dyn FnMut(usize) -> OperationResult<ChannelRankBatch> + 'a>;
+
+enum DynamicRrfSource<'a> {
+    Point(ExactRrfStream<'a>),
+    Batch(ExactRrfBatchStream<'a>),
+}
 
 /// Adapts an in-memory or otherwise infallible ordered identity iterator to
 /// the production exact-stream contract.
@@ -144,7 +163,8 @@ impl Default for DynamicRrfPolicy {
 /// dropping the session. Replacement never trusts a new stream until its whole
 /// observed prefix has matched the original identity order.
 pub struct DynamicRrfSession<'a> {
-    sources: Vec<ExactRrfStream<'a>>,
+    sources: Vec<DynamicRrfSource<'a>>,
+    source_batch_size: usize,
     state: DynamicRrfState,
     source_pulls: Vec<usize>,
     source_history: Vec<Vec<ExtendedPointId>>,
@@ -182,6 +202,45 @@ impl<'a> DynamicRrfSession<'a> {
         source_costs: &[f64],
         policy: DynamicRrfPolicy,
     ) -> OperationResult<Self> {
+        let sources = sources.into_iter().map(DynamicRrfSource::Point).collect();
+        Self::new_with_inputs(sources, 1, top_k, rrf_k, weights, source_costs, policy)
+    }
+
+    pub fn new_batched(
+        sources: Vec<ExactRrfBatchStream<'a>>,
+        source_batch_size: usize,
+        top_k: usize,
+        rrf_k: usize,
+        weights: Option<&[f32]>,
+        policy: DynamicRrfPolicy,
+    ) -> OperationResult<Self> {
+        let source_costs = vec![1.0; sources.len()];
+        let sources = sources.into_iter().map(DynamicRrfSource::Batch).collect();
+        Self::new_with_inputs(
+            sources,
+            source_batch_size,
+            top_k,
+            rrf_k,
+            weights,
+            &source_costs,
+            policy,
+        )
+    }
+
+    fn new_with_inputs(
+        sources: Vec<DynamicRrfSource<'a>>,
+        source_batch_size: usize,
+        top_k: usize,
+        rrf_k: usize,
+        weights: Option<&[f32]>,
+        source_costs: &[f64],
+        policy: DynamicRrfPolicy,
+    ) -> OperationResult<Self> {
+        if source_batch_size == 0 {
+            return Err(OperationError::validation_error(
+                "Dynamic RRF source batch size must be positive",
+            ));
+        }
         if policy.warmup_check_interval == Some(0) {
             return Err(OperationError::validation_error(
                 "Dynamic RRF warmup check interval must be positive",
@@ -214,6 +273,7 @@ impl<'a> DynamicRrfSession<'a> {
         }
         Ok(Self {
             sources,
+            source_batch_size,
             state: DynamicRrfState::new(source_count, top_k, rrf_k, weights)?,
             source_pulls: vec![0; source_count],
             source_history: vec![Vec::new(); source_count],
@@ -317,7 +377,7 @@ impl<'a> DynamicRrfSession<'a> {
                 )));
             }
         }
-        self.sources[source] = replacement;
+        self.sources[source] = DynamicRrfSource::Point(replacement);
         Ok(())
     }
 
@@ -419,18 +479,35 @@ impl<'a> DynamicRrfSession<'a> {
             self.advance_actions += 1;
             self.source_last_advanced[source] = self.advance_actions;
 
-            match self.sources[source].next().transpose()? {
-                Some(id) => {
-                    self.state.observe(source, id)?;
-                    self.source_pulls[source] += 1;
-                    self.source_history[source].push(id);
-                    self.total_pulls += 1;
-                    self.pulls_since_check += 1;
-                }
-                None => {
-                    self.state.finish_source(source)?;
-                    self.force_check = true;
-                }
+            let batch = match &mut self.sources[source] {
+                DynamicRrfSource::Point(stream) => match stream.next().transpose()? {
+                    Some(id) => ChannelRankBatch {
+                        start_rank: self.source_pulls[source],
+                        point_ids: vec![id],
+                        exhausted: false,
+                    },
+                    None => ChannelRankBatch {
+                        start_rank: self.source_pulls[source],
+                        point_ids: Vec::new(),
+                        exhausted: true,
+                    },
+                },
+                DynamicRrfSource::Batch(pull) => pull(self.source_batch_size)?,
+            };
+            if batch.point_ids.len() > self.source_batch_size {
+                return Err(OperationError::validation_error(format!(
+                    "Dynamic RRF source {source} returned {} identities for a maximum batch size of {}",
+                    batch.point_ids.len(),
+                    self.source_batch_size,
+                )));
+            }
+            self.state.observe_batch(source, &batch)?;
+            self.source_pulls[source] += batch.point_ids.len();
+            self.source_history[source].extend(batch.point_ids.iter().copied());
+            self.total_pulls += batch.point_ids.len();
+            self.pulls_since_check += batch.point_ids.len();
+            if batch.exhausted {
+                self.force_check = true;
             }
         }
     }
@@ -583,6 +660,67 @@ impl DynamicRrfState {
         }
         point.contributions[source] = Some(contribution);
         self.next_positions[source] += 1;
+        Ok(())
+    }
+
+    /// Atomically applies a contiguous exact-rank batch.
+    pub fn observe_batch(
+        &mut self,
+        source: usize,
+        batch: &ChannelRankBatch,
+    ) -> OperationResult<()> {
+        if source >= self.weights.len() {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF source {source} is out of range",
+            )));
+        }
+        if self.exhausted[source] {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF source {source} was already exhausted",
+            )));
+        }
+        if batch.start_rank != self.next_positions[source] {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF source {source} batch starts at rank {}; expected {}",
+                batch.start_rank, self.next_positions[source],
+            )));
+        }
+        if batch.point_ids.is_empty() && !batch.exhausted {
+            return Err(OperationError::validation_error(format!(
+                "Dynamic RRF source {source} returned an empty non-exhausted batch",
+            )));
+        }
+
+        let mut unique = AHashSet::with_capacity(batch.point_ids.len());
+        for id in &batch.point_ids {
+            if !unique.insert(*id) {
+                return Err(OperationError::validation_error(format!(
+                    "Point {id} occurs more than once in one Dynamic RRF source {source} batch",
+                )));
+            }
+            if self
+                .points
+                .get(id)
+                .is_some_and(|point| point.contributions[source].is_some())
+            {
+                return Err(OperationError::validation_error(format!(
+                    "Point {id} occurs more than once in Dynamic RRF source {source}",
+                )));
+            }
+        }
+
+        for (offset, id) in batch.point_ids.iter().copied().enumerate() {
+            let contribution =
+                position_score(batch.start_rank + offset, self.rrf_k, self.weights[source]);
+            let point = self.points.entry(id).or_insert_with(|| PartialRrfPoint {
+                contributions: vec![None; self.weights.len()],
+            });
+            point.contributions[source] = Some(contribution);
+        }
+        self.next_positions[source] += batch.point_ids.len();
+        if batch.exhausted {
+            self.exhausted[source] = true;
+        }
         Ok(())
     }
 
@@ -783,6 +921,19 @@ pub fn execute_dynamic_rrf_with_policy(
     DynamicRrfSession::new(sources, top_k, rrf_k, weights, policy)?.run_to_completion()
 }
 
+/// Batch-oriented equivalent of [`execute_dynamic_rrf_with_policy`].
+pub fn execute_dynamic_rrf_batches_with_policy(
+    sources: Vec<ExactRrfBatchStream<'_>>,
+    source_batch_size: usize,
+    top_k: usize,
+    rrf_k: usize,
+    weights: Option<&[f32]>,
+    policy: DynamicRrfPolicy,
+) -> OperationResult<DynamicRrfExecution> {
+    DynamicRrfSession::new_batched(sources, source_batch_size, top_k, rrf_k, weights, policy)?
+        .run_to_completion()
+}
+
 fn rrf_order(
     left_id: ExtendedPointId,
     left_score: f32,
@@ -957,6 +1108,70 @@ mod tests {
             let id = sources[source][observed[source]];
             state.observe(source, id).unwrap();
             observed[source] += 1;
+        }
+    }
+
+    fn batch_stream(ids: Vec<ExtendedPointId>) -> ExactRrfBatchStream<'static> {
+        let mut next_rank = 0_usize;
+        Box::new(move |max_results| {
+            let start_rank = next_rank;
+            let end = next_rank.saturating_add(max_results).min(ids.len());
+            let point_ids = ids[next_rank..end].to_vec();
+            next_rank = end;
+            Ok(ChannelRankBatch {
+                start_rank,
+                point_ids,
+                exhausted: next_rank == ids.len(),
+            })
+        })
+    }
+
+    #[test]
+    fn batch_observation_is_atomic_and_rejects_invalid_envelopes() {
+        let mut state = DynamicRrfState::new(1, 1, 60, None).unwrap();
+        let invalid = ChannelRankBatch {
+            start_rank: 0,
+            point_ids: vec![1.into(), 1.into()],
+            exhausted: false,
+        };
+        assert!(state.observe_batch(0, &invalid).is_err());
+
+        let valid = ChannelRankBatch {
+            start_rank: 0,
+            point_ids: vec![1.into(), 2.into()],
+            exhausted: true,
+        };
+        state.observe_batch(0, &valid).unwrap();
+        assert_eq!(state.next_positions, vec![2]);
+        assert!(state.all_sources_exhausted());
+        assert_eq!(state.complete_order(), vec![1.into(), 2.into()]);
+    }
+
+    #[test]
+    fn batch_partition_does_not_change_exact_wrrf_order() {
+        let sources = vec![
+            (0_u64..47).map(ExtendedPointId::from).collect::<Vec<_>>(),
+            (0_u64..47)
+                .rev()
+                .map(ExtendedPointId::from)
+                .collect::<Vec<_>>(),
+        ];
+        let expected = exhaustive_top_k(&sources, 20, 60, Some(&[0.7, 1.3]));
+
+        for batch_size in [1, 2, 7, 16, 20, 32, 64, 127] {
+            let execution = execute_dynamic_rrf_batches_with_policy(
+                sources.clone().into_iter().map(batch_stream).collect(),
+                batch_size,
+                20,
+                60,
+                Some(&[0.7, 1.3]),
+                DynamicRrfPolicy {
+                    scheduler: DynamicRrfScheduler::MaxNextContribution,
+                    ..DynamicRrfPolicy::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(execution.point_ids, expected, "batch size {batch_size}");
         }
     }
 

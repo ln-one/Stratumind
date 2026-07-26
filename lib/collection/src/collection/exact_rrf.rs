@@ -12,12 +12,12 @@ use std::time::Duration;
 
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::reciprocal_rank_fusion::{
-    DynamicRrfAdvance, DynamicRrfExecution, DynamicRrfPolicy, DynamicRrfScheduler,
-    DynamicRrfSession, DynamicRrfStopReason, ExactRrfStream,
+    DynamicRrfExecution, DynamicRrfPolicy, DynamicRrfScheduler, DynamicRrfStopReason,
+    ExactRrfBatchStream, execute_dynamic_rrf_batches_with_policy,
 };
 use segment::index::dense_rank_state::DenseExecutionPolicy;
 use segment::index::exact_rank_stream::{
-    ExactScoreStream, ExactScoredIdentity, KWayExactScoreStream,
+    ExactScoreBatch, ExactScoreBatchStream, ExactScoredIdentity, KWayExactScoreStream,
 };
 use segment::types::{ExtendedPointId, Filter, PointIdType, ScoredPoint, VectorNameBuf};
 use shard::dense_rank_plan::{DenseRankPlan, DenseShardTelemetry};
@@ -32,6 +32,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 
 pub const DEFAULT_EXACT_BATCH_SIZE: usize = 64;
 pub const DEFAULT_SPARSE_POSTING_BATCH_SIZE: usize = 4_096;
+const EXACT_FUSION_BATCH_SIZE: usize = 16;
 
 #[derive(Clone, Debug)]
 pub struct ExactRrfRequest {
@@ -93,42 +94,58 @@ impl Drop for ExactRrfCancellation {
     }
 }
 
-fn exact_rank_stream(
-    mut next: impl FnMut() -> OperationResult<Option<ScoredPoint>> + 'static,
+fn exact_score_batch_stream(
+    mut next: impl FnMut(usize) -> OperationResult<Vec<ScoredPoint>> + 'static,
     versions: Rc<RefCell<HashMap<PointIdType, u64>>>,
-) -> ExactScoreStream<'static> {
-    Box::new(std::iter::from_fn(move || match next() {
-        Ok(Some(point)) => {
-            let mut versions = versions.borrow_mut();
-            if let Some(observed) = versions.get(&point.id)
+) -> ExactScoreBatchStream<'static> {
+    Box::new(move |max_results| {
+        let points = next(max_results)?;
+        let exhausted = points.len() < max_results;
+        let observed_versions = versions.borrow();
+        let mut batch_versions = HashMap::with_capacity(points.len());
+        for point in &points {
+            if let Some(observed) = observed_versions.get(&point.id)
                 && *observed != point.version
             {
-                return Some(Err(OperationError::inconsistent_storage(format!(
+                return Err(OperationError::inconsistent_storage(format!(
                     "exact RRF observed point {} at conflicting versions {} and {}",
                     point.id, observed, point.version,
-                ))));
+                )));
             }
-            versions.insert(point.id, point.version);
-            Some(Ok(ExactScoredIdentity {
-                id: point.id,
-                score: point.score,
-            }))
+            if let Some(observed) = batch_versions.insert(point.id, point.version)
+                && observed != point.version
+            {
+                return Err(OperationError::inconsistent_storage(format!(
+                    "exact RRF batch observed point {} at conflicting versions {} and {}",
+                    point.id, observed, point.version,
+                )));
+            }
         }
-        Ok(None) => None,
-        Err(error) => Some(Err(error)),
-    }))
+        drop(observed_versions);
+        versions.borrow_mut().extend(batch_versions);
+
+        Ok(ExactScoreBatch {
+            points: points
+                .into_iter()
+                .map(|point| ExactScoredIdentity {
+                    id: point.id,
+                    score: point.score,
+                })
+                .collect(),
+            exhausted,
+        })
+    })
 }
 
-fn observed_rank_stream(
-    merged: KWayExactScoreStream<'static>,
+fn observed_rank_batch_stream(
+    mut merged: KWayExactScoreStream<'static>,
     materialized: Arc<AtomicUsize>,
-) -> ExactRrfStream<'static> {
-    Box::new(merged.map(move |point| {
-        point.map(|point| {
-            materialized.fetch_add(1, AtomicOrdering::Relaxed);
-            point.id
-        })
-    }))
+) -> ExactRrfBatchStream<'static> {
+    Box::new(move |max_results| {
+        let batch = merged.next_rank_batch(max_results)?;
+        materialized.fetch_add(batch.point_ids.len(), AtomicOrdering::Relaxed);
+        Ok(batch)
+    })
 }
 
 /// Collection boundary for the frozen Production API exact-retrieval plan.
@@ -277,7 +294,8 @@ impl ExactHybridSession {
         // Channel state is owned; individual batches borrow Segment read views.
         let versions = Rc::new(RefCell::new(HashMap::new()));
         let sparse_physical = Rc::new(RefCell::new(Vec::<DenseShardTelemetry>::new()));
-        let mut sparse_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
+        let mut sparse_sources =
+            Vec::<ExactScoreBatchStream<'static>>::with_capacity(snapshots.len());
         let mut exhaustive_fallback_sources = 0;
         let mut visible_point_copies = 0;
         for segments in snapshots.iter().cloned() {
@@ -301,9 +319,9 @@ impl ExactHybridSession {
             let source_versions = versions.clone();
             let source_physical = sparse_physical.clone();
             let mut stream = stream;
-            sparse_sources.push(exact_rank_stream(
-                move || {
-                    let result = stream.next_result();
+            sparse_sources.push(exact_score_batch_stream(
+                move |max_results| {
+                    let result = stream.next_batch(max_results);
                     source_physical.borrow_mut()[physical_source] = stream.telemetry();
                     result
                 },
@@ -311,7 +329,8 @@ impl ExactHybridSession {
             ));
         }
         let dense_physical = Rc::new(RefCell::new(Vec::<DenseShardTelemetry>::new()));
-        let mut dense_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
+        let mut dense_sources =
+            Vec::<ExactScoreBatchStream<'static>>::with_capacity(snapshots.len());
         for segments in snapshots {
             let plan = DenseRankPlan::new(
                 request.dense_using.clone(),
@@ -327,9 +346,9 @@ impl ExactHybridSession {
             };
             let source_versions = versions.clone();
             let source_physical = dense_physical.clone();
-            dense_sources.push(exact_rank_stream(
-                move || {
-                    let result = stream.next_result();
+            dense_sources.push(exact_score_batch_stream(
+                move |max_results| {
+                    let result = stream.next_batch(max_results);
                     source_physical.borrow_mut()[physical_source] = stream.telemetry();
                     result
                 },
@@ -338,17 +357,17 @@ impl ExactHybridSession {
         }
 
         let materialized = [Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0))];
-        let dense_stream = observed_rank_stream(
-            KWayExactScoreStream::new(dense_sources)?,
+        let dense_stream = observed_rank_batch_stream(
+            KWayExactScoreStream::new_batched(dense_sources, EXACT_FUSION_BATCH_SIZE)?,
             materialized[0].clone(),
         );
-        let sparse_stream = observed_rank_stream(
-            KWayExactScoreStream::new(sparse_sources)?,
+        let sparse_stream = observed_rank_batch_stream(
+            KWayExactScoreStream::new_batched(sparse_sources, EXACT_FUSION_BATCH_SIZE)?,
             materialized[1].clone(),
         );
-        let streams = vec![dense_stream, sparse_stream];
-        let mut session = DynamicRrfSession::new(
-            streams,
+        let execution = execute_dynamic_rrf_batches_with_policy(
+            vec![dense_stream, sparse_stream],
+            EXACT_FUSION_BATCH_SIZE,
             request.limit,
             request.rrf_k,
             Some(&request.weights),
@@ -357,15 +376,6 @@ impl ExactHybridSession {
                 ..DynamicRrfPolicy::default()
             },
         )?;
-        let initial_prefix = request
-            .weights
-            .iter()
-            .map(|weight| (*weight > 0.0).then_some(request.limit))
-            .collect::<Vec<_>>();
-        let execution = match session.advance_until_each(&initial_prefix)? {
-            DynamicRrfAdvance::Fixed(execution) => execution,
-            DynamicRrfAdvance::Paused => session.run_to_completion()?,
-        };
         let DynamicRrfExecution {
             point_ids,
             source_pulls,
@@ -374,7 +384,6 @@ impl ExactHybridSession {
             stop_reason,
             ..
         } = execution;
-        drop(session);
         let observed_versions = Rc::try_unwrap(versions)
             .map_err(|_| OperationError::service_error_light("exact RRF version map leaked"))?
             .into_inner();

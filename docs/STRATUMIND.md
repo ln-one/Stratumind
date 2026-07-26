@@ -142,6 +142,9 @@ kernel experiments report those counters separately.
 `ExactHybridSession` advances bounded Dense or Sparse work through Qdrant's existing runtime and
 the shared `ExactShardStream` merge skeleton. Segment count no longer multiplies resident worker
 demand, and correctness fallback remains a physical plan rather than a compatibility adapter.
+The Production fusion path carries strict channel-global rank batches of 16 directly into dynamic
+WRRF. It does not split Qdrant/Shards' batch work into point-at-a-time fusion calls, and it exposes
+no runtime batch-size selector.
 
 The Shard update barrier remains held for the complete session, while individual Segment guards
 exist only during bounded reads. Producer failure and cancellation are errors, never exact EOF.
@@ -162,6 +165,8 @@ The Shard-generation and merge promotion is recorded in
 [Exact Shard Merge NFCorpus Gate V1](spectra/results/exact-shard-merge-nfcorpus-gate-v1.md).
 The V1.1.5 clean-break gate is recorded in
 [Exact Retrieval Clean-Break Promotion Gate V1](spectra/results/exact-retrieval-clean-break-promotion-v1.md).
+The fixed-16 fusion promotion is recorded in
+[Exact Fusion Fixed-16 Production Promotion Gate V1](spectra/results/exact-fusion-fixed16-production-promotion-v1.md).
 
 The named Sparse vector used here must store document impacts compatible with the caller's frozen
 Sparse Query profile. External non-negative impacts use `modifier: none`. A collection configured
