@@ -11,12 +11,12 @@ evidence; if descriptive implementation text differs from the V1.1 contract, the
 ## Build and run
 
 ```bash
-docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.6
+docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.7
 docker run --rm \
   --publish 6333:6333 \
   --publish 6334:6334 \
   --volume stratumind-storage:/qdrant/storage \
-  stratumind:api-v1.1.6
+  stratumind:api-v1.1.7
 ```
 
 The upstream image entrypoint, health endpoints and configuration environment variables remain
