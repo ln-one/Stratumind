@@ -1,6 +1,7 @@
 pub mod common;
 pub mod count;
 pub mod dense_rank_plan;
+mod exact_rank_fallback;
 pub mod exact_shard_stream;
 pub mod facet;
 pub mod files;
