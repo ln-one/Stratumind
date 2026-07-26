@@ -1,6 +1,6 @@
 # Exact Retrieval Clean Architecture
 
-Status: implemented on `codex/exact-rank-clean-architecture`.
+Status: promoted to Production V1.1.5 at `06438875e`.
 
 ## Frozen contract
 

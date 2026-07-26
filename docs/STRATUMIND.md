@@ -11,12 +11,12 @@ evidence; if descriptive implementation text differs from the V1.1 contract, the
 ## Build and run
 
 ```bash
-docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.4
+docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.5
 docker run --rm \
   --publish 6333:6333 \
   --publish 6334:6334 \
   --volume stratumind-storage:/qdrant/storage \
-  stratumind:api-v1.1.4
+  stratumind:api-v1.1.5
 ```
 
 The upstream image entrypoint, health endpoints and configuration environment variables remain
@@ -85,26 +85,29 @@ The response returns identities and ranks plus an explicit guarantee and executi
 
 For default-consistency reads whose selected Shards all have a local readable replica, the current
 HTTP plan pins one Qdrant Segment generation for the complete exact Query. Dense and Sparse each
-merge their exact Segment batches through `ExactShardMergeState`, then merge globally across
-Shards before dynamic WRRF. It never fuses shard-local RRF results. Remote replicas and explicit
-consistency requests use the older exact adaptive-prefix plan. Router choice may change cost but
-not ordered Top-K.
+merge their exact Segment batches through `ExactShardStream`, then merge globally across Shards
+before dynamic WRRF. It never fuses shard-local RRF results. Remote replicas and explicit
+consistency requests use the exact adaptive-prefix plan. Router choice may change cost but not
+ordered Top-K.
 
-Production V1.1.4 uses `ExactRankSession`. Dense and Sparse each retain an owned, reader-independent
-ranking state. When fusion requests more results, the session acquires a temporary Qdrant Segment
-read view, advances one bounded batch, releases the guard, and later resumes from the same state.
-There is no resident worker per Segment and no cursor that borrows a Segment across checkpoints.
-The two channels share the frozen generation and session lifetime, but never scores or
-certificates. Qdrant Proxy rollback propagates updates into wrapped Segments before replacement;
-failure keeps the Proxy installed and fails closed. This lifecycle invariant removes the former
-per-Query identity/version owner map and per-candidate cross-Segment probes.
+Production V1.1.5 uses the clean-break path
+`ExactRrfService → ExactHybridSession → ExactShardStream → DenseRankState /
+PostingBlockMaxState`. Dense and Sparse retain owned, reader-independent ranking state. When fusion
+requests more results, a batch temporarily borrows a Qdrant `SegmentReadView`, advances, releases
+the guard, and later resumes from the same state. There is no resident worker per Segment, no
+cursor borrowing a Segment across checkpoints, and no legacy cursor/state adapter. The two
+channels share the frozen generation and session lifetime, but never scores or certificates.
+Qdrant Proxy rollback propagates updates into wrapped Segments before replacement; failure keeps
+the Proxy installed and fails closed.
 
 Dense uses an exact, metadata-only Router over Segment-owned PVS V1, Qdrant Scalar bounds and
-authoritative exact scan. Compatible immutable Float32 Dot/Cosine Segments persist a per-vector
-signed-int8 PVS row and prefer it in `Auto`; missing, stale or corrupt PVS state is quarantined and
-falls back safely. Every certificate computes an outward-safe upper bound and full-precision
-rescores unresolved competitors. The session owns ordered continuation and ExactRank caching, so
-one query never pays for an independent Top-N prefix and then starts a second Dense truth.
+authoritative exact scan. PVS is built only when the persisted Collection profile is explicitly
+`dense_sparse_v1`; ordinary Qdrant Collections remain `disabled`. Compatible immutable Float32
+Dot/Cosine Segments persist a per-vector signed-int8 PVS row and prefer it in `Auto`; missing,
+stale or corrupt PVS state is quarantined and falls back safely. Every certificate computes an
+outward-safe upper bound and full-precision rescores unresolved competitors. The session owns
+ordered continuation and ExactRank caching, so one query never pays for an independent Top-N
+prefix and then starts a second Dense truth.
 
 Compact remains an internal comparison plan and is built only below its 16,384-point limit. On the
 local Apple Silicon TREC-COVID 100K gate, Production `Auto` selected PVS for all 50 Queries, matched
@@ -136,12 +139,9 @@ one-shot Qdrant fallback, including an IDF-configured Sparse source. These field
 confused with Dense quantized dots, exact rescoring, Sparse posting visits, or prefix overfetch;
 kernel experiments report those counters separately.
 
-`ExactRankSession` reserves one coordinator slot and bounded reader headroom before it starts. The
-measured production plan executes each short reader action inline on the coordinator's Qdrant
-blocking worker; this preserves the transient-read-view boundary while avoiding an extra Tokio
-enqueue and channel wake-up per batch. Segment count no longer multiplies resident worker demand,
-and a reservation miss occurs before any session state starts, allowing the existing exact remote
-path to take over safely.
+`ExactHybridSession` advances bounded Dense or Sparse work through Qdrant's existing runtime and
+the shared `ExactShardStream` merge skeleton. Segment count no longer multiplies resident worker
+demand, and correctness fallback remains a physical plan rather than a compatibility adapter.
 
 The Shard update barrier remains held for the complete session, while individual Segment guards
 exist only during bounded reads. Producer failure and cancellation are errors, never exact EOF.
@@ -160,6 +160,8 @@ Segments, exact success rose from `64.40%` to `100%`, p50 improved `21.78%`, and
 [ExactRankSession Production Promotion V1.1.3](spectra/results/exact-rank-session-production-promotion-v1.1.3.md).
 The Shard-generation and merge promotion is recorded in
 [Exact Shard Merge NFCorpus Gate V1](spectra/results/exact-shard-merge-nfcorpus-gate-v1.md).
+The V1.1.5 clean-break gate is recorded in
+[Exact Retrieval Clean-Break Promotion Gate V1](spectra/results/exact-retrieval-clean-break-promotion-v1.md).
 
 The named Sparse vector used here must store document impacts compatible with the caller's frozen
 Sparse Query profile. External non-negative impacts use `modifier: none`. A collection configured
