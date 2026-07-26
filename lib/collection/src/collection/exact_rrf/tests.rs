@@ -1,4 +1,8 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::time::Duration;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -6,14 +10,18 @@ use ordered_float::OrderedFloat;
 use segment::common::reciprocal_rank_fusion::exact_rrf_scoring;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::index::dense_rank_state::DenseExecutionPolicy;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    Distance, Indexes, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
-    VectorDataConfig, VectorStorageType,
+    Distance, Indexes, PointIdType, ScoredPoint, SegmentConfig, SparseVectorDataConfig,
+    SparseVectorStorageType, VectorDataConfig, VectorStorageType,
 };
+use shard::locked_segment::LockedSegment;
+use sparse::common::sparse_vector::SparseVector;
 
+use super::service::ExactRrfCancellation;
 use super::*;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 
