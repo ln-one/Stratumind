@@ -166,13 +166,11 @@ def verify_case(
     documents: dict[int, dict[str, Any]],
     name: str,
     visible_only: bool,
-    force_exact_fallback: bool = False,
 ) -> dict[str, Any]:
-    query = "?consistency=1" if force_exact_fallback else ""
     response = request_json(
         base_url,
         "POST",
-        f"/collections/{collection}/points/query/exact-rrf{query}",
+        f"/collections/{collection}/points/query/exact-rrf",
         exact_rrf_request(visible_only),
     )["result"]
     actual = [point["id"] for point in response["points"]]
@@ -181,17 +179,10 @@ def verify_case(
         raise AssertionError(f"{name}: ordered Top-K mismatch\nactual={actual}\nexpected={expected}")
     guarantee = response["guarantee"]
     execution = response["execution"]
-    expected_plans = (
-        {
-            "adaptive-exact-prefix-v0",
-            "adaptive-exact-prefix-with-exhaustive-fallback-v0",
-        }
-        if force_exact_fallback
-        else {"native-local-dense-sparse-v1"}
-    )
-    if not guarantee["orderedTopKExact"] or execution["plan"] not in expected_plans:
+    expected_plan = "exact-rank-session-v1"
+    if not guarantee["orderedTopKExact"] or execution["plan"] != expected_plan:
         raise AssertionError(
-            f"{name}: expected one of the exact plans {expected_plans!r}: {response}"
+            f"{name}: expected exact plan {expected_plan!r}: {response}"
         )
     return {
         "name": name,
@@ -200,6 +191,25 @@ def verify_case(
         "guarantee": guarantee,
         "execution": execution,
     }
+
+
+def verify_explicit_consistency_rejected(
+    base_url: str,
+    collection: str,
+    name: str,
+) -> dict[str, Any]:
+    try:
+        request_json(
+            base_url,
+            "POST",
+            f"/collections/{collection}/points/query/exact-rrf?consistency=1",
+            exact_rrf_request(False),
+        )
+    except RuntimeError as error:
+        if "explicit replica consistency is unsupported" not in str(error):
+            raise
+        return {"name": name, "failed_closed": True}
+    raise AssertionError(f"{name}: explicit consistency unexpectedly succeeded")
 
 
 def wait_ready(base_url: str) -> None:
@@ -236,13 +246,10 @@ def seed_and_verify(base_url: str, collection: str) -> list[dict[str, Any]]:
     cases = [
         verify_case(base_url, collection, documents, "base", False),
         verify_case(base_url, collection, documents, "payload-filter", True),
-        verify_case(
+        verify_explicit_consistency_rejected(
             base_url,
             collection,
-            documents,
-            "base-explicit-consistency-fallback",
-            False,
-            force_exact_fallback=True,
+            "base-explicit-consistency-rejected",
         ),
     ]
 
@@ -338,13 +345,10 @@ def main() -> None:
                 "restart-persistence-filter",
                 True,
             ),
-            verify_case(
+            verify_explicit_consistency_rejected(
                 args.base_url,
                 args.collection,
-                final_documents(),
-                "restart-persistence-explicit-consistency-fallback",
-                False,
-                force_exact_fallback=True,
+                "restart-persistence-explicit-consistency-rejected",
             ),
         ]
     else:

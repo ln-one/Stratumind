@@ -46,16 +46,13 @@ impl<'a> ExactRrfService<'a> {
         Self { collection }
     }
 
-    /// Execute the local exact physical plan when every selected Shard has a
-    /// readable local replica. Returns `None` when the safe router must use the
-    /// ordinary replica/remote path instead. Plan selection cannot change the
-    /// exact result contract.
+    /// Execute the exact physical plan over a frozen local view.
     pub async fn execute(
         &self,
         request: ExactRrfRequest,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Option<ExactRrfResult>> {
+    ) -> CollectionResult<ExactRrfResult> {
         let targets = {
             let shard_holder = self.collection.shards_holder.read().await;
             shard_holder
@@ -68,8 +65,9 @@ impl<'a> ExactRrfService<'a> {
         let mut snapshots = Vec::with_capacity(targets.len());
         for target in targets {
             let Some(snapshot) = target.exact_segment_read_set().await? else {
-                log::debug!("exact RRF skipped: selected Shard has no local snapshot");
-                return Ok(None);
+                return Err(CollectionError::service_error(
+                    "exact RRF requires a readable local snapshot for every selected Shard",
+                ));
             };
             snapshots.push(snapshot);
         }
@@ -90,13 +88,9 @@ impl<'a> ExactRrfService<'a> {
             .search_runtime
             .try_reserve_exact_session(required_reader_slots)
         else {
-            // The ordinary exact path remains available. Crucially, no
-            // coordinator or cursor has started, so fallback cannot deadlock
-            // behind a partially occupied blocking pool.
-            log::debug!(
-                "exact RRF skipped: reservation unavailable for {shard_count} Shards, {segment_count} Segments and {required_reader_slots} reader slots",
-            );
-            return Ok(None);
+            return Err(CollectionError::service_error(format!(
+                "exact RRF cannot reserve its local rank session for {shard_count} Shards, {segment_count} Segments and {required_reader_slots} reader slots",
+            )));
         };
         debug_assert_eq!(reservation.reader_slots(), required_reader_slots);
         let mut cancellation = ExactRrfCancellation::new(stopped.clone());
@@ -136,9 +130,9 @@ impl<'a> ExactRrfService<'a> {
         })??;
         cancellation.disarm();
 
-        Ok(Some(ExactRrfResult {
+        Ok(ExactRrfResult {
             shard_count,
             ..result
-        }))
+        })
     }
 }

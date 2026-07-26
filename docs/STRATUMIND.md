@@ -63,10 +63,10 @@ The response returns identities and ranks plus an explicit guarantee and executi
       "scope": "selected-local-shards-frozen-segment-view",
       "orderedTopKExact": true,
       "tieBreak": "point-identity-ascending",
-      "channelInput": "native-exact-rank-streams"
+      "channelInput": "exact-channel-rank-streams"
     },
     "execution": {
-      "plan": "native-local-dense-sparse-v1",
+      "plan": "exact-rank-session-v1",
       "stopReason": "top-k-fixed",
       "sourcePulls": [31, 28],
       "sourceExhausted": [false, false],
@@ -87,10 +87,10 @@ For default-consistency reads whose selected Shards all have a local readable re
 HTTP plan pins one Qdrant Segment generation for the complete exact Query. Dense and Sparse each
 merge their exact Segment batches through `ExactShardStream`, then merge globally across Shards
 before dynamic WRRF. It never fuses shard-local RRF results. Remote replicas and explicit
-consistency requests use the exact adaptive-prefix plan. Router choice may change cost but not
-ordered Top-K.
+consistency requests are rejected because V1.1.7 does not have a cross-replica frozen snapshot
+protocol. Failure cannot be converted into a shorter exact prefix or a second algorithm.
 
-Production V1.1.6 uses the clean-break path
+Production V1.1.7 uses the clean-break path
 `ExactRrfService → ExactHybridSession → ExactShardStream → DenseRankState /
 PostingBlockMaxState`. Dense and Sparse retain owned, reader-independent ranking state. When fusion
 requests more results, a batch temporarily borrows a Qdrant `SegmentReadView`, advances, releases
@@ -148,8 +148,7 @@ no runtime batch-size selector.
 
 The Shard update barrier remains held for the complete session, while individual Segment guards
 exist only during bounded reads. Producer failure and cancellation are errors, never exact EOF.
-The remote adaptive plan still checks visible point count before and after execution. A
-cross-replica MVCC snapshot token remains outside the current scope.
+A cross-replica MVCC snapshot token remains outside the current scope.
 
 The Dense/Sparse exact rank states, fallible exact EOF streams, safe Router,
 Segment/Shard/global k-way merges, and dynamic WRRF certificate are wired into the Collection
@@ -178,8 +177,8 @@ exact path after official IDF QueryContext initialization; it is never silently 
 `tools/spectra/run_exact_rrf_http_smoke.py` builds a two-Shard synthetic collection and compares the
 endpoint against an independent full-corpus Dense/Sparse WRRF implementation. Its two phases cover
 payload filtering, overwrite updates, deletes, restart persistence, native execution, and the
-explicit-consistency exact fallback. Every case rejects the run on the first ordered Top-K
-mismatch and verifies the expected exact plan.
+explicit-consistency fail-closed boundary. Every case rejects the run on the first ordered Top-K
+mismatch and verifies the fixed exact plan.
 
 ```bash
 python3 tools/spectra/run_exact_rrf_http_smoke.py --phase seed-and-verify

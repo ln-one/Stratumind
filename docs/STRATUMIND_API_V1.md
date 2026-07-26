@@ -72,8 +72,9 @@ inference and other models are rejected. An empty document is valid and has Qdra
 empty-query behavior. Unknown document fields, unknown BM25 options, and invalid option values are
 errors.
 
-Standard Qdrant read query parameters, including timeout and consistency, retain their existing
-meaning. `filter` and `shard_key` restrict the visible retrieval universe before ranking.
+Timeout retains its standard Qdrant meaning. Explicit replica consistency is rejected because this
+version requires one frozen local Shard view for the complete exact session. `filter` and
+`shard_key` restrict the visible retrieval universe before ranking.
 
 ## Response
 
@@ -85,10 +86,10 @@ meaning. `filter` and `shard_key` restrict the visible retrieval universe before
       "scope": "selected-local-shards-frozen-segment-view",
       "orderedTopKExact": true,
       "tieBreak": "point-identity-ascending",
-      "channelInput": "native-exact-rank-streams"
+      "channelInput": "exact-channel-rank-streams"
     },
     "execution": {
-      "plan": "native-local-dense-sparse-v1",
+      "plan": "exact-rank-session-v1",
       "stopReason": "top-k-fixed",
       "sourcePulls": [31, 28],
       "sourceExhausted": [false, false],
@@ -127,10 +128,9 @@ Timeout, cancellation, producer failure, invalid input, and a request view that 
 reported exact guarantee must return an error rather than a successful shorter prefix. Exact EOF
 is the only successful end-of-stream condition.
 
-The native local plan and the adaptive exact fallback implement the same ordered Top-K contract.
-Compact, Scalar, exact-prefix, Posting Block, scheduling, sharing, and Router thresholds may change
-without changing this API. Stock Qdrant endpoints and storage formats retain their upstream
-semantics.
+The local ExactRankSession is the only Production execution path. PVS, Scalar, ExactScan, Posting
+Block Max, scheduling, sharing, and Router thresholds may change without changing this API. Stock
+Qdrant endpoints and storage formats retain their upstream semantics.
 
 This endpoint and its Dense-plus-Sparse meaning remain backward compatible for the lifetime of V1.
 Every valid V1.0 explicit-Sparse request has identical V1.1 behavior. BM25 document inference is
