@@ -4,84 +4,16 @@
 //! Shared pull/merge machinery for exact Segment score streams in one Shard.
 
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
+use std::collections::{BinaryHeap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::mpsc::sync_channel;
 
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::DeferredBehavior;
+use ahash::AHashSet;
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
-
-use crate::locked_segment::LockedSegment;
-use crate::read_segment_handle::ReadSegmentHandle;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct AuthoritativePointVersion {
-    version: SeqNumberType,
-    source: usize,
-}
-
-/// Authoritative visible point owner for one frozen Shard generation.
-///
-/// Qdrant may temporarily retain older point copies across Segments. Exact
-/// channel streams must remove those copies before score ordering; seeing a
-/// stale high score first and deduplicating later is not correct.
-pub struct ExactShardPointVersions {
-    points: HashMap<PointIdType, AuthoritativePointVersion>,
-}
-
-impl ExactShardPointVersions {
-    pub fn build(segments: &[LockedSegment], stopped: &AtomicBool) -> OperationResult<Arc<Self>> {
-        let hardware_counter = HardwareCounterCell::disposable();
-        let mut points = HashMap::<PointIdType, AuthoritativePointVersion>::new();
-        for (source, segment) in segments.iter().enumerate() {
-            let segment = segment.read_segment();
-            let ids = segment.read_filtered(
-                None,
-                None,
-                None,
-                stopped,
-                &hardware_counter,
-                DeferredBehavior::Exclude,
-            )?;
-            for id in ids {
-                let version = segment.point_version(id).ok_or_else(|| {
-                    OperationError::inconsistent_storage(format!(
-                        "native exact Shard snapshot lost visible point {id} while resolving versions"
-                    ))
-                })?;
-                match points.get_mut(&id) {
-                    None => {
-                        points.insert(id, AuthoritativePointVersion { version, source });
-                    }
-                    Some(current) if version > current.version => {
-                        *current = AuthoritativePointVersion { version, source };
-                    }
-                    Some(current) if version == current.version && source != current.source => {
-                        return Err(OperationError::inconsistent_storage(format!(
-                            "native exact Shard snapshot contains point {id} at version {version} in multiple Segments"
-                        )));
-                    }
-                    Some(_) => {}
-                }
-            }
-        }
-        Ok(Arc::new(Self { points }))
-    }
-
-    pub fn len(&self) -> usize {
-        self.points.len()
-    }
-
-    pub fn contains(&self, source: usize, point: &ScoredPoint) -> bool {
-        self.points.get(&point.id).is_some_and(|authoritative| {
-            authoritative.source == source && authoritative.version == point.version
-        })
-    }
-}
+use segment::types::{PointIdType, ScoredPoint};
+use smallvec::SmallVec;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ExactSourceMode {
@@ -92,7 +24,7 @@ pub(crate) enum ExactSourceMode {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ExactShardStreamTelemetry {
     pub sources: usize,
-    pub visible_points: usize,
+    pub visible_point_copies: usize,
     pub exact_sources: usize,
     pub exhaustive_fallback_sources: usize,
     pub points_pulled: usize,
@@ -197,9 +129,16 @@ pub(crate) struct SegmentScoreSource {
     buffer: VecDeque<ScoredPoint>,
     eof: bool,
     mode: ExactSourceMode,
+    previous: Option<ScoredPoint>,
 }
 
 type PullBatch = dyn Fn(usize) -> OperationResult<BatchReply> + Send + Sync + 'static;
+
+struct SourcePop {
+    point: Option<ScoredPoint>,
+    batch_requests: usize,
+    points_received: usize,
+}
 
 impl SegmentScoreSource {
     pub(crate) fn on_demand(
@@ -212,19 +151,61 @@ impl SegmentScoreSource {
             buffer: VecDeque::new(),
             eof: false,
             mode,
+            previous: None,
         }
     }
 
-    fn pop(&mut self, batch_size: usize) -> OperationResult<(Option<ScoredPoint>, usize)> {
-        let mut fetched = 0;
-        if self.buffer.is_empty() && !self.eof {
+    fn pop(&mut self, batch_size: usize, source: usize) -> OperationResult<SourcePop> {
+        let mut batch_requests = 0usize;
+        let mut points_received = 0usize;
+        while self.buffer.is_empty() && !self.eof {
             let batch = (self.pull)(batch_size)?;
-            fetched = batch.points.len();
-            self.buffer = VecDeque::from(batch.points);
+            batch_requests = batch_requests.saturating_add(1);
+            points_received = points_received.saturating_add(batch.points.len());
             self.eof = batch.eof;
+            validate_source_batch(source, self.previous.as_ref(), &batch.points)?;
+            self.buffer = VecDeque::from(batch.points);
         }
-        Ok((self.buffer.pop_front(), fetched))
+        let point = self.buffer.pop_front();
+        if let Some(point) = &point {
+            self.previous = Some(point.clone());
+        }
+        Ok(SourcePop {
+            point,
+            batch_requests,
+            points_received,
+        })
     }
+}
+
+fn exact_score_order(left: &ScoredPoint, right: &ScoredPoint) -> Ordering {
+    OrderedFloat(right.score)
+        .cmp(&OrderedFloat(left.score))
+        .then_with(|| left.id.cmp(&right.id))
+}
+
+fn validate_source_batch(
+    source: usize,
+    previous: Option<&ScoredPoint>,
+    points: &[ScoredPoint],
+) -> OperationResult<()> {
+    let mut previous = previous;
+    for point in points {
+        if !point.score.is_finite() {
+            return Err(OperationError::validation_error(format!(
+                "exact Segment source {source} produced a non-finite score"
+            )));
+        }
+        if let Some(previous) = previous
+            && exact_score_order(previous, point).is_gt()
+        {
+            return Err(OperationError::validation_error(format!(
+                "exact Segment source {source} violated descending score/identity order"
+            )));
+        }
+        previous = Some(point);
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -261,22 +242,21 @@ impl PartialOrd for PendingPoint {
 }
 
 /// Exact score stream merged across every frozen Segment in one Shard.
-pub(crate) struct ExactShardScoreStream {
+pub(crate) struct ExactShardMergeState {
     sources: Vec<SegmentScoreSource>,
     pending: BinaryHeap<PendingPoint>,
-    seen: HashSet<PointIdType>,
+    seen: AHashSet<PointIdType>,
     batch_size: usize,
     stopped: Arc<AtomicBool>,
     channel: &'static str,
-    point_versions: Arc<ExactShardPointVersions>,
     telemetry: ExactShardStreamTelemetry,
     terminal_error: Option<OperationError>,
 }
 
-impl ExactShardScoreStream {
+impl ExactShardMergeState {
     pub(crate) fn open(
         sources: Vec<SegmentScoreSource>,
-        point_versions: Arc<ExactShardPointVersions>,
+        visible_point_copies: usize,
         batch_size: usize,
         stopped: Arc<AtomicBool>,
         channel: &'static str,
@@ -288,7 +268,7 @@ impl ExactShardScoreStream {
         }
         let mut telemetry = ExactShardStreamTelemetry {
             sources: sources.len(),
-            visible_points: point_versions.len(),
+            visible_point_copies,
             ..Default::default()
         };
         for source in &sources {
@@ -302,11 +282,10 @@ impl ExactShardScoreStream {
         let mut stream = Self {
             sources,
             pending: BinaryHeap::new(),
-            seen: HashSet::new(),
+            seen: AHashSet::new(),
             batch_size,
             stopped,
             channel,
-            point_versions,
             telemetry,
             terminal_error: None,
         };
@@ -331,27 +310,72 @@ impl ExactShardScoreStream {
         result
     }
 
-    fn next_inner(&mut self) -> OperationResult<Option<ScoredPoint>> {
-        loop {
-            if self.stopped.load(AtomicOrdering::Relaxed) {
-                return Err(OperationError::cancelled(format!(
-                    "native {} Shard stream was cancelled",
-                    self.channel
-                )));
-            }
-            let Some(pending) = self.pending.pop() else {
-                return Ok(None);
-            };
-            self.pull_source(pending.source, self.batch_size)?;
-            if !self.seen.insert(pending.point.id) {
-                return Err(OperationError::inconsistent_storage(format!(
-                    "native {} Shard stream emitted authoritative point {} more than once",
-                    self.channel, pending.point.id,
-                )));
-            }
-            self.telemetry.points_emitted += 1;
-            return Ok(Some(pending.point));
+    pub(crate) fn next_batch(&mut self, max_results: usize) -> OperationResult<Vec<ScoredPoint>> {
+        if max_results == 0 {
+            return Err(OperationError::validation_error(format!(
+                "exact {} Shard output batch size must be positive",
+                self.channel
+            )));
         }
+        if let Some(error) = &self.terminal_error {
+            return Err(error.clone());
+        }
+
+        let mut output = Vec::with_capacity(max_results);
+        while output.len() < max_results {
+            match self.next_inner() {
+                Ok(Some(point)) => output.push(point),
+                Ok(None) => break,
+                Err(error) => {
+                    self.pending.clear();
+                    self.terminal_error = Some(error.clone());
+                    return Err(error);
+                }
+            }
+        }
+        Ok(output)
+    }
+
+    fn next_inner(&mut self) -> OperationResult<Option<ScoredPoint>> {
+        if self.stopped.load(AtomicOrdering::Relaxed) {
+            return Err(OperationError::cancelled(format!(
+                "exact {} Shard stream was cancelled",
+                self.channel
+            )));
+        }
+        let Some(pending) = self.pending.pop() else {
+            return Ok(None);
+        };
+
+        let point = pending.point;
+        let mut contributing_sources = SmallVec::<[usize; 4]>::new();
+        contributing_sources.push(pending.source);
+        while self.pending.peek().is_some_and(|candidate| {
+            candidate.point.id == point.id && candidate.point.score == point.score
+        }) {
+            let duplicate = self.pending.pop().expect("peeked pending head exists");
+            if duplicate.point.version != point.version {
+                return Err(OperationError::inconsistent_storage(format!(
+                    "exact {} Shard generation contains point {} at conflicting versions {} and {}",
+                    self.channel, point.id, point.version, duplicate.point.version,
+                )));
+            }
+            contributing_sources.push(duplicate.source);
+            self.telemetry.duplicates_suppressed += 1;
+        }
+
+        for source in contributing_sources {
+            self.pull_source(source, self.batch_size)?;
+        }
+
+        if !self.seen.insert(point.id) {
+            return Err(OperationError::inconsistent_storage(format!(
+                "exact {} Shard generation emitted point {} more than once",
+                self.channel, point.id,
+            )));
+        }
+        self.telemetry.points_emitted += 1;
+        Ok(Some(point))
     }
 
     pub(crate) fn telemetry(&self) -> ExactShardStreamTelemetry {
@@ -359,23 +383,21 @@ impl ExactShardScoreStream {
     }
 
     fn pull_source(&mut self, source: usize, limit: usize) -> OperationResult<()> {
-        loop {
-            let (point, fetched) = self.sources[source].pop(limit)?;
-            if fetched != 0 {
-                self.telemetry.batch_requests += 1;
-                self.telemetry.points_received += fetched;
-            }
-            let Some(point) = point else {
-                return Ok(());
-            };
-            self.telemetry.points_pulled += 1;
-            if !self.point_versions.contains(source, &point) {
-                self.telemetry.duplicates_suppressed += 1;
-                continue;
-            }
-            self.pending.push(PendingPoint { source, point });
+        let result = self.sources[source].pop(limit, source)?;
+        self.telemetry.batch_requests = self
+            .telemetry
+            .batch_requests
+            .saturating_add(result.batch_requests);
+        self.telemetry.points_received = self
+            .telemetry
+            .points_received
+            .saturating_add(result.points_received);
+        let Some(point) = result.point else {
             return Ok(());
-        }
+        };
+        self.telemetry.points_pulled += 1;
+        self.pending.push(PendingPoint { source, point });
+        Ok(())
     }
 }
 
@@ -419,21 +441,153 @@ mod tests {
             "Test",
         );
         let stopped = Arc::new(AtomicBool::new(false));
-        let point_versions = Arc::new(ExactShardPointVersions {
-            points: HashMap::from([(
-                7_u64.into(),
-                AuthoritativePointVersion {
-                    version: 0,
-                    source: 0,
-                },
-            )]),
-        });
-        let mut stream =
-            ExactShardScoreStream::open(vec![source], point_versions, 8, stopped, "Test").unwrap();
+        let mut stream = ExactShardMergeState::open(vec![source], 0, 8, stopped, "Test").unwrap();
 
         let first = stream.next_result().unwrap_err();
         let second = stream.next_result().unwrap_err();
         assert!(first.to_string().contains("synthetic producer failure"));
         assert_eq!(first.to_string(), second.to_string());
+    }
+
+    #[test]
+    fn batch_merge_suppresses_equivalent_physical_copies() {
+        let source = |points: Vec<ScoredPoint>| {
+            let points = Arc::new(Mutex::new(VecDeque::from(points)));
+            SegmentScoreSource::on_demand(
+                move |limit| {
+                    let mut points = points.lock();
+                    let mut batch = Vec::with_capacity(limit);
+                    while batch.len() < limit
+                        && let Some(point) = points.pop_front()
+                    {
+                        batch.push(point);
+                    }
+                    Ok(BatchReply {
+                        eof: points.is_empty(),
+                        points: batch,
+                    })
+                },
+                ExactSourceMode::Exact,
+                "Test",
+            )
+        };
+        let mut duplicate = scored(7, 9.0);
+        duplicate.version = 3;
+        let mut first = duplicate.clone();
+        let mut second = duplicate;
+        first.payload = None;
+        second.payload = None;
+
+        let stopped = Arc::new(AtomicBool::new(false));
+        let mut stream = ExactShardMergeState::open(
+            vec![
+                source(vec![first, scored(8, 7.0)]),
+                source(vec![second, scored(9, 8.0)]),
+            ],
+            4,
+            4,
+            stopped,
+            "Test",
+        )
+        .unwrap();
+
+        let points = stream.next_batch(8).unwrap();
+        assert_eq!(
+            points.iter().map(|point| point.id).collect::<Vec<_>>(),
+            vec![7.into(), 9.into(), 8.into()]
+        );
+        assert_eq!(stream.telemetry().duplicates_suppressed, 1);
+    }
+
+    #[test]
+    fn conflicting_versions_fail_before_duplicate_emission() {
+        let source = |point: ScoredPoint| {
+            let point = Arc::new(Mutex::new(Some(point)));
+            SegmentScoreSource::on_demand(
+                move |_| {
+                    let point = point.lock().take();
+                    Ok(BatchReply {
+                        points: point.into_iter().collect(),
+                        eof: true,
+                    })
+                },
+                ExactSourceMode::Exact,
+                "Test",
+            )
+        };
+        let mut old = scored(7, 9.0);
+        old.version = 3;
+        let mut new = old.clone();
+        new.version = 4;
+
+        let stopped = Arc::new(AtomicBool::new(false));
+        let mut stream =
+            ExactShardMergeState::open(vec![source(old), source(new)], 2, 8, stopped, "Test")
+                .unwrap();
+
+        assert!(
+            stream
+                .next_batch(1)
+                .unwrap_err()
+                .to_string()
+                .contains("conflicting versions")
+        );
+    }
+
+    #[test]
+    fn every_output_batch_size_preserves_the_exhaustive_order() {
+        fn source(points: Vec<ScoredPoint>) -> SegmentScoreSource {
+            let points = Arc::new(Mutex::new(VecDeque::from(points)));
+            SegmentScoreSource::on_demand(
+                move |limit| {
+                    let mut points = points.lock();
+                    let mut batch = Vec::with_capacity(limit);
+                    while batch.len() < limit
+                        && let Some(point) = points.pop_front()
+                    {
+                        batch.push(point);
+                    }
+                    Ok(BatchReply {
+                        eof: points.is_empty(),
+                        points: batch,
+                    })
+                },
+                ExactSourceMode::Exact,
+                "Test",
+            )
+        }
+
+        let expected = (0..400u64).map(PointIdType::from).collect::<Vec<_>>();
+        for output_batch_size in [1, 2, 7, 32, 64, 257] {
+            let sources = (0..3u64)
+                .map(|lane| {
+                    source(
+                        (lane..400)
+                            .step_by(3)
+                            .map(|id| scored(id, 1_000.0 - id as f32))
+                            .collect(),
+                    )
+                })
+                .collect();
+            let mut state = ExactShardMergeState::open(
+                sources,
+                400,
+                32,
+                Arc::new(AtomicBool::new(false)),
+                "Test",
+            )
+            .unwrap();
+
+            let mut actual = Vec::new();
+            loop {
+                let batch = state.next_batch(output_batch_size).unwrap();
+                if batch.is_empty() {
+                    break;
+                }
+                actual.extend(batch.into_iter().map(|point| point.id));
+            }
+
+            assert_eq!(actual, expected, "output batch size {output_batch_size}");
+        }
     }
 }

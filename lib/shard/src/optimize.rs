@@ -71,36 +71,78 @@ pub trait OptimizationStrategy: Send {
     fn create_temp_segment(&self) -> OperationResult<LockedSegment>;
 }
 
-/// Restores original segments from proxies
+/// Roll back optimizer proxies without reviving superseded point versions.
 ///
 /// # Arguments
 ///
 /// * `segments` - segment holder
-/// * `proxy_ids` - ids of poxy-wrapped segment to restore
+/// * `proxy_ids` - IDs of proxy-wrapped segments to restore
 ///
 /// # Result
 ///
-/// Original segments are pushed into `segments`, proxies removed.
-pub fn unwrap_proxy(
+/// Proxy changes are propagated into every wrapped Segment before any Proxy is
+/// replaced. If propagation fails, all Proxies remain installed and continue
+/// masking superseded wrapped points.
+pub fn rollback_proxies(
     segments: &LockedSegmentHolder,
     proxy_ids: &[SegmentId],
 ) -> OperationResult<()> {
-    let mut segments_lock = segments.write();
-    for &proxy_id in proxy_ids {
-        if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
-            let locked_proxy_segment = proxy_segment_ref.clone();
-            match locked_proxy_segment {
+    let _generation_guard = segments.acquire_update_guard();
+
+    let proxies = {
+        let segments_lock = segments.read();
+        let mut proxies = Vec::with_capacity(proxy_ids.len());
+
+        for &proxy_id in proxy_ids {
+            let Some(segment) = segments_lock.get(proxy_id) else {
+                continue;
+            };
+
+            match segment {
                 LockedSegment::Original(_) => {
-                    // Already unwrapped. It should not actually be here
-                    log::warn!("Attempt to unwrap raw segment! Should not happen.");
+                    log::warn!(
+                        "Attempt to roll back non-Proxy Segment {proxy_id}; it was already replaced"
+                    );
                 }
-                LockedSegment::Proxy(proxy_segment) => {
-                    let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
-                    segments_lock.replace(proxy_id, wrapped_segment)?;
-                }
+                LockedSegment::Proxy(proxy) => proxies.push((proxy_id, proxy.clone())),
             }
         }
+
+        proxies
+    };
+
+    for (proxy_id, proxy) in &proxies {
+        proxy.write().propagate_to_wrapped().map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to propagate optimizer Proxy {proxy_id} before rollback: {err}"
+            ))
+        })?;
     }
+
+    let mut segments_lock = segments.write();
+    for (proxy_id, expected_proxy) in proxies {
+        let Some(current) = segments_lock.get(proxy_id) else {
+            return Err(OperationError::service_error(format!(
+                "optimizer Proxy {proxy_id} disappeared during rollback"
+            )));
+        };
+
+        let LockedSegment::Proxy(current_proxy) = current else {
+            return Err(OperationError::service_error(format!(
+                "optimizer Proxy {proxy_id} changed type during rollback"
+            )));
+        };
+
+        if !std::sync::Arc::ptr_eq(current_proxy, &expected_proxy) {
+            return Err(OperationError::service_error(format!(
+                "optimizer Proxy {proxy_id} changed identity during rollback"
+            )));
+        }
+
+        let wrapped_segment = expected_proxy.read().wrapped_segment.clone();
+        segments_lock.replace(proxy_id, wrapped_segment)?;
+    }
+
     Ok(())
 }
 
@@ -469,7 +511,7 @@ fn finish_optimization(
     let upgradable_segment_holder = segment_holder.upgradable_read();
 
     // This mutex prevents update operations, which could create inconsistency during transition.
-    let update_guard = segment_holder.acquire_updates_lock();
+    let update_guard = segment_holder.acquire_update_guard();
 
     // Apply vector name changes before index and point changes
     // New named vectors must exist before indexes or points reference them
@@ -844,7 +886,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         Err(err) => {
             // Properly cancel optimization on all error kinds
             // Unwrap proxies and add temp segment to holder
-            unwrap_proxy(&segment_holder, &proxy_ids)?;
+            rollback_proxies(&segment_holder, &proxy_ids)?;
             // A graceful cancellation always happens before the optimized segment is swapped into
             // the holder, so the segment `build` already moved into `segments_path` is now an
             // orphan that `Drop` won't remove. Delete it explicitly. Non-cancellation errors may
@@ -871,7 +913,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         Err(err) => {
             // Properly cancel optimization on all error kinds
             // Unwrap proxies and add temp segment to holder
-            unwrap_proxy(&segment_holder, &proxy_ids)?;
+            rollback_proxies(&segment_holder, &proxy_ids)?;
             // A graceful cancellation always happens before the optimized segment is swapped into
             // the holder, so the segment `build` already moved into `segments_path` is now an
             // orphan that `Drop` won't remove. Delete it explicitly. Non-cancellation errors may

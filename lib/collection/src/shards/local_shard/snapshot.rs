@@ -388,7 +388,7 @@ where
                 segments_lock,
                 *segment_id,
                 proxy_segment.clone(),
-                segments.acquire_updates_lock(),
+                segments.acquire_update_guard(),
             ) {
                 Ok(lock) => {
                     segments_lock = lock;
@@ -407,7 +407,7 @@ where
         segments_lock,
         proxies,
         tmp_segment_id,
-        segments.acquire_updates_lock(),
+        segments.acquire_update_guard(),
     )?;
 
     result

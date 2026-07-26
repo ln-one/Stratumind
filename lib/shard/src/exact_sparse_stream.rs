@@ -3,7 +3,6 @@
 
 //! Exact pull-based Sparse stream merged across a frozen set of Segments.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -19,8 +18,8 @@ use segment::types::{Filter, ScoredPoint, SearchParams, VectorNameBuf, WithPaylo
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::exact_score_stream::{
-    BatchReply, ExactBatchExecutor, ExactShardPointVersions, ExactShardScoreStream,
-    ExactShardStreamTelemetry, ExactSourceMode, SegmentScoreSource,
+    BatchReply, ExactBatchExecutor, ExactShardMergeState, ExactShardStreamTelemetry,
+    ExactSourceMode, SegmentScoreSource,
 };
 use crate::locked_segment::LockedSegment;
 
@@ -33,7 +32,7 @@ pub type SparseShardTelemetry = ExactShardStreamTelemetry;
 /// and unsupported index representations are materialized exactly once as an
 /// explicit safe fallback. No repeated Top-N query is issued.
 pub struct ExactSparseShardStream {
-    inner: ExactShardScoreStream,
+    inner: ExactShardMergeState,
 }
 
 impl ExactSparseShardStream {
@@ -48,38 +47,21 @@ impl ExactSparseShardStream {
         stopped: Arc<AtomicBool>,
         batch_executor: ExactBatchExecutor,
     ) -> OperationResult<Self> {
-        let point_versions = ExactShardPointVersions::build(&segments, &stopped)?;
-        Self::open_with_point_versions(
-            segments,
-            vector_name,
-            query,
-            filter,
-            source_batch_size,
-            posting_batch_size,
-            stopped,
-            batch_executor,
-            point_versions,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn open_with_point_versions(
-        segments: Vec<LockedSegment>,
-        vector_name: VectorNameBuf,
-        query: SparseVector,
-        filter: Option<Filter>,
-        source_batch_size: usize,
-        posting_batch_size: usize,
-        stopped: Arc<AtomicBool>,
-        batch_executor: ExactBatchExecutor,
-        point_versions: Arc<ExactShardPointVersions>,
-    ) -> OperationResult<Self> {
         if source_batch_size == 0 || posting_batch_size == 0 {
             return Err(OperationError::validation_error(
-                "native Sparse Shard batch sizes must be positive",
+                "exact Sparse Shard batch sizes must be positive",
             ));
         }
 
+        let visible_point_copies = segments
+            .iter()
+            .map(|segment| {
+                segment
+                    .get()
+                    .read()
+                    .available_point_count_without_deferred()
+            })
+            .sum();
         let query_context = Arc::new(build_query_context(
             &segments,
             &vector_name,
@@ -101,14 +83,18 @@ impl ExactSparseShardStream {
         }
 
         Ok(Self {
-            inner: ExactShardScoreStream::open(
+            inner: ExactShardMergeState::open(
                 sources,
-                point_versions,
+                visible_point_copies,
                 source_batch_size,
                 stopped,
                 "Sparse",
             )?,
         })
+    }
+
+    pub fn next_batch(&mut self, max_results: usize) -> OperationResult<Vec<ScoredPoint>> {
+        self.inner.next_batch(max_results)
     }
 
     pub fn next_result(&mut self) -> OperationResult<Option<ScoredPoint>> {
@@ -288,42 +274,6 @@ fn materialize_exact(
             .then_with(|| right.version.cmp(&left.version))
     });
     Ok(result)
-}
-
-/// Materialize one Shard's complete authoritative Sparse order as the legacy
-/// exact fallback. The caller owns concurrency and admission control.
-pub fn materialize_shard_exact(
-    segments: &[LockedSegment],
-    vector_name: &str,
-    query: &SparseVector,
-    filter: Option<&Filter>,
-    stopped: Arc<AtomicBool>,
-    point_versions: &ExactShardPointVersions,
-) -> OperationResult<Vec<ScoredPoint>> {
-    let query_context = build_query_context(segments, vector_name, query, stopped)?;
-    let mut points = Vec::new();
-    for (source, segment) in segments.iter().enumerate() {
-        let segment = segment.get().read();
-        points.extend(
-            materialize_exact(&*segment, vector_name, query, filter, &query_context)?
-                .into_iter()
-                .filter(|point| point_versions.contains(source, point)),
-        );
-    }
-    points.sort_unstable_by(|left, right| {
-        OrderedFloat(right.score)
-            .cmp(&OrderedFloat(left.score))
-            .then_with(|| left.id.cmp(&right.id))
-            .then_with(|| right.version.cmp(&left.version))
-    });
-    let mut seen = HashSet::with_capacity(points.len());
-    if let Some(duplicate) = points.iter().find(|point| !seen.insert(point.id)) {
-        return Err(OperationError::inconsistent_storage(format!(
-            "materialized Sparse Shard order contains authoritative point {} more than once",
-            duplicate.id,
-        )));
-    }
-    Ok(points)
 }
 
 #[cfg(test)]

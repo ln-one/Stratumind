@@ -12,6 +12,8 @@ use tempfile::Builder;
 
 use super::*;
 use crate::fixtures::*;
+use crate::optimize::rollback_proxies;
+use crate::proxy_segment::ProxySegment;
 use crate::segment_holder::locked::LockedSegmentHolder;
 
 #[test]
@@ -33,6 +35,70 @@ fn test_add_and_swap() {
     replaced_segments
         .into_iter()
         .for_each(|s| s.drop_data().unwrap());
+}
+
+#[test]
+fn optimizer_rollback_keeps_only_the_authoritative_point_version_visible() {
+    let dir = Builder::new()
+        .prefix("optimizer_rollback_versions")
+        .tempdir()
+        .unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let point_id = PointIdType::NumId(1);
+    let update_version = 1010;
+
+    let mut old_segment = build_segment_1(dir.path());
+    old_segment.appendable_flag = false;
+    let cow_segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+
+    let mut holder = SegmentHolder::default();
+    let old_segment_id = holder.add_new(old_segment);
+    holder.add_new(cow_segment);
+
+    let old_segment = holder.get(old_segment_id).unwrap().clone();
+    holder
+        .replace(
+            old_segment_id,
+            LockedSegment::from(ProxySegment::new(old_segment)),
+        )
+        .unwrap();
+
+    let segments = LockedSegmentHolder::new(holder);
+    {
+        let holder = segments.read();
+        holder
+            .apply_points_with_conditional_move(
+                update_version,
+                &[point_id],
+                |_, _| unreachable!("a Proxy point must move to the COW segment"),
+                |_, vectors, _| {
+                    vectors.insert(
+                        DEFAULT_VECTOR_NAME.to_owned(),
+                        VectorInternal::Dense(vec![0.0; 4]),
+                    );
+                },
+                &hw_counter,
+            )
+            .unwrap();
+    }
+
+    rollback_proxies(&segments, &[old_segment_id]).unwrap();
+
+    let visible_versions: Vec<_> = segments
+        .read()
+        .iter()
+        .filter_map(|(_, segment)| {
+            let segment = segment.get();
+            let segment = segment.read();
+            segment.has_point(point_id).then(|| {
+                segment
+                    .point_version(point_id)
+                    .expect("visible point must have a version")
+            })
+        })
+        .collect();
+
+    assert_eq!(visible_versions, vec![update_version]);
 }
 
 #[test]
@@ -1288,7 +1354,7 @@ fn test_double_proxies() {
         outer_segments_lock,
         outer_proxies,
         outer_tmp_segment,
-        holder.acquire_updates_lock(),
+        holder.acquire_update_guard(),
     )
     .unwrap();
 
@@ -1297,7 +1363,7 @@ fn test_double_proxies() {
         holder.upgradable_read(),
         inner_proxies,
         inner_tmp_segment,
-        holder.acquire_updates_lock(),
+        holder.acquire_update_guard(),
     )
     .unwrap();
 

@@ -14,7 +14,7 @@ use segment::types::SegmentConfig;
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::proxy_segment::UnsyncedProxySegment;
-use crate::segment_holder::locked::UpdatesGuard;
+use crate::segment_holder::locked::SegmentUpdateGuard;
 use crate::segment_holder::{SegmentHolder, SegmentId};
 use crate::snapshots::snapshot_manifest::SnapshotManifest;
 
@@ -127,7 +127,7 @@ impl SegmentHolder {
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segment_id: SegmentId,
         proxy_segment: LockedSegment,
-        updates_guard: UpdatesGuard<'a>,
+        updates_guard: SegmentUpdateGuard<'a>,
     ) -> Result<
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
@@ -146,13 +146,13 @@ impl SegmentHolder {
             }
         };
 
-        // propagate changes to wrapped segment with segment holder read lock
-        {
-            if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
-                log::error!(
-                    "Propagating proxy segment {segment_id} changes to wrapped segment failed, ignoring: {err}",
-                );
-            }
+        // Propagation must succeed before the Proxy can be removed. Otherwise
+        // superseded wrapped points could become visible again.
+        if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
+            log::error!(
+                "Propagating Proxy Segment {segment_id} changes failed; keeping the Proxy installed: {err}",
+            );
+            return Err(segments_lock);
         }
 
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
@@ -171,23 +171,31 @@ impl SegmentHolder {
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         proxies: Vec<(SegmentId, LockedSegment)>,
         tmp_segment_id: SegmentId,
-        updates_guard: UpdatesGuard<'_>,
+        updates_guard: SegmentUpdateGuard<'_>,
     ) -> OperationResult<()> {
         // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
         // wrapped segment back into the segment holder. This can be an expensive step,
         // so it is important, that we don't block reads while doing this.
 
-        // propagate changes to wrapped segment with segment holder read lock
-        proxies
-            .iter()
-            .filter_map(|(segment_id, proxy_segment)| match proxy_segment {
-                LockedSegment::Proxy(proxy_segment) => Some((segment_id, proxy_segment)),
-                LockedSegment::Original(_) => None,
-            }).for_each(|(proxy_id, proxy_segment)| {
-            if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
-                log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
-            }
-        });
+        // Propagate every Proxy before replacing any of them. A failure keeps
+        // the complete Proxy generation installed.
+        for (proxy_id, proxy_segment) in
+            proxies
+                .iter()
+                .filter_map(|(segment_id, proxy_segment)| match proxy_segment {
+                    LockedSegment::Proxy(proxy_segment) => Some((segment_id, proxy_segment)),
+                    LockedSegment::Original(_) => None,
+                })
+        {
+            proxy_segment
+                .write()
+                .propagate_to_wrapped()
+                .inspect_err(|err| {
+                    log::error!(
+                        "Propagating Proxy Segment {proxy_id} changes failed; keeping all Proxies installed: {err}"
+                    );
+                })?;
+        }
 
         // Swap out each proxy with wrapped segment once changes are propagated
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);

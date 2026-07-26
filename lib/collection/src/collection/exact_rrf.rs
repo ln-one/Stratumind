@@ -12,18 +12,18 @@ use std::time::Duration;
 
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::reciprocal_rank_fusion::{
-    DynamicRrfExecution, DynamicRrfPolicy, DynamicRrfScheduler, DynamicRrfStopReason,
-    ExactRrfStream, execute_dynamic_rrf_with_policy,
+    DynamicRrfAdvance, DynamicRrfExecution, DynamicRrfPolicy, DynamicRrfScheduler,
+    DynamicRrfSession, DynamicRrfStopReason, ExactRrfStream,
 };
 use segment::index::exact_dense_stream::DenseExecutionPolicy;
 use segment::index::exact_score_stream::{
     ExactScoreStream, ExactScoredIdentity, KWayExactScoreStream,
 };
 use segment::types::{ExtendedPointId, Filter, PointIdType, ScoredPoint, VectorNameBuf};
+use shard::ExactBatchExecutor;
 use shard::exact_dense_stream::{DenseShardTelemetry, ExactDenseShardStream};
 use shard::exact_sparse_stream::ExactSparseShardStream;
 use shard::locked_segment::LockedSegment;
-use shard::{ExactBatchExecutor, ExactShardPointVersions};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::Collection;
@@ -63,7 +63,7 @@ pub struct ExactRrfResult {
     /// lookahead not yet consumed by WRRF.
     pub source_points_received: Vec<usize>,
     pub exhaustive_fallback_sources: usize,
-    pub visible_points: usize,
+    pub visible_point_copies: usize,
     pub shard_count: usize,
 }
 
@@ -167,7 +167,7 @@ impl Collection {
         let shard_count = snapshots.len();
         let segment_count = snapshots
             .iter()
-            .map(|snapshot| snapshot.segments.len())
+            .map(|snapshot| snapshot.segment_count())
             .sum::<usize>();
         // ExactRankSession advances one Segment batch at a time with short
         // Qdrant-runtime tasks. Segment count no longer determines resident
@@ -196,13 +196,19 @@ impl Collection {
             .coordinator()
             .spawn_blocking(move || {
                 let frozen_snapshots = snapshots;
-                let segments = frozen_snapshots
+                let pinned_generations = frozen_snapshots
                     .iter()
-                    .map(|snapshot| snapshot.segments.clone())
+                    .map(|snapshot| snapshot.pin_generation())
+                    .collect::<Vec<_>>();
+                let segments = pinned_generations
+                    .iter()
+                    .map(|(_, segments)| segments.clone())
                     .collect();
                 // `frozen_snapshots` stays alive in this closure, so every
-                // Shard update guards remain held until the session completes.
+                // Shard update guard remains held; `pinned_generations` also
+                // keeps optimizer publish/rollback behind the fixed handles.
                 let result = execute_exact_rrf(segments, request, task_stopped, batch_executor);
+                drop(pinned_generations);
                 drop(frozen_snapshots);
                 result
             })
@@ -245,19 +251,15 @@ fn execute_exact_rrf(
     } else {
         request.sparse_posting_batch_size
     };
-    let point_versions = snapshots
-        .iter()
-        .map(|segments| ExactShardPointVersions::build(segments, &stopped))
-        .collect::<OperationResult<Vec<_>>>()?;
-
     // The Collection-owned update barriers freeze the Shard generation.
     // Channel state is owned; individual batches borrow Segment read views.
     let versions = Rc::new(RefCell::new(HashMap::new()));
     let sparse_physical = Rc::new(RefCell::new(Vec::<DenseShardTelemetry>::new()));
     let mut sparse_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
     let mut exhaustive_fallback_sources = 0;
-    for (shard, segments) in snapshots.iter().cloned().enumerate() {
-        let stream = ExactSparseShardStream::open_with_point_versions(
+    let mut visible_point_copies = 0;
+    for segments in snapshots.iter().cloned() {
+        let stream = ExactSparseShardStream::open(
             segments,
             request.sparse_using.clone(),
             request.sparse_query.clone(),
@@ -266,9 +268,10 @@ fn execute_exact_rrf(
             sparse_posting_batch_size,
             stopped.clone(),
             batch_executor.clone(),
-            point_versions[shard].clone(),
         )?;
-        exhaustive_fallback_sources += stream.telemetry().exhaustive_fallback_sources;
+        let telemetry = stream.telemetry();
+        exhaustive_fallback_sources += telemetry.exhaustive_fallback_sources;
+        visible_point_copies += telemetry.visible_point_copies;
         let physical_source = {
             let mut telemetry = sparse_physical.borrow_mut();
             telemetry.push(stream.telemetry());
@@ -288,8 +291,8 @@ fn execute_exact_rrf(
     }
     let dense_physical = Rc::new(RefCell::new(Vec::<DenseShardTelemetry>::new()));
     let mut dense_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
-    for (shard, segments) in snapshots.into_iter().enumerate() {
-        let mut stream = ExactDenseShardStream::open_with_point_versions(
+    for segments in snapshots {
+        let mut stream = ExactDenseShardStream::open(
             segments,
             request.dense_using.clone(),
             request.dense_query.clone(),
@@ -298,7 +301,6 @@ fn execute_exact_rrf(
             batch_size,
             stopped.clone(),
             batch_executor.clone(),
-            point_versions[shard].clone(),
         )?;
         let physical_source = {
             let mut telemetry = dense_physical.borrow_mut();
@@ -327,14 +329,7 @@ fn execute_exact_rrf(
         materialized[1].clone(),
     );
     let streams = vec![dense_stream, sparse_stream];
-    let DynamicRrfExecution {
-        point_ids,
-        source_pulls,
-        source_exhausted,
-        certification_checks,
-        stop_reason,
-        ..
-    } = execute_dynamic_rrf_with_policy(
+    let mut session = DynamicRrfSession::new(
         streams,
         request.limit,
         request.rrf_k,
@@ -344,6 +339,24 @@ fn execute_exact_rrf(
             ..DynamicRrfPolicy::default()
         },
     )?;
+    let initial_prefix = request
+        .weights
+        .iter()
+        .map(|weight| (*weight > 0.0).then_some(request.limit))
+        .collect::<Vec<_>>();
+    let execution = match session.advance_until_each(&initial_prefix)? {
+        DynamicRrfAdvance::Fixed(execution) => execution,
+        DynamicRrfAdvance::Paused => session.run_to_completion()?,
+    };
+    let DynamicRrfExecution {
+        point_ids,
+        source_pulls,
+        source_exhausted,
+        certification_checks,
+        stop_reason,
+        ..
+    } = execution;
+    drop(session);
     let observed_versions = Rc::try_unwrap(versions)
         .map_err(|_| OperationError::service_error_light("native exact RRF version map leaked"))?
         .into_inner();
@@ -389,12 +402,6 @@ fn execute_exact_rrf(
             .map(|telemetry| telemetry.points_received)
             .sum(),
     ];
-    let visible_points = dense_physical
-        .borrow()
-        .iter()
-        .map(|telemetry| telemetry.visible_points)
-        .sum();
-
     Ok(ExactRrfResult {
         point_ids,
         versions,
@@ -406,7 +413,7 @@ fn execute_exact_rrf(
         source_batch_requests,
         source_points_received,
         exhaustive_fallback_sources,
-        visible_points,
+        visible_point_copies,
         shard_count: 0,
     })
 }

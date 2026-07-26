@@ -58,7 +58,7 @@ use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::optimization::{OptimizationSegmentInfo, PendingOptimization};
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
-use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_holder::locked::{LockedSegmentHolder, SegmentGenerationGuard};
 use shard::wal::SerdeWal;
 use sparse::common::sparse_vector::SparseVector;
 use tokio::runtime::Handle;
@@ -151,8 +151,30 @@ pub struct LocalShard {
 /// Owned Segment reader handles plus the Shard update barrier that makes them
 /// one frozen read generation for an ExactRankSession.
 pub(crate) struct ExactSegmentReadSet {
-    pub(crate) segments: Vec<LockedSegment>,
+    segment_holder: LockedSegmentHolder,
     _update_guard: OwnedRwLockReadGuard<()>,
+}
+
+impl ExactSegmentReadSet {
+    pub(crate) fn segment_count(&self) -> usize {
+        self.segment_holder.read().len()
+    }
+
+    /// Pin and materialize one Segment generation on the execution thread.
+    ///
+    /// `parking_lot` guards intentionally stay on their acquiring thread when
+    /// deadlock detection is enabled. The returned guard and handles are
+    /// therefore created inside the ExactRankSession blocking coordinator.
+    pub(crate) fn pin_generation(&self) -> (SegmentGenerationGuard, Vec<LockedSegment>) {
+        let generation_guard = self.segment_holder.acquire_generation_guard();
+        let segments = self
+            .segment_holder
+            .read()
+            .iter()
+            .map(|(_, segment)| segment.clone())
+            .collect();
+        (generation_guard, segments)
+    }
 }
 
 /// Shard holds information about segments and WAL.
@@ -363,13 +385,13 @@ impl LocalShard {
             .collect()
     }
 
-    /// Freeze both updates and Segment identities for a native exact read.
-    /// The owned update guard travels with the handles until all short reader
-    /// tasks and the fusion coordinator have stopped.
+    /// Block ordinary updates before the execution thread pins and materializes
+    /// one Segment generation. The owned guard remains alive until all exact
+    /// reader batches and the fusion coordinator have stopped.
     pub(crate) async fn exact_segment_read_set(&self) -> ExactSegmentReadSet {
         let update_guard = self.update_operation_lock.clone().read_owned().await;
         ExactSegmentReadSet {
-            segments: self.exact_segment_handles(),
+            segment_holder: self.segments.clone(),
             _update_guard: update_guard,
         }
     }

@@ -17,8 +17,8 @@ use segment::index::exact_dense_stream::DenseExecutionPolicy;
 use segment::types::{Filter, ScoredPoint, SearchParams, VectorNameBuf, WithPayload, WithVector};
 
 use crate::exact_score_stream::{
-    BatchReply, ExactBatchExecutor, ExactShardPointVersions, ExactShardScoreStream,
-    ExactShardStreamTelemetry, ExactSourceMode, SegmentScoreSource,
+    BatchReply, ExactBatchExecutor, ExactShardMergeState, ExactShardStreamTelemetry,
+    ExactSourceMode, SegmentScoreSource,
 };
 use crate::locked_segment::LockedSegment;
 
@@ -30,7 +30,7 @@ pub type DenseShardTelemetry = ExactShardStreamTelemetry;
 /// materialized exactly once as a safe fallback. Both plans are exhaustive
 /// order equivalent and no repeated Top-N query is issued.
 pub struct ExactDenseShardStream {
-    inner: ExactShardScoreStream,
+    inner: ExactShardMergeState,
 }
 
 impl ExactDenseShardStream {
@@ -45,38 +45,21 @@ impl ExactDenseShardStream {
         stopped: Arc<AtomicBool>,
         batch_executor: ExactBatchExecutor,
     ) -> OperationResult<Self> {
-        let point_versions = ExactShardPointVersions::build(&segments, &stopped)?;
-        Self::open_with_point_versions(
-            segments,
-            vector_name,
-            query,
-            filter,
-            policy,
-            batch_size,
-            stopped,
-            batch_executor,
-            point_versions,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn open_with_point_versions(
-        segments: Vec<LockedSegment>,
-        vector_name: VectorNameBuf,
-        query: Vec<f32>,
-        filter: Option<Filter>,
-        policy: DenseExecutionPolicy,
-        batch_size: usize,
-        stopped: Arc<AtomicBool>,
-        batch_executor: ExactBatchExecutor,
-        point_versions: Arc<ExactShardPointVersions>,
-    ) -> OperationResult<Self> {
         if batch_size == 0 {
             return Err(OperationError::validation_error(
-                "native Dense Shard batch size must be positive",
+                "exact Dense Shard batch size must be positive",
             ));
         }
 
+        let visible_point_copies = segments
+            .iter()
+            .map(|segment| {
+                segment
+                    .get()
+                    .read()
+                    .available_point_count_without_deferred()
+            })
+            .sum();
         let mut sources = Vec::with_capacity(segments.len());
         for (source, segment) in segments.into_iter().enumerate() {
             sources.push(open_segment_rank_source(
@@ -92,14 +75,18 @@ impl ExactDenseShardStream {
         }
 
         Ok(Self {
-            inner: ExactShardScoreStream::open(
+            inner: ExactShardMergeState::open(
                 sources,
-                point_versions,
+                visible_point_copies,
                 batch_size,
                 stopped,
                 "Dense",
             )?,
         })
+    }
+
+    pub fn next_batch(&mut self, max_results: usize) -> OperationResult<Vec<ScoredPoint>> {
+        self.inner.next_batch(max_results)
     }
 
     pub fn next_result(&mut self) -> OperationResult<Option<ScoredPoint>> {
@@ -381,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_higher_scoring_segment_copy_is_removed_before_ranking() {
+    fn conflicting_version_copies_fail_closed_when_encountered() {
         let first_dir = tempfile::tempdir().unwrap();
         let second_dir = tempfile::tempdir().unwrap();
         let mut first = build_simple_segment(first_dir.path(), 2, Distance::Dot).unwrap();
@@ -424,21 +411,14 @@ mod tests {
             ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
-        let ranking = std::iter::from_fn(|| stream.next_result().transpose())
+        let error = std::iter::from_fn(|| stream.next_result().transpose())
             .collect::<OperationResult<Vec<_>>>()
-            .unwrap();
-        assert_eq!(
-            ranking
-                .iter()
-                .map(|point| (point.id, point.version, point.score))
-                .collect::<Vec<_>>(),
-            vec![(8_u64.into(), 5, 2.0), (shared, 11, 1.0)]
-        );
-        assert_eq!(stream.telemetry().duplicates_suppressed, 1);
+            .unwrap_err();
+        assert!(error.to_string().contains("emitted point 7 more than once"));
     }
 
     #[test]
-    fn equal_version_copies_in_multiple_segments_fail_closed() {
+    fn equivalent_physical_copies_are_emitted_once() {
         let first_dir = tempfile::tempdir().unwrap();
         let second_dir = tempfile::tempdir().unwrap();
         let mut first = build_simple_segment(first_dir.path(), 2, Distance::Dot).unwrap();
@@ -454,7 +434,7 @@ mod tests {
                 )
                 .unwrap();
         }
-        let error = ExactDenseShardStream::open(
+        let mut stream = ExactDenseShardStream::open(
             vec![LockedSegment::new(first), LockedSegment::new(second)],
             DEFAULT_VECTOR_NAME.to_owned(),
             vec![1.0, 0.0],
@@ -464,8 +444,13 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             ExactBatchExecutor::dedicated_threads_for_tests(),
         )
-        .err()
-        .expect("duplicate authoritative versions must fail");
-        assert!(error.to_string().contains("in multiple Segments"));
+        .unwrap();
+        let point = stream.next_result().unwrap().unwrap();
+        assert_eq!(
+            (point.id, point.version, point.score),
+            (7_u64.into(), 10, 1.0)
+        );
+        assert!(stream.next_result().unwrap().is_none());
+        assert_eq!(stream.telemetry().duplicates_suppressed, 1);
     }
 }

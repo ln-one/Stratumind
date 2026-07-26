@@ -18,7 +18,7 @@ impl EdgeShard {
 
         let operation_id = wal.write(&record).map_err(service_error)?;
         let hw_counter = HardwareCounterCell::disposable();
-        let _update_guard = self.segments.acquire_updates_lock();
+        let _update_guard = self.segments.acquire_update_guard();
 
         let segments_guard = self.segments.read();
 

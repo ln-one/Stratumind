@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use ordered_float::OrderedFloat;
@@ -103,7 +104,7 @@ fn make_segment(
     let mut dense = Vec::new();
     let mut sparse = Vec::new();
     for index in 0..128u64 {
-        let id: PointIdType = (40_000 - (index * 2 + lane)).into();
+        let id: PointIdType = (40_000 - (index * 8 + lane)).into();
         let dense_score = 1.0 + ((index * 5 + lane) % 17) as f32;
         let sparse_score = 1.0 + ((index * 7 + lane) % 19) as f32;
         let dense_vector = [dense_score, index as f32];
