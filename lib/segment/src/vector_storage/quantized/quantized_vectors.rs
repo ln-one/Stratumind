@@ -891,6 +891,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
+        build_per_vector_scalar: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         Self::create_with_compact_limit(
@@ -900,6 +901,7 @@ impl QuantizedVectors {
             path,
             max_threads,
             DEFAULT_COMPACT_CERTIFICATE_MAX_POINTS,
+            build_per_vector_scalar,
             stopped,
         )
     }
@@ -911,6 +913,7 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         compact_max_points: usize,
+        build_per_vector_scalar: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let mut quantized_vectors = match vector_storage {
@@ -1090,6 +1093,9 @@ impl QuantizedVectors {
             ),
             VectorStorageEnum::EmptySparse(_) => Err(OperationError::WrongSparse),
         }?;
+        if !build_per_vector_scalar {
+            quantized_vectors.config.per_vector_scalar_generation = None;
+        }
         quantized_vectors.build_per_vector_scalar(vector_storage, stopped)?;
         Ok(quantized_vectors)
     }
@@ -1378,12 +1384,17 @@ impl QuantizedVectors {
         quantization_config: &QuantizationConfig,
         vector_storage: &VectorStorageEnum,
         path: &Path,
+        load_per_vector_scalar: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<Option<Self>> {
         let config_path = Self::get_config_path(path);
         if config_path.exists() {
             let config: QuantizedVectorsConfig = read_json(&config_path)?;
-            return Ok(Some(Self::load_impl(config, vector_storage, path)?));
+            let mut loaded = Self::load_impl(config, vector_storage, path)?;
+            if !load_per_vector_scalar {
+                loaded.per_vector_scalar = None;
+            }
+            return Ok(Some(loaded));
         }
 
         // If we don't have an appendable quantization feature, do not create a new one.
@@ -1411,6 +1422,7 @@ impl QuantizedVectors {
             QuantizedVectorsStorageType::Mutable,
             path,
             max_threads,
+            load_per_vector_scalar,
             stopped,
         )?;
         Ok(Some(quantized_vectors))

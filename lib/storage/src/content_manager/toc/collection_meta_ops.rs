@@ -153,6 +153,7 @@ impl TableOfContent {
             params,
             optimizers_config,
             quantization_config,
+            exact_rank_config,
             sparse_vectors,
             strict_mode_config: strict_mode,
             metadata,
@@ -181,6 +182,12 @@ impl TableOfContent {
         if let Some(diff) = quantization_config {
             collection
                 .update_quantization_config_from_diff(diff)
+                .await?;
+            recreate_optimizers = true;
+        }
+        if let Some(exact_rank_config) = exact_rank_config {
+            collection
+                .update_exact_rank_config(exact_rank_config)
                 .await?;
             recreate_optimizers = true;
         }

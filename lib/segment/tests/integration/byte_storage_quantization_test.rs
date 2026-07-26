@@ -235,6 +235,7 @@ fn test_byte_storage_binary_quantization_hnsw(
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        exact_rank_profile: Default::default(),
     };
 
     let int_key = "int";
@@ -315,6 +316,7 @@ fn test_byte_storage_binary_quantization_hnsw(
                 QuantizedVectorsStorageType::Immutable,
                 quantized_data_path,
                 4,
+                false,
                 &stopped,
             )
             .unwrap();

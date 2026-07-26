@@ -48,7 +48,7 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::ClockTag;
-use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
+use crate::config::{CollectionConfigInternal, CollectionParams, ExactRankConfig, WalConfig};
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::optimizers_builder::OptimizersConfig;
@@ -170,6 +170,7 @@ pub struct CollectionConfig {
     pub wal_config: Option<WalConfig>,
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
+    pub exact_rank_config: ExactRankConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strict_mode_config: Option<StrictModeConfigOutput>,
     /// Arbitrary JSON metadata for the collection
@@ -187,6 +188,7 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             optimizer_config,
             wal_config,
             quantization_config,
+            exact_rank_config,
             strict_mode_config,
             // Internal UUID to identify unique collections in consensus snapshots
             uuid: _,
@@ -199,6 +201,7 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             optimizer_config,
             wal_config: Some(wal_config),
             quantization_config,
+            exact_rank_config,
             strict_mode_config: strict_mode_config.map(StrictModeConfigOutput::from),
             metadata,
         }

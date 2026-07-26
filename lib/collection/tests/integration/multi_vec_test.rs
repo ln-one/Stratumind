@@ -63,6 +63,7 @@ pub async fn multi_vec_collection_fixture(collection_path: &Path, shard_number: 
         wal_config,
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
+        exact_rank_config: Default::default(),
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,

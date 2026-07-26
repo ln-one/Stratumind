@@ -12,9 +12,9 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, Payload, PayloadStorageType, QuantizationConfig, SegmentConfig,
-    SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf,
-    VectorStorageDatatype, VectorStorageType,
+    Distance, ExactRankProfile, HnswConfig, Indexes, Payload, PayloadStorageType,
+    QuantizationConfig, SegmentConfig, SparseVectorDataConfig, StrictModeConfig, VectorDataConfig,
+    VectorName, VectorNameBuf, VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -30,6 +30,15 @@ use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
+
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq, Hash,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ExactRankConfig {
+    #[serde(default)]
+    pub profile: ExactRankProfile,
+}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq, Eq)]
 #[anonymize(false)]
@@ -216,6 +225,39 @@ impl CollectionParams {
     }
 }
 
+#[cfg(test)]
+mod exact_rank_config_tests {
+    use super::*;
+
+    #[test]
+    fn missing_exact_rank_config_is_disabled() {
+        let config: ExactRankConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(config.profile, ExactRankProfile::Disabled);
+    }
+
+    #[test]
+    fn dense_sparse_profile_reaches_segment_config() {
+        let config = CollectionConfigInternal {
+            params: CollectionParams::empty(),
+            hnsw_config: HnswConfig::default(),
+            optimizer_config: OptimizersConfig::fixture(),
+            wal_config: WalConfig::default(),
+            quantization_config: None,
+            exact_rank_config: ExactRankConfig {
+                profile: ExactRankProfile::DenseSparseV1,
+            },
+            strict_mode_config: None,
+            uuid: None,
+            metadata: None,
+        };
+
+        assert_eq!(
+            config.to_base_segment_config().exact_rank_profile,
+            ExactRankProfile::DenseSparseV1
+        );
+    }
+}
+
 pub fn default_shard_number() -> NonZeroU32 {
     NonZeroU32::new(1).unwrap()
 }
@@ -245,6 +287,8 @@ pub struct CollectionConfigInternal {
     #[serde(default)]
     #[validate(nested)]
     pub quantization_config: Option<QuantizationConfig>,
+    #[serde(default)]
+    pub exact_rank_config: ExactRankConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub strict_mode_config: Option<StrictModeConfig>,
@@ -327,8 +371,11 @@ impl CollectionConfigInternal {
     }
 
     pub fn to_base_segment_config(&self) -> SegmentConfig {
-        self.params
-            .to_base_segment_config(self.quantization_config.as_ref())
+        let mut config = self
+            .params
+            .to_base_segment_config(self.quantization_config.as_ref());
+        config.exact_rank_profile = self.exact_rank_config.profile;
+        config
     }
 }
 
@@ -631,6 +678,7 @@ impl CollectionParams {
             vector_data,
             sparse_vector_data,
             payload_storage_type,
+            exact_rank_profile: ExactRankProfile::Disabled,
         }
     }
 }

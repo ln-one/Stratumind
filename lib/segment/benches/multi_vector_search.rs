@@ -87,6 +87,7 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        exact_rank_profile: Default::default(),
     };
 
     let hw_counter = HardwareCounterCell::new();

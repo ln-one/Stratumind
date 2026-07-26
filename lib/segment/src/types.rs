@@ -1461,6 +1461,22 @@ impl PayloadStorageType {
     }
 }
 
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Anonymize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ExactRankProfile {
+    #[default]
+    Disabled,
+    DenseSparseV1,
+}
+
+impl ExactRankProfile {
+    pub const fn builds_per_vector_scalar(self) -> bool {
+        matches!(self, Self::DenseSparseV1)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
@@ -1471,6 +1487,8 @@ pub struct SegmentConfig {
     pub sparse_vector_data: HashMap<VectorNameBuf, SparseVectorDataConfig>,
     /// Defines payload storage type
     pub payload_storage_type: PayloadStorageType,
+    #[serde(default)]
+    pub exact_rank_profile: ExactRankProfile,
 }
 
 impl SegmentConfig {
@@ -1532,6 +1550,7 @@ impl SegmentConfig {
             vector_data: _,
             sparse_vector_data: _,
             payload_storage_type: _,
+            exact_rank_profile: _,
         } = self;
 
         check_vectors_map_compatible(
@@ -1545,6 +1564,13 @@ impl SegmentConfig {
             &other.sparse_vector_data,
             SparseVectorDataConfig::check_compatible,
         )?;
+
+        if self.exact_rank_profile != other.exact_rank_profile {
+            return Err(format!(
+                "exact rank profiles differ: {:?} != {:?}",
+                self.exact_rank_profile, other.exact_rank_profile
+            ));
+        }
 
         Ok(())
     }

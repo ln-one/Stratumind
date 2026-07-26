@@ -6,8 +6,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SegmentConfig,
-    SegmentState, SeqNumberType, VectorDataConfig, VectorNameBuf, VectorStorageType,
+    Distance, ExactRankProfile, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig,
+    SegmentConfig, SegmentState, SeqNumberType, VectorDataConfig, VectorNameBuf, VectorStorageType,
 };
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -82,6 +82,7 @@ impl From<SegmentConfigV5> for SegmentConfig {
             vector_data,
             sparse_vector_data: Default::default(),
             payload_storage_type: payload_storage_type.unwrap_or(default_storage_type),
+            exact_rank_profile: ExactRankProfile::Disabled,
         }
     }
 }

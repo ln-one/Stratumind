@@ -44,6 +44,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         wal_config,
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
+        exact_rank_config: Default::default(),
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,

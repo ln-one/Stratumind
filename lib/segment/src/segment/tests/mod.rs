@@ -812,6 +812,7 @@ fn create_deferred_segment(
                 ),
             ]),
             payload_storage_type: Default::default(),
+            exact_rank_profile: Default::default(),
         },
         deferred_internal_id,
         true,

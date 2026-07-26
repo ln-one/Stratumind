@@ -293,6 +293,7 @@ pub trait SegmentOptimizer: Sync {
             vector_data,
             sparse_vector_data,
             payload_storage_type: segment_optimizer_config.payload_storage_type,
+            exact_rank_profile: segment_optimizer_config.exact_rank_profile,
         };
 
         SegmentBuilder::new(

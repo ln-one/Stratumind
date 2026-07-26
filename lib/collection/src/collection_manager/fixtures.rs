@@ -234,8 +234,12 @@ pub(crate) fn get_merge_optimizer(
         ..CollectionParams::empty()
     };
     let hnsw_config = Default::default();
-    let segment_config =
-        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default());
+    let segment_config = build_segment_optimizer_config(
+        &collection_params,
+        &hnsw_config,
+        &Default::default(),
+        Default::default(),
+    );
 
     MergeOptimizer::new(
         5,
@@ -262,8 +266,12 @@ pub(crate) fn get_indexing_optimizer(
         ..CollectionParams::empty()
     };
     let hnsw_config = Default::default();
-    let segment_config =
-        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default());
+    let segment_config = build_segment_optimizer_config(
+        &collection_params,
+        &hnsw_config,
+        &Default::default(),
+        Default::default(),
+    );
 
     IndexingOptimizer::new(
         2,

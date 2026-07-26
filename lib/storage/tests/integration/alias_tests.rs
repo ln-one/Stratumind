@@ -108,6 +108,7 @@ fn test_alias_operation() {
                             replication_factor: None,
                             write_consistency_factor: None,
                             quantization_config: None,
+                            exact_rank_config: Default::default(),
                             sharding_method: None,
                             strict_mode_config: None,
                             uuid: None,

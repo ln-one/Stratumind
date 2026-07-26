@@ -128,6 +128,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: PayloadStorageType::Mmap,
+        exact_rank_profile: Default::default(),
     };
 
     let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();

@@ -135,6 +135,7 @@ pub mod consensus_ops {
                     params: None,
                     hnsw_config: None,
                     quantization_config: None,
+                    exact_rank_config: None,
                     sparse_vectors: None,
                     strict_mode_config: None,
                     metadata: None,

@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use collection::config::{CollectionConfigInternal, CollectionParams, ShardingMethod};
+use collection::config::{
+    CollectionConfigInternal, CollectionParams, ExactRankConfig, ShardingMethod,
+};
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
     WalConfigDiff,
@@ -164,6 +166,8 @@ pub struct CreateCollection {
     #[serde(default, alias = "quantization")]
     #[validate(nested)]
     pub quantization_config: Option<QuantizationConfig>,
+    #[serde(default)]
+    pub exact_rank_config: ExactRankConfig,
     /// Sparse vector data config.
     #[validate(nested)]
     pub sparse_vectors: Option<BTreeMap<VectorNameBuf, SparseVectorParams>>,
@@ -284,6 +288,7 @@ pub struct UpdateCollection {
     #[serde(default, alias = "quantization")]
     #[validate(nested)]
     pub quantization_config: Option<QuantizationConfigDiff>,
+    pub exact_rank_config: Option<ExactRankConfig>,
     /// Map of sparse vector data parameters to update for each sparse vector.
     #[validate(nested)]
     pub sparse_vectors: Option<SparseVectorsConfig>,
@@ -314,6 +319,7 @@ impl UpdateCollectionOperation {
                 params: None,
                 optimizers_config: None,
                 quantization_config: None,
+                exact_rank_config: None,
                 sparse_vectors: None,
                 strict_mode_config: None,
                 metadata: None,
@@ -484,6 +490,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             optimizer_config,
             wal_config,
             quantization_config,
+            exact_rank_config,
             strict_mode_config,
             uuid,
             metadata,
@@ -512,6 +519,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             wal_config: Some(wal_config.into()),
             optimizers_config: Some(optimizer_config.into()),
             quantization_config,
+            exact_rank_config,
             sparse_vectors,
             strict_mode_config,
             uuid,

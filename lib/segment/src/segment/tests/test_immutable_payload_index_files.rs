@@ -102,6 +102,7 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            exact_rank_profile: Default::default(),
         },
         None,
         true,
@@ -149,6 +150,7 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        exact_rank_profile: Default::default(),
     };
     assert!(!target_config.is_appendable());
 

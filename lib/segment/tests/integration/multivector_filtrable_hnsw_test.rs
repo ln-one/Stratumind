@@ -78,6 +78,7 @@ fn test_multi_filterable_hnsw(
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        exact_rank_profile: Default::default(),
     };
 
     let int_key = "int";

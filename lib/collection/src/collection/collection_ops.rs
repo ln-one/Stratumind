@@ -156,6 +156,23 @@ impl Collection {
         Ok(())
     }
 
+    /// Selects the exact-ranking profile persisted with this collection.
+    ///
+    /// The caller must recreate optimizers after this update. Segment compatibility includes the
+    /// profile, so optimized segments are rebuilt instead of implicitly reusing an index produced
+    /// for another profile.
+    pub async fn update_exact_rank_config(
+        &self,
+        exact_rank_config: crate::config::ExactRankConfig,
+    ) -> CollectionResult<()> {
+        {
+            let mut config = self.collection_config.write().await;
+            config.exact_rank_config = exact_rank_config;
+        }
+        self.collection_config.read().await.save(&self.path)?;
+        Ok(())
+    }
+
     pub async fn update_metadata(&self, metadata: Payload) -> CollectionResult<()> {
         let mut collection_config_guard: tokio::sync::RwLockWriteGuard<
             '_,

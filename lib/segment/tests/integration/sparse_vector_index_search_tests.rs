@@ -48,7 +48,6 @@ use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
-use sparse::index::posting_block_stream::{SparseExecutionPlan, SparsePhysicalPlan};
 use sparse::index::posting_list_common::PostingListIter as _;
 use tempfile::Builder;
 use uuid::Uuid;
@@ -69,12 +68,12 @@ const LARGE_FULL_SCAN_THRESHOLD: usize = 10 * NUM_VECTORS;
 const SPARSE_VECTOR_NAME: &VectorName = "sparse_vector";
 
 #[test]
-fn persisted_sparse_index_native_cursor_is_resumable_and_exact() {
-    fixture_for_all_indices!(check_persisted_native_sparse_cursor::<_>());
+fn persisted_sparse_rank_state_is_resumable_and_exact() {
+    fixture_for_all_indices!(check_persisted_sparse_rank_state::<_>());
 }
 
-fn check_persisted_native_sparse_cursor<I: InvertedIndex>() {
-    let data_dir = Builder::new().prefix("native_cursor").tempdir().unwrap();
+fn check_persisted_sparse_rank_state<I: InvertedIndex>() {
+    let data_dir = Builder::new().prefix("rank_state").tempdir().unwrap();
     let vectors = (0..4_096).map(|id| SparseVector {
         indices: vec![10, 20, 30],
         values: vec![
@@ -104,49 +103,40 @@ fn check_persisted_native_sparse_cursor<I: InvertedIndex>() {
     let arena = SearchScratchArena::new_slow();
     let hardware_counter = HardwareCounterCell::disposable();
     let stopped = AtomicBool::new(false);
-    let mut cursor = index
-        .exact_cursor(&query, 128, &arena, &hardware_counter)
+    let mut state = index
+        .exact_rank_state(&query, 128, &arena, &hardware_counter)
         .unwrap();
 
-    let first_prefix: Vec<_> = (0..37)
-        .map(|_| cursor.next_result(&stopped).unwrap().unwrap())
-        .collect();
-    let prefix_telemetry = cursor.telemetry();
-    assert_eq!(prefix_telemetry.plan, SparsePhysicalPlan::PostingBlockMax);
+    let first_prefix = index
+        .advance_exact_rank_state(&mut state, 37, &arena, &hardware_counter, &stopped)
+        .unwrap();
+    let prefix_telemetry = state.telemetry();
     assert!(prefix_telemetry.batches_expanded < prefix_telemetry.batches);
 
     let mut resumed = first_prefix;
-    while let Some(point) = cursor.next_result(&stopped).unwrap() {
-        resumed.push(point);
+    loop {
+        let batch = index
+            .advance_exact_rank_state(&mut state, 11, &arena, &hardware_counter, &stopped)
+            .unwrap();
+        if batch.is_empty() {
+            break;
+        }
+        resumed.extend(batch);
     }
 
     assert_eq!(resumed, exhaustive);
-    assert_eq!(cursor.next_result(&stopped).unwrap(), None);
-
-    let mut eager_fallback = index
-        .exact_cursor_with_plan(
-            &query,
-            128,
-            SparseExecutionPlan::EagerPostingBlock,
-            &arena,
-            &hardware_counter,
-        )
-        .unwrap();
-    let mut eager = Vec::new();
-    while let Some(point) = eager_fallback.next_result(&stopped).unwrap() {
-        eager.push(point);
-    }
-    assert_eq!(eager, exhaustive);
-    assert_eq!(
-        eager_fallback.telemetry().plan,
-        SparsePhysicalPlan::EagerPostingBlock
+    assert!(
+        index
+            .advance_exact_rank_state(&mut state, 11, &arena, &hardware_counter, &stopped,)
+            .unwrap()
+            .is_empty()
     );
 }
 
 #[test]
-fn segment_exact_sparse_stream_applies_filter_and_external_identity_ties() {
+fn segment_sparse_rank_state_applies_filter_and_external_identity_ties() {
     let dir = Builder::new()
-        .prefix("segment_exact_sparse_stream")
+        .prefix("segment_sparse_rank_state")
         .tempdir()
         .unwrap();
     let config = SegmentConfig {
@@ -164,6 +154,7 @@ fn segment_exact_sparse_stream_applies_filter_and_external_identity_ties() {
             },
         )]),
         payload_storage_type: Default::default(),
+        exact_rank_profile: Default::default(),
     };
     let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
     let hardware_counter = HardwareCounterCell::new();
@@ -233,28 +224,34 @@ fn segment_exact_sparse_stream_applies_filter_and_external_identity_ties() {
     segment.fill_query_context(&mut query_context).unwrap();
     let segment_query_context = query_context.get_segment_query_context();
 
-    let actual = segment
+    let mut state = segment
         .with_view(|view| {
-            view.with_exact_sparse_stream(
+            view.open_exact_sparse_rank_state(
                 SPARSE_VECTOR_NAME,
                 &query,
-                Some(&filter),
-                32,
                 4_096,
                 &segment_query_context,
-                |next| {
-                    let mut points = Vec::new();
-                    for _ in 0..11 {
-                        points.push(next()?.expect("prefix must contain eleven points"));
-                    }
-                    while let Some(point) = next()? {
-                        points.push(point);
-                    }
-                    Ok(points)
-                },
             )
         })
         .unwrap();
+    let mut actual = Vec::new();
+    loop {
+        let batch = segment
+            .with_view(|view| {
+                view.advance_exact_sparse_rank_state(
+                    SPARSE_VECTOR_NAME,
+                    Some(&filter),
+                    &mut state,
+                    11,
+                    &segment_query_context,
+                )
+            })
+            .unwrap();
+        if batch.is_empty() {
+            break;
+        }
+        actual.extend(batch);
+    }
 
     assert_eq!(
         actual
@@ -807,6 +804,7 @@ fn sparse_vector_index_persistence_test() {
             },
         )]),
         payload_storage_type: Default::default(),
+        exact_rank_profile: Default::default(),
     };
     let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
 
@@ -979,6 +977,7 @@ fn sparse_vector_test_large_index() {
             },
         )]),
         payload_storage_type: Default::default(),
+        exact_rank_profile: Default::default(),
     };
     let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
 

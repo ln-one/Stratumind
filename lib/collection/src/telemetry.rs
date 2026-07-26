@@ -140,6 +140,7 @@ pub struct CollectionConfigTelemetry {
     pub wal_config: WalConfig,
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
+    pub exact_rank_config: crate::config::ExactRankConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strict_mode_config: Option<StrictModeConfigOutput>,
     #[serde(default)]
@@ -159,6 +160,7 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
             optimizer_config,
             wal_config,
             quantization_config,
+            exact_rank_config,
             strict_mode_config,
             uuid,
             metadata,
@@ -169,6 +171,7 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
             optimizer_config,
             wal_config,
             quantization_config,
+            exact_rank_config,
             strict_mode_config: strict_mode_config.map(StrictModeConfigOutput::from),
             uuid,
             metadata,

@@ -105,6 +105,7 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
                 replication_factor,
                 write_consistency_factor,
                 quantization_config: quantization_config.map(TryInto::try_into).transpose()?,
+                exact_rank_config: Default::default(),
                 sharding_method: sharding_method
                     .map(sharding_method_from_proto)
                     .transpose()?,
@@ -203,6 +204,7 @@ impl TryFrom<grpc::UpdateCollection> for CollectionMetaOperations {
                 quantization_config: quantization_config
                     .map(QuantizationConfigDiff::try_from)
                     .transpose()?,
+                exact_rank_config: None,
                 sparse_vectors: sparse_vectors_config
                     .map(SparseVectorsConfig::try_from)
                     .transpose()?,

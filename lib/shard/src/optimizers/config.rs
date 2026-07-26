@@ -5,9 +5,9 @@ use segment::common::BYTES_IN_KB;
 use segment::data_types::modifier::Modifier;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, MultiVectorConfig, PayloadStorageType, QuantizationConfig,
-    SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType, VectorDataConfig,
-    VectorNameBuf, VectorStorageDatatype, VectorStorageType,
+    Distance, ExactRankProfile, HnswConfig, Indexes, MultiVectorConfig, PayloadStorageType,
+    QuantizationConfig, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
+    VectorDataConfig, VectorNameBuf, VectorStorageDatatype, VectorStorageType,
 };
 
 pub const TEMP_SEGMENTS_PATH: &str = "temp_segments";
@@ -34,6 +34,7 @@ pub struct SparseVectorOptimizerConfig {
 #[derive(Debug, Clone)]
 pub struct SegmentOptimizerConfig {
     pub payload_storage_type: PayloadStorageType,
+    pub exact_rank_profile: ExactRankProfile,
     /// Configuration of dense vectors, as it should be for a plain segment (without any optimization).
     pub plain_dense_vector_config: HashMap<VectorNameBuf, VectorDataConfig>,
     /// Configuration of sparse vectors, as it should be for a plain segment (without any optimization).
@@ -52,11 +53,13 @@ impl SegmentOptimizerConfig {
             vector_data: self.plain_dense_vector_config.clone(),
             sparse_vector_data: self.plain_sparse_vector_config.clone(),
             payload_storage_type: self.payload_storage_type,
+            exact_rank_profile: self.exact_rank_profile,
         }
     }
 
     pub fn new(
         payload_storage_type: PayloadStorageType,
+        exact_rank_profile: ExactRankProfile,
         dense_vectors: HashMap<VectorNameBuf, DenseVectorOptimizerInput>,
         sparse_vectors: HashMap<VectorNameBuf, SparseVectorOptimizerInput>,
     ) -> SegmentOptimizerConfig {
@@ -121,6 +124,7 @@ impl SegmentOptimizerConfig {
 
         SegmentOptimizerConfig {
             payload_storage_type,
+            exact_rank_profile,
             plain_dense_vector_config,
             plain_sparse_vector_config,
             dense_vector,

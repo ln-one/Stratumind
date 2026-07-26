@@ -60,6 +60,7 @@ impl TestRawScorerProducer {
                 // the directory immediately.
                 tempfile::tempdir().unwrap().path(),
                 1,
+                false,
                 &AtomicBool::new(false),
             )
             .unwrap()

@@ -524,6 +524,7 @@ impl LocalShard {
             &collection_config_read.hnsw_config,
             &shared_storage_config.hnsw_global_config,
             &collection_config_read.quantization_config,
+            collection_config_read.exact_rank_config.profile,
         );
 
         drop(collection_config_read); // release `shared_config` from borrow checker
@@ -670,6 +671,7 @@ impl LocalShard {
                 vector_data: vector_params.clone(),
                 sparse_vector_data: sparse_vector_params.clone(),
                 payload_storage_type: config.params.payload_storage_type(),
+                exact_rank_profile: config.exact_rank_config.profile,
             };
             let segment = thread::Builder::new()
                 .name(format!("shard-build-{collection_id}-{id}"))
@@ -708,6 +710,7 @@ impl LocalShard {
             &config.hnsw_config,
             &shared_storage_config.hnsw_global_config,
             &config.quantization_config,
+            config.exact_rank_config.profile,
         );
 
         drop(config); // release `shared_config` from borrow checker

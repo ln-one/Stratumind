@@ -868,6 +868,7 @@ mod tests {
             QuantizedVectorsStorageType::Immutable,
             dir.path(),
             1,
+            false,
             &stopped,
         )
         .unwrap();
@@ -895,9 +896,10 @@ mod tests {
         let quantization_files = quantized_vectors.files();
 
         // test save-load
-        let quantized_vectors = QuantizedVectors::load(&config, &storage, dir.path(), &stopped)
-            .unwrap()
-            .unwrap();
+        let quantized_vectors =
+            QuantizedVectors::load(&config, &storage, dir.path(), false, &stopped)
+                .unwrap()
+                .unwrap();
         assert_eq!(files, storage.files());
         assert_eq!(quantization_files, quantized_vectors.files());
         let hardware_counter = HardwareCounterCell::new();

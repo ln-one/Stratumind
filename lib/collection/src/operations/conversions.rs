@@ -402,6 +402,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             optimizer_config,
             wal_config,
             quantization_config,
+            exact_rank_config: _,
             strict_mode_config,
             metadata,
         } = config;
@@ -1955,6 +1956,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     None
                 }
             },
+            exact_rank_config: Default::default(),
             strict_mode_config: strict_mode_config.map(StrictModeConfigOutput::from),
             metadata: if metadata.is_empty() {
                 None

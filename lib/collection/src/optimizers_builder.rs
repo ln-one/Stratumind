@@ -6,7 +6,9 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, VectorStorageDatatype};
+use segment::types::{
+    ExactRankProfile, HnswConfig, HnswGlobalConfig, QuantizationConfig, VectorStorageDatatype,
+};
 use serde::{Deserialize, Serialize};
 use shard::files::SEGMENTS_PATH;
 use shard::operations::optimization::OptimizerThresholds;
@@ -185,6 +187,7 @@ pub fn build_segment_optimizer_config(
     collection_params: &CollectionParams,
     global_hnsw_config: &HnswConfig,
     global_quantization_config: &Option<QuantizationConfig>,
+    exact_rank_profile: ExactRankProfile,
 ) -> SegmentOptimizerConfig {
     let dense_vectors = collection_params
         .vectors
@@ -246,6 +249,7 @@ pub fn build_segment_optimizer_config(
 
     SegmentOptimizerConfig::new(
         collection_params.payload_storage_type(),
+        exact_rank_profile,
         dense_vectors,
         sparse_vectors,
     )
@@ -258,11 +262,16 @@ pub fn build_optimizers(
     hnsw_config: &HnswConfig,
     hnsw_global_config: &HnswGlobalConfig,
     quantization_config: &Option<QuantizationConfig>,
+    exact_rank_profile: ExactRankProfile,
 ) -> Arc<Vec<Arc<Optimizer>>> {
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
-    let segment_config =
-        build_segment_optimizer_config(collection_params, hnsw_config, quantization_config);
+    let segment_config = build_segment_optimizer_config(
+        collection_params,
+        hnsw_config,
+        quantization_config,
+        exact_rank_profile,
+    );
     let num_indexing_threads = max_num_indexing_threads(&segment_config);
     let threshold_config = optimizers_config.optimizer_thresholds(
         num_indexing_threads,

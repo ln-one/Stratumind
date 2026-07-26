@@ -819,6 +819,7 @@ impl SegmentBuilder {
                     quantized_storage_type,
                     &vector_storage_path,
                     max_threads,
+                    config.exact_rank_profile.builds_per_vector_scalar(),
                     stopped,
                 )?;
 

@@ -151,6 +151,7 @@ impl Collection {
                 optimizer_config,
                 wal_config,
                 quantization_config,
+                exact_rank_config,
                 strict_mode_config,
                 uuid: _,
                 metadata,
@@ -159,7 +160,8 @@ impl Collection {
             let is_core_config_updated = params != &config.params
                 || hnsw_config != &config.hnsw_config
                 || optimizer_config != &config.optimizer_config
-                || quantization_config != &config.quantization_config;
+                || quantization_config != &config.quantization_config
+                || exact_rank_config != &config.exact_rank_config;
 
             let is_metadata_updated = metadata != &config.metadata;
 

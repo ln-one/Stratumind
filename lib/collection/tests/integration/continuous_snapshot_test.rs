@@ -51,6 +51,7 @@ async fn test_continuous_snapshot() {
         wal_config: Default::default(),
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
+        exact_rank_config: Default::default(),
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,

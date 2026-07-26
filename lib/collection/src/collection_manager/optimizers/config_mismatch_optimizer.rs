@@ -72,6 +72,7 @@ mod tests {
 
         SegmentOptimizerConfig {
             payload_storage_type: segment_config.payload_storage_type,
+            exact_rank_profile: segment_config.exact_rank_profile,
             plain_dense_vector_config: base_vector_data,
             plain_sparse_vector_config: segment_config.sparse_vector_data.clone(),
             dense_vector,

@@ -879,6 +879,7 @@ mod test {
             wal_config,
             hnsw_config: Default::default(),
             quantization_config: Default::default(),
+            exact_rank_config: Default::default(),
             strict_mode_config: Some(strict_mode_config.clone()),
             uuid: None,
             metadata: None,

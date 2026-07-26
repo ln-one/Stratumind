@@ -54,8 +54,12 @@ mod tests {
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> IndexingOptimizer {
-        let segment_config =
-            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
+        let segment_config = build_segment_optimizer_config(
+            &collection_params,
+            &hnsw_config,
+            &quantization_config,
+            Default::default(),
+        );
         shard::optimizers::indexing_optimizer::IndexingOptimizer::new(
             default_segments_number,
             thresholds_config,
@@ -78,8 +82,12 @@ mod tests {
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> VacuumOptimizer {
-        let segment_config =
-            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
+        let segment_config = build_segment_optimizer_config(
+            &collection_params,
+            &hnsw_config,
+            &quantization_config,
+            Default::default(),
+        );
         shard::optimizers::vacuum_optimizer::VacuumOptimizer::new(
             deleted_threshold,
             min_vectors_number,

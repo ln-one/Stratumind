@@ -496,6 +496,7 @@ fn create_segment(
                     quantization_config,
                     &vector_storage.borrow(),
                     &quantized_data_path,
+                    config.exact_rank_profile.builds_per_vector_scalar(),
                     stopped,
                 )?
             } else {

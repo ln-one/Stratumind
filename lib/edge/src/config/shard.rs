@@ -77,6 +77,7 @@ impl EdgeConfig {
             vector_data,
             sparse_vector_data,
             payload_storage_type,
+            exact_rank_profile: _,
         } = segment;
 
         let vectors = vector_data
@@ -159,6 +160,7 @@ impl EdgeConfig {
             vector_data,
             sparse_vector_data,
             payload_storage_type,
+            exact_rank_profile: Default::default(),
         }
     }
 
@@ -171,6 +173,7 @@ impl EdgeConfig {
             vector_data: plain_dense_vector_config,
             sparse_vector_data: plain_sparse_vector_config,
             payload_storage_type,
+            exact_rank_profile,
         } = self.plain_segment_config();
 
         let dense_vector = self
@@ -195,6 +198,7 @@ impl EdgeConfig {
 
         SegmentOptimizerConfig {
             payload_storage_type,
+            exact_rank_profile,
             plain_dense_vector_config,
             plain_sparse_vector_config,
             dense_vector,

@@ -160,6 +160,7 @@ fn scoring_equivalency(
             QuantizedVectorsStorageType::Immutable,
             quant_dir.path(),
             4,
+            false,
             &AtomicBool::new(false),
         )?)
     } else {

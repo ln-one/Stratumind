@@ -89,6 +89,7 @@ fn persisted_pvs_is_selected_by_production_auto_and_preserves_exact_order() {
         QuantizedVectorsStorageType::Immutable,
         quantized_directory.path(),
         1,
+        true,
         &stopped,
     )
     .unwrap();
@@ -97,9 +98,15 @@ fn persisted_pvs_is_selected_by_production_auto_and_preserves_exact_order() {
     assert!(quantized_directory.path().join(METADATA_FILE).is_file());
     drop(quantized);
 
-    let quantized = QuantizedVectors::load(&config, &storage, quantized_directory.path(), &stopped)
-        .unwrap()
-        .unwrap();
+    let quantized = QuantizedVectors::load(
+        &config,
+        &storage,
+        quantized_directory.path(),
+        true,
+        &stopped,
+    )
+    .unwrap()
+    .unwrap();
     assert!(quantized.per_vector_scalar().is_some());
 
     let query = (0..DIMENSION)
@@ -165,6 +172,7 @@ fn invalid_pvs_is_quarantined_and_auto_falls_back_to_scalar() {
             QuantizedVectorsStorageType::Immutable,
             quantized_directory.path(),
             1,
+            true,
             &stopped,
         )
         .unwrap(),
@@ -175,9 +183,15 @@ fn invalid_pvs_is_quarantined_and_auto_falls_back_to_scalar() {
     )
     .unwrap();
 
-    let quantized = QuantizedVectors::load(&config, &storage, quantized_directory.path(), &stopped)
-        .unwrap()
-        .unwrap();
+    let quantized = QuantizedVectors::load(
+        &config,
+        &storage,
+        quantized_directory.path(),
+        true,
+        &stopped,
+    )
+    .unwrap()
+    .unwrap();
     assert!(quantized.per_vector_scalar().is_none());
 
     let query = vec![0.25; DIMENSION];
@@ -201,6 +215,48 @@ fn invalid_pvs_is_quarantined_and_auto_falls_back_to_scalar() {
         state.telemetry().plan,
         Some(DensePhysicalPlan::ScalarCertificate),
     );
+}
+
+#[test]
+fn disabled_profile_neither_builds_nor_loads_pvs() {
+    const DIMENSION: usize = 17;
+
+    let segment_directory = tempfile::tempdir().unwrap();
+    let quantized_directory = tempfile::tempdir().unwrap();
+    let mut segment =
+        build_simple_segment(segment_directory.path(), DIMENSION, Distance::Dot).unwrap();
+    populate_segment(&mut segment, DIMENSION, 65);
+
+    let storage = segment.vector_data[DEFAULT_VECTOR_NAME]
+        .vector_storage
+        .borrow();
+    let config = scalar_config(true);
+    let stopped = AtomicBool::new(false);
+    let quantized = QuantizedVectors::create(
+        &storage,
+        &config,
+        QuantizedVectorsStorageType::Immutable,
+        quantized_directory.path(),
+        1,
+        false,
+        &stopped,
+    )
+    .unwrap();
+    assert!(quantized.per_vector_scalar().is_none());
+    assert!(!quantized_directory.path().join(DATA_FILE).exists());
+    assert!(!quantized_directory.path().join(METADATA_FILE).exists());
+    drop(quantized);
+
+    let quantized = QuantizedVectors::load(
+        &config,
+        &storage,
+        quantized_directory.path(),
+        false,
+        &stopped,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(quantized.per_vector_scalar().is_none());
 }
 
 #[test]

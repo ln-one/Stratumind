@@ -63,8 +63,12 @@ mod tests {
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> IndexingOptimizer {
-        let segment_config =
-            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
+        let segment_config = build_segment_optimizer_config(
+            &collection_params,
+            &hnsw_config,
+            &quantization_config,
+            Default::default(),
+        );
         shard::optimizers::indexing_optimizer::IndexingOptimizer::new(
             default_segments_number,
             thresholds_config,
@@ -84,8 +88,12 @@ mod tests {
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> ConfigMismatchOptimizer {
-        let segment_config =
-            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
+        let segment_config = build_segment_optimizer_config(
+            &collection_params,
+            &hnsw_config,
+            &quantization_config,
+            Default::default(),
+        );
         shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer::new(
             thresholds_config,
             segments_path,
@@ -285,6 +293,7 @@ mod tests {
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            exact_rank_profile: Default::default(),
         };
 
         let mut segment = build_segment(
@@ -1006,8 +1015,12 @@ mod tests {
 
         // Build a plain, appendable segment for this collection with the deferred offset set,
         // mimicking a live appendable segment that has accumulated deferred points.
-        let segment_optimizer_config =
-            build_segment_optimizer_config(&collection_params, &hnsw_config, &None);
+        let segment_optimizer_config = build_segment_optimizer_config(
+            &collection_params,
+            &hnsw_config,
+            &None,
+            Default::default(),
+        );
         let segment_config = segment_optimizer_config.plain_segment_config();
 
         let hw_counter = HardwareCounterCell::new();
