@@ -45,22 +45,18 @@ use itertools::Itertools;
 use parking_lot::Mutex as ParkingMutex;
 use segment::common::operation_error::OperationResult;
 use segment::entry::ReadSegmentEntry as _;
-use segment::index::exact_dense_stream::DenseExecutionPolicy;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
-    SeqNumberType, StrictModeConfig, VectorNameBuf,
+    SeqNumberType, StrictModeConfig,
 };
-use shard::exact_dense_stream::ExactDenseShardStream;
-use shard::exact_sparse_stream::ExactSparseShardStream;
 use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::optimization::{OptimizationSegmentInfo, PendingOptimization};
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::segment_holder::locked::{LockedSegmentHolder, SegmentGenerationGuard};
 use shard::wal::SerdeWal;
-use sparse::common::sparse_vector::SparseVector;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, OwnedRwLockReadGuard, RwLock as TokioRwLock, mpsc, oneshot};
@@ -377,14 +373,6 @@ impl LocalShard {
         self.segments.clone()
     }
 
-    fn exact_segment_handles(&self) -> Vec<LockedSegment> {
-        self.segments
-            .read()
-            .iter()
-            .map(|(_, segment)| segment.clone())
-            .collect()
-    }
-
     /// Block ordinary updates before the execution thread pins and materializes
     /// one Segment generation. The owned guard remains alive until all exact
     /// reader batches and the fusion coordinator have stopped.
@@ -394,57 +382,6 @@ impl LocalShard {
             segment_holder: self.segments.clone(),
             _update_guard: update_guard,
         }
-    }
-
-    /// Opens one exact Sparse rank stream over the current local Shard
-    /// Segment snapshot. Segment identities are cloned under the holder read
-    /// lock; each batch temporarily acquires a Segment read view.
-    pub fn exact_sparse_stream(
-        &self,
-        vector_name: VectorNameBuf,
-        query: SparseVector,
-        filter: Option<Filter>,
-        source_batch_size: usize,
-        posting_batch_size: usize,
-        stopped: Arc<AtomicBool>,
-        batch_executor: shard::ExactBatchExecutor,
-    ) -> OperationResult<ExactSparseShardStream> {
-        let segments = self.exact_segment_handles();
-        ExactSparseShardStream::open(
-            segments,
-            vector_name,
-            query,
-            filter,
-            source_batch_size,
-            posting_batch_size,
-            stopped,
-            batch_executor,
-        )
-    }
-
-    /// Opens one exact Dense rank stream over the current local Shard
-    /// Segment snapshot. Every physical plan is exhaustive-order equivalent.
-    pub fn exact_dense_stream(
-        &self,
-        vector_name: VectorNameBuf,
-        query: Vec<f32>,
-        filter: Option<Filter>,
-        policy: DenseExecutionPolicy,
-        batch_size: usize,
-        stopped: Arc<AtomicBool>,
-        batch_executor: shard::ExactBatchExecutor,
-    ) -> OperationResult<ExactDenseShardStream> {
-        let segments = self.exact_segment_handles();
-        ExactDenseShardStream::open(
-            segments,
-            vector_name,
-            query,
-            filter,
-            policy,
-            batch_size,
-            stopped,
-            batch_executor,
-        )
     }
 
     /// Recovers shard from disk.

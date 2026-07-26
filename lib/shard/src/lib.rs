@@ -1,12 +1,11 @@
 pub mod common;
 pub mod count;
 pub mod exact_dense_stream;
-mod exact_score_stream;
+pub mod exact_score_stream;
+pub mod exact_sparse_stream;
 pub mod facet;
 pub mod files;
 pub mod locked_segment;
-pub use exact_score_stream::ExactBatchExecutor;
-pub mod exact_sparse_stream;
 pub mod operation_rate_cost;
 pub mod operations;
 pub mod optimize;

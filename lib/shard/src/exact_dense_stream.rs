@@ -9,7 +9,9 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
-use segment::common::operation_error::{OperationError, OperationResult};
+#[cfg(test)]
+use segment::common::operation_error::OperationError;
+use segment::common::operation_error::OperationResult;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::ReadSegmentEntry;
@@ -17,127 +19,72 @@ use segment::index::exact_dense_stream::DenseExecutionPolicy;
 use segment::types::{Filter, ScoredPoint, SearchParams, VectorNameBuf, WithPayload, WithVector};
 
 use crate::exact_score_stream::{
-    BatchReply, ExactBatchExecutor, ExactShardMergeState, ExactShardStreamTelemetry,
-    ExactSourceMode, SegmentScoreSource,
+    BatchReply, ExactShardStreamTelemetry, ExactSourceMode, SegmentRankPlan, SegmentScoreSource,
 };
 use crate::locked_segment::LockedSegment;
 
 pub type DenseShardTelemetry = ExactShardStreamTelemetry;
 
-/// One exact Dense rank stream for all Segments in a Shard snapshot.
-///
-/// Original Segments use the native certified cursor. Proxy Segments are
-/// materialized exactly once as a safe fallback. Both plans are exhaustive
-/// order equivalent and no repeated Top-N query is issued.
-pub struct ExactDenseShardStream {
-    inner: ExactShardMergeState,
-}
-
-impl ExactDenseShardStream {
-    #[allow(clippy::too_many_arguments)]
-    pub fn open(
-        segments: Vec<LockedSegment>,
-        vector_name: VectorNameBuf,
-        query: Vec<f32>,
-        filter: Option<Filter>,
-        policy: DenseExecutionPolicy,
-        batch_size: usize,
-        stopped: Arc<AtomicBool>,
-        batch_executor: ExactBatchExecutor,
-    ) -> OperationResult<Self> {
-        if batch_size == 0 {
-            return Err(OperationError::validation_error(
-                "exact Dense Shard batch size must be positive",
-            ));
-        }
-
-        let visible_point_copies = segments
-            .iter()
-            .map(|segment| {
-                segment
-                    .get()
-                    .read()
-                    .available_point_count_without_deferred()
-            })
-            .sum();
-        let mut sources = Vec::with_capacity(segments.len());
-        for (source, segment) in segments.into_iter().enumerate() {
-            sources.push(open_segment_rank_source(
-                source,
-                segment,
-                vector_name.clone(),
-                query.clone(),
-                filter.clone(),
-                policy,
-                stopped.clone(),
-                &batch_executor,
-            )?);
-        }
-
-        Ok(Self {
-            inner: ExactShardMergeState::open(
-                sources,
-                visible_point_copies,
-                batch_size,
-                stopped,
-                "Dense",
-            )?,
-        })
-    }
-
-    pub fn next_batch(&mut self, max_results: usize) -> OperationResult<Vec<ScoredPoint>> {
-        self.inner.next_batch(max_results)
-    }
-
-    pub fn next_result(&mut self) -> OperationResult<Option<ScoredPoint>> {
-        self.inner.next_result()
-    }
-
-    pub fn telemetry(&self) -> DenseShardTelemetry {
-        self.inner.telemetry()
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn open_segment_rank_source(
-    source: usize,
-    segment: LockedSegment,
+#[derive(Clone)]
+pub struct DenseRankPlan {
     vector_name: VectorNameBuf,
     query: Vec<f32>,
     filter: Option<Filter>,
     policy: DenseExecutionPolicy,
-    stopped: Arc<AtomicBool>,
-    batch_executor: &ExactBatchExecutor,
-) -> OperationResult<SegmentScoreSource> {
-    match segment {
-        LockedSegment::Original(segment) => {
-            let mut query_context = QueryContext::new(usize::MAX, HwMeasurementAcc::disposable())
-                .with_is_stopped(stopped.clone());
-            let state = {
-                let segment = segment.read();
-                segment.fill_query_context(&mut query_context)?;
-                let segment_query_context = query_context.get_segment_query_context();
-                segment.with_view(|view| {
-                    view.open_exact_dense_segment_state(
-                        &vector_name,
-                        &query,
-                        filter.as_ref(),
-                        policy,
-                        &segment_query_context,
-                    )
-                })?
-            };
-            let state = Arc::new(Mutex::new(state));
-            let query_context = Arc::new(query_context);
-            let spawner = batch_executor.clone();
-            Ok(SegmentScoreSource::on_demand(
-                move |limit| {
-                    let segment = segment.clone();
-                    let state = state.clone();
-                    let vector_name = vector_name.clone();
-                    let query = query.clone();
-                    let query_context = query_context.clone();
-                    spawner.run_batch(format!("exact-dense-segment-{source}-pull"), move || {
+}
+
+impl DenseRankPlan {
+    pub fn new(
+        vector_name: VectorNameBuf,
+        query: Vec<f32>,
+        filter: Option<Filter>,
+        policy: DenseExecutionPolicy,
+    ) -> Self {
+        Self {
+            vector_name,
+            query,
+            filter,
+            policy,
+        }
+    }
+}
+
+impl SegmentRankPlan for DenseRankPlan {
+    const CHANNEL: &'static str = "Dense";
+
+    fn open_segment(
+        &self,
+        _source: usize,
+        segment: LockedSegment,
+        stopped: Arc<AtomicBool>,
+    ) -> OperationResult<SegmentScoreSource> {
+        let vector_name = self.vector_name.clone();
+        let query = self.query.clone();
+        let filter = self.filter.clone();
+        let policy = self.policy;
+        match segment {
+            LockedSegment::Original(segment) => {
+                let mut query_context =
+                    QueryContext::new(usize::MAX, HwMeasurementAcc::disposable())
+                        .with_is_stopped(stopped.clone());
+                let state = {
+                    let segment = segment.read();
+                    segment.fill_query_context(&mut query_context)?;
+                    let segment_query_context = query_context.get_segment_query_context();
+                    segment.with_view(|view| {
+                        view.open_exact_dense_segment_state(
+                            &vector_name,
+                            &query,
+                            filter.as_ref(),
+                            policy,
+                            &segment_query_context,
+                        )
+                    })?
+                };
+                let state = Arc::new(Mutex::new(state));
+                let query_context = Arc::new(query_context);
+                Ok(SegmentScoreSource::on_demand(
+                    move |limit| {
                         let segment = segment.read();
                         let mut state = state.lock();
                         let segment_query_context = query_context.get_segment_query_context();
@@ -155,39 +102,39 @@ fn open_segment_rank_source(
                                 eof: points.is_empty(),
                                 points,
                             })
-                    })
-                },
-                ExactSourceMode::Exact,
-                "Dense",
-            ))
-        }
-        LockedSegment::Proxy(proxy) => {
-            let proxy = proxy.read();
-            let query_context = QueryContext::new(usize::MAX, HwMeasurementAcc::disposable())
-                .with_is_stopped(stopped);
-            let points = materialize_exact(
-                &*proxy,
-                &vector_name,
-                &query,
-                filter.as_ref(),
-                &query_context,
-            )?;
-            let points = Arc::new(Mutex::new((points, 0usize)));
-            Ok(SegmentScoreSource::on_demand(
-                move |limit| {
-                    let mut state = points.lock();
-                    let start = state.1;
-                    let end = start.saturating_add(limit).min(state.0.len());
-                    let batch = state.0[start..end].to_vec();
-                    state.1 = end;
-                    Ok(BatchReply {
-                        points: batch,
-                        eof: end == state.0.len(),
-                    })
-                },
-                ExactSourceMode::ExhaustiveFallback,
-                "Dense",
-            ))
+                    },
+                    ExactSourceMode::Exact,
+                    "Dense",
+                ))
+            }
+            LockedSegment::Proxy(proxy) => {
+                let proxy = proxy.read();
+                let query_context = QueryContext::new(usize::MAX, HwMeasurementAcc::disposable())
+                    .with_is_stopped(stopped);
+                let points = materialize_exact(
+                    &*proxy,
+                    &vector_name,
+                    &query,
+                    filter.as_ref(),
+                    &query_context,
+                )?;
+                let points = Arc::new(Mutex::new((points, 0usize)));
+                Ok(SegmentScoreSource::on_demand(
+                    move |limit| {
+                        let mut state = points.lock();
+                        let start = state.1;
+                        let end = start.saturating_add(limit).min(state.0.len());
+                        let batch = state.0[start..end].to_vec();
+                        state.1 = end;
+                        Ok(BatchReply {
+                            points: batch,
+                            eof: end == state.0.len(),
+                        })
+                    },
+                    ExactSourceMode::ExhaustiveFallback,
+                    "Dense",
+                ))
+            }
         }
     }
 }
@@ -242,6 +189,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+    use crate::exact_score_stream::ExactShardStream;
 
     fn make_segment(path: &TempDir, lane: u64) -> (Segment, Vec<(PointIdType, f32)>) {
         let mut segment = build_simple_segment(path.path(), 2, Distance::Dot).unwrap();
@@ -274,6 +222,26 @@ mod tests {
         (segment, expected)
     }
 
+    fn open_stream(
+        segments: Vec<LockedSegment>,
+        query: Vec<f32>,
+        filter: Option<Filter>,
+        batch_size: usize,
+        stopped: Arc<AtomicBool>,
+    ) -> OperationResult<ExactShardStream<DenseRankPlan>> {
+        ExactShardStream::open(
+            segments,
+            DenseRankPlan::new(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                query,
+                filter,
+                DenseExecutionPolicy::default(),
+            ),
+            batch_size,
+            stopped,
+        )
+    }
+
     #[test]
     fn shard_stream_merges_exact_segments_exactly_and_resumes() {
         let first_dir = tempfile::tempdir().unwrap();
@@ -296,15 +264,12 @@ mod tests {
         let LockedSegment::Original(first_handle) = first.clone() else {
             unreachable!()
         };
-        let mut stream = ExactDenseShardStream::open(
+        let mut stream = open_stream(
             vec![first, LockedSegment::new(second)],
-            DEFAULT_VECTOR_NAME.to_owned(),
             vec![1.0, 0.0],
             Some(filter),
-            DenseExecutionPolicy::default(),
             17,
             stopped,
-            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
         assert!(
@@ -344,15 +309,12 @@ mod tests {
         let segment_dir = tempfile::tempdir().unwrap();
         let (segment, _) = make_segment(&segment_dir, 0);
         let stopped = Arc::new(AtomicBool::new(false));
-        let mut stream = ExactDenseShardStream::open(
+        let mut stream = open_stream(
             vec![LockedSegment::new(segment)],
-            DEFAULT_VECTOR_NAME.to_owned(),
             vec![1.0, 0.0],
             None,
-            DenseExecutionPolicy::default(),
             8,
             stopped.clone(),
-            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
         stopped.store(true, AtomicOrdering::Relaxed);
@@ -400,15 +362,12 @@ mod tests {
             )
             .unwrap();
 
-        let mut stream = ExactDenseShardStream::open(
+        let mut stream = open_stream(
             vec![LockedSegment::new(first), LockedSegment::new(second)],
-            DEFAULT_VECTOR_NAME.to_owned(),
             vec![1.0, 0.0],
             None,
-            DenseExecutionPolicy::default(),
             8,
             Arc::new(AtomicBool::new(false)),
-            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
         let error = std::iter::from_fn(|| stream.next_result().transpose())
@@ -434,15 +393,12 @@ mod tests {
                 )
                 .unwrap();
         }
-        let mut stream = ExactDenseShardStream::open(
+        let mut stream = open_stream(
             vec![LockedSegment::new(first), LockedSegment::new(second)],
-            DEFAULT_VECTOR_NAME.to_owned(),
             vec![1.0, 0.0],
             None,
-            DenseExecutionPolicy::default(),
             8,
             Arc::new(AtomicBool::new(false)),
-            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
         let point = stream.next_result().unwrap().unwrap();

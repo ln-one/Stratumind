@@ -18,144 +18,97 @@ use segment::types::{Filter, ScoredPoint, SearchParams, VectorNameBuf, WithPaylo
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::exact_score_stream::{
-    BatchReply, ExactBatchExecutor, ExactShardMergeState, ExactShardStreamTelemetry,
-    ExactSourceMode, SegmentScoreSource,
+    BatchReply, ExactShardStreamTelemetry, ExactSourceMode, SegmentRankPlan, SegmentScoreSource,
 };
 use crate::locked_segment::LockedSegment;
 
 pub type SparseShardTelemetry = ExactShardStreamTelemetry;
 
-/// A single exact Sparse rank stream for all Segments in one Shard snapshot.
-///
-/// Original Segments keep only owned PostingBlockMax rank state between
-/// batches. Each batch borrows a temporary Segment read view; Proxy Segments
-/// and unsupported index representations are materialized exactly once as an
-/// explicit safe fallback. No repeated Top-N query is issued.
-pub struct ExactSparseShardStream {
-    inner: ExactShardMergeState,
-}
-
-impl ExactSparseShardStream {
-    #[allow(clippy::too_many_arguments)]
-    pub fn open(
-        segments: Vec<LockedSegment>,
-        vector_name: VectorNameBuf,
-        query: SparseVector,
-        filter: Option<Filter>,
-        source_batch_size: usize,
-        posting_batch_size: usize,
-        stopped: Arc<AtomicBool>,
-        batch_executor: ExactBatchExecutor,
-    ) -> OperationResult<Self> {
-        if source_batch_size == 0 || posting_batch_size == 0 {
-            return Err(OperationError::validation_error(
-                "exact Sparse Shard batch sizes must be positive",
-            ));
-        }
-
-        let visible_point_copies = segments
-            .iter()
-            .map(|segment| {
-                segment
-                    .get()
-                    .read()
-                    .available_point_count_without_deferred()
-            })
-            .sum();
-        let query_context = Arc::new(build_query_context(
-            &segments,
-            &vector_name,
-            &query,
-            stopped.clone(),
-        )?);
-        let mut sources = Vec::with_capacity(segments.len());
-        for (source, segment) in segments.into_iter().enumerate() {
-            sources.push(open_segment_rank_source(
-                source,
-                segment,
-                vector_name.clone(),
-                query.clone(),
-                filter.clone(),
-                posting_batch_size,
-                query_context.clone(),
-                &batch_executor,
-            )?);
-        }
-
-        Ok(Self {
-            inner: ExactShardMergeState::open(
-                sources,
-                visible_point_copies,
-                source_batch_size,
-                stopped,
-                "Sparse",
-            )?,
-        })
-    }
-
-    pub fn next_batch(&mut self, max_results: usize) -> OperationResult<Vec<ScoredPoint>> {
-        self.inner.next_batch(max_results)
-    }
-
-    pub fn next_result(&mut self) -> OperationResult<Option<ScoredPoint>> {
-        self.inner.next_result()
-    }
-
-    pub fn telemetry(&self) -> SparseShardTelemetry {
-        self.inner.telemetry()
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn open_segment_rank_source(
-    source: usize,
-    segment: LockedSegment,
+#[derive(Clone)]
+pub struct SparseRankPlan {
     vector_name: VectorNameBuf,
     query: SparseVector,
     filter: Option<Filter>,
     posting_batch_size: usize,
     query_context: Arc<QueryContext>,
-    batch_executor: &ExactBatchExecutor,
-) -> OperationResult<SegmentScoreSource> {
-    match segment {
-        LockedSegment::Original(segment) => {
-            let state = {
-                let segment = segment.read();
-                let segment_query_context = query_context.get_segment_query_context();
-                segment.with_view(|view| {
-                    view.open_exact_sparse_rank_state(
-                        &vector_name,
-                        &query,
-                        posting_batch_size,
-                        &segment_query_context,
-                    )
-                })
-            };
-            let state = match state {
-                Ok(state) => state,
-                Err(OperationError::WrongSparse) => {
+}
+
+impl SparseRankPlan {
+    pub fn new(
+        segments: &[LockedSegment],
+        vector_name: VectorNameBuf,
+        query: SparseVector,
+        filter: Option<Filter>,
+        posting_batch_size: usize,
+        stopped: Arc<AtomicBool>,
+    ) -> OperationResult<Self> {
+        if posting_batch_size == 0 {
+            return Err(OperationError::validation_error(
+                "exact Sparse posting batch size must be positive",
+            ));
+        }
+        let query_context = Arc::new(build_query_context(
+            segments,
+            &vector_name,
+            &query,
+            stopped,
+        )?);
+        Ok(Self {
+            vector_name,
+            query,
+            filter,
+            posting_batch_size,
+            query_context,
+        })
+    }
+}
+
+impl SegmentRankPlan for SparseRankPlan {
+    const CHANNEL: &'static str = "Sparse";
+
+    fn open_segment(
+        &self,
+        _source: usize,
+        segment: LockedSegment,
+        _stopped: Arc<AtomicBool>,
+    ) -> OperationResult<SegmentScoreSource> {
+        let vector_name = self.vector_name.clone();
+        let query = self.query.clone();
+        let filter = self.filter.clone();
+        let posting_batch_size = self.posting_batch_size;
+        let query_context = self.query_context.clone();
+        match segment {
+            LockedSegment::Original(segment) => {
+                let state = {
                     let segment = segment.read();
-                    let points = materialize_exact(
-                        &*segment,
-                        &vector_name,
-                        &query,
-                        filter.as_ref(),
-                        &query_context,
-                    )?;
-                    return Ok(materialized_source(points, "Sparse"));
-                }
-                Err(error) => return Err(error),
-            };
-            let state = Arc::new(Mutex::new(state));
-            let spawner = batch_executor.clone();
-            Ok(SegmentScoreSource::on_demand(
-                move |limit| {
-                    let segment = segment.clone();
-                    let state = state.clone();
-                    let vector_name = vector_name.clone();
-                    let filter = filter.clone();
-                    let query_context = query_context.clone();
-                    spawner.run_batch(format!("exact-sparse-segment-{source}-pull"), move || {
+                    let segment_query_context = query_context.get_segment_query_context();
+                    segment.with_view(|view| {
+                        view.open_exact_sparse_rank_state(
+                            &vector_name,
+                            &query,
+                            posting_batch_size,
+                            &segment_query_context,
+                        )
+                    })
+                };
+                let state = match state {
+                    Ok(state) => state,
+                    Err(OperationError::WrongSparse) => {
+                        let segment = segment.read();
+                        let points = materialize_exact(
+                            &*segment,
+                            &vector_name,
+                            &query,
+                            filter.as_ref(),
+                            &query_context,
+                        )?;
+                        return Ok(materialized_source(points, "Sparse"));
+                    }
+                    Err(error) => return Err(error),
+                };
+                let state = Arc::new(Mutex::new(state));
+                Ok(SegmentScoreSource::on_demand(
+                    move |limit| {
                         let segment = segment.read();
                         let mut state = state.lock();
                         let segment_query_context = query_context.get_segment_query_context();
@@ -173,22 +126,22 @@ fn open_segment_rank_source(
                                 eof: points.is_empty(),
                                 points,
                             })
-                    })
-                },
-                ExactSourceMode::Exact,
-                "Sparse",
-            ))
-        }
-        LockedSegment::Proxy(proxy) => {
-            let proxy = proxy.read();
-            let points = materialize_exact(
-                &*proxy,
-                &vector_name,
-                &query,
-                filter.as_ref(),
-                &query_context,
-            )?;
-            Ok(materialized_source(points, "Sparse"))
+                    },
+                    ExactSourceMode::Exact,
+                    "Sparse",
+                ))
+            }
+            LockedSegment::Proxy(proxy) => {
+                let proxy = proxy.read();
+                let points = materialize_exact(
+                    &*proxy,
+                    &vector_name,
+                    &query,
+                    filter.as_ref(),
+                    &query_context,
+                )?;
+                Ok(materialized_source(points, "Sparse"))
+            }
         }
     }
 }
@@ -297,6 +250,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+    use crate::exact_score_stream::ExactShardStream;
 
     const VECTOR_NAME: &str = "sparse";
 
@@ -351,6 +305,24 @@ mod tests {
         (segment, expected)
     }
 
+    fn open_stream(
+        segments: Vec<LockedSegment>,
+        query: SparseVector,
+        filter: Option<Filter>,
+        batch_size: usize,
+        stopped: Arc<AtomicBool>,
+    ) -> OperationResult<ExactShardStream<SparseRankPlan>> {
+        let plan = SparseRankPlan::new(
+            &segments,
+            VECTOR_NAME.to_owned(),
+            query,
+            filter,
+            4_096,
+            stopped.clone(),
+        )?;
+        ExactShardStream::open(segments, plan, batch_size, stopped)
+    }
+
     #[test]
     fn shard_stream_merges_exact_segments_exactly_and_resumes() {
         let first_dir = tempfile::tempdir().unwrap();
@@ -369,18 +341,15 @@ mod tests {
             true.into(),
         )));
         let stopped = Arc::new(AtomicBool::new(false));
-        let mut stream = ExactSparseShardStream::open(
+        let mut stream = open_stream(
             vec![LockedSegment::new(first), LockedSegment::new(second)],
-            VECTOR_NAME.to_owned(),
             SparseVector {
                 indices: vec![11],
                 values: vec![1.0],
             },
             Some(filter),
             17,
-            4_096,
             stopped,
-            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
         assert_eq!(stream.telemetry().batch_requests, 2);
@@ -412,18 +381,15 @@ mod tests {
         let segment_dir = tempfile::tempdir().unwrap();
         let (segment, _) = make_segment(&segment_dir, 0);
         let stopped = Arc::new(AtomicBool::new(false));
-        let mut stream = ExactSparseShardStream::open(
+        let mut stream = open_stream(
             vec![LockedSegment::new(segment)],
-            VECTOR_NAME.to_owned(),
             SparseVector {
                 indices: vec![11],
                 values: vec![1.0],
             },
             None,
             16,
-            4_096,
             stopped.clone(),
-            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
         stopped.store(true, AtomicOrdering::Relaxed);
@@ -471,18 +437,15 @@ mod tests {
             .upsert_point(0, 42u64.into(), vectors, &HardwareCounterCell::new())
             .unwrap();
 
-        let mut stream = ExactSparseShardStream::open(
+        let mut stream = open_stream(
             vec![LockedSegment::new(segment)],
-            VECTOR_NAME.to_owned(),
             SparseVector {
                 indices: vec![11],
                 values: vec![1.0],
             },
             None,
             16,
-            4_096,
             Arc::new(AtomicBool::new(false)),
-            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
 
@@ -540,18 +503,15 @@ mod tests {
         let common_dir = tempfile::tempdir().unwrap();
         let rare = build_idf_segment(&rare_dir, 100, 1, 1.0);
         let common = build_idf_segment(&common_dir, 200, 10, 2.0);
-        let mut stream = ExactSparseShardStream::open(
+        let mut stream = open_stream(
             vec![LockedSegment::new(rare), LockedSegment::new(common)],
-            VECTOR_NAME.to_owned(),
             SparseVector {
                 indices: vec![11],
                 values: vec![1.0],
             },
             None,
             8,
-            4_096,
             Arc::new(AtomicBool::new(false)),
-            ExactBatchExecutor::dedicated_threads_for_tests(),
         )
         .unwrap();
         let ranking = std::iter::from_fn(|| stream.next_result().transpose())

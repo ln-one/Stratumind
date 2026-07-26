@@ -168,7 +168,6 @@ fn exact_execution_equals_exhaustive_dense_sparse_wrrf() {
             dense_policy: DenseExecutionPolicy::default(),
         },
         Arc::new(AtomicBool::new(false)),
-        ExactBatchExecutor::dedicated_threads_for_tests(),
     )
     .unwrap();
 
@@ -225,15 +224,6 @@ fn reserved_qdrant_runtimes_serve_many_segments_with_one_reusable_reader_slot() 
     let reservation = runtime
         .try_reserve_exact_session(1)
         .expect("one reusable reader slot and a separate coordinator fit");
-    let reader_reservation = reservation.readers();
-    let batch_executor = ExactBatchExecutor::new(move |_name, task| {
-        reader_reservation.spawn_blocking(task).ok_or_else(|| {
-            OperationError::service_error_light(
-                "test exact session exceeded its reserved reader capacity",
-            )
-        })?;
-        Ok(())
-    });
     let task = reservation
         .coordinator()
         .spawn_blocking(move || {
@@ -256,7 +246,6 @@ fn reserved_qdrant_runtimes_serve_many_segments_with_one_reusable_reader_slot() 
                     dense_policy: DenseExecutionPolicy::default(),
                 },
                 Arc::new(AtomicBool::new(false)),
-                batch_executor,
             )
         })
         .expect("reserved coordinator slot");
@@ -346,7 +335,6 @@ fn overwrite_and_delete_are_resolved_before_channel_ranking() {
             dense_policy: DenseExecutionPolicy::default(),
         },
         Arc::new(AtomicBool::new(false)),
-        ExactBatchExecutor::dedicated_threads_for_tests(),
     )
     .unwrap();
 

@@ -20,9 +20,9 @@ use segment::index::exact_score_stream::{
     ExactScoreStream, ExactScoredIdentity, KWayExactScoreStream,
 };
 use segment::types::{ExtendedPointId, Filter, PointIdType, ScoredPoint, VectorNameBuf};
-use shard::ExactBatchExecutor;
-use shard::exact_dense_stream::{DenseShardTelemetry, ExactDenseShardStream};
-use shard::exact_sparse_stream::ExactSparseShardStream;
+use shard::exact_dense_stream::{DenseRankPlan, DenseShardTelemetry};
+use shard::exact_score_stream::ExactShardStream;
+use shard::exact_sparse_stream::SparseRankPlan;
 use shard::locked_segment::LockedSegment;
 use sparse::common::sparse_vector::SparseVector;
 
@@ -186,11 +186,6 @@ impl Collection {
             return Ok(None);
         };
         debug_assert_eq!(reservation.reader_slots(), required_reader_slots);
-        // The coordinator already runs on a reserved Qdrant search worker.
-        // Each bounded Segment reader task runs inline there: it releases its
-        // read guard before returning, but avoids a second Tokio enqueue and
-        // channel wake-up for every rank batch.
-        let batch_executor = ExactBatchExecutor::inline_on_current_worker();
         let mut cancellation = ExactRrfCancellation::new(stopped.clone());
         let mut task = reservation
             .coordinator()
@@ -207,7 +202,7 @@ impl Collection {
                 // `frozen_snapshots` stays alive in this closure, so every
                 // Shard update guard remains held; `pinned_generations` also
                 // keeps optimizer publish/rollback behind the fixed handles.
-                let result = execute_exact_rrf(segments, request, task_stopped, batch_executor);
+                let result = execute_exact_rrf(segments, request, task_stopped);
                 drop(pinned_generations);
                 drop(frozen_snapshots);
                 result
@@ -239,7 +234,6 @@ fn execute_exact_rrf(
     snapshots: Vec<Vec<LockedSegment>>,
     request: ExactRrfRequest,
     stopped: Arc<AtomicBool>,
-    batch_executor: ExactBatchExecutor,
 ) -> OperationResult<ExactRrfResult> {
     let batch_size = if request.batch_size == 0 {
         DEFAULT_NATIVE_EXACT_BATCH_SIZE
@@ -259,16 +253,15 @@ fn execute_exact_rrf(
     let mut exhaustive_fallback_sources = 0;
     let mut visible_point_copies = 0;
     for segments in snapshots.iter().cloned() {
-        let stream = ExactSparseShardStream::open(
-            segments,
+        let plan = SparseRankPlan::new(
+            &segments,
             request.sparse_using.clone(),
             request.sparse_query.clone(),
             request.filter.clone(),
-            batch_size,
             sparse_posting_batch_size,
             stopped.clone(),
-            batch_executor.clone(),
         )?;
+        let stream = ExactShardStream::open(segments, plan, batch_size, stopped.clone())?;
         let telemetry = stream.telemetry();
         exhaustive_fallback_sources += telemetry.exhaustive_fallback_sources;
         visible_point_copies += telemetry.visible_point_copies;
@@ -292,16 +285,13 @@ fn execute_exact_rrf(
     let dense_physical = Rc::new(RefCell::new(Vec::<DenseShardTelemetry>::new()));
     let mut dense_sources = Vec::<ExactScoreStream<'static>>::with_capacity(snapshots.len());
     for segments in snapshots {
-        let mut stream = ExactDenseShardStream::open(
-            segments,
+        let plan = DenseRankPlan::new(
             request.dense_using.clone(),
             request.dense_query.clone(),
             request.filter.clone(),
             request.dense_policy,
-            batch_size,
-            stopped.clone(),
-            batch_executor.clone(),
-        )?;
+        );
+        let mut stream = ExactShardStream::open(segments, plan, batch_size, stopped.clone())?;
         let physical_source = {
             let mut telemetry = dense_physical.borrow_mut();
             telemetry.push(stream.telemetry());

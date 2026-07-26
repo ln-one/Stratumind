@@ -7,13 +7,14 @@ use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
-use std::sync::mpsc::sync_channel;
 
 use ahash::AHashSet;
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::{PointIdType, ScoredPoint};
 use smallvec::SmallVec;
+
+use crate::locked_segment::LockedSegment;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ExactSourceMode {
@@ -42,94 +43,80 @@ pub(crate) struct BatchReply {
     pub(crate) eof: bool,
 }
 
-type BoxedBatchTask = Box<dyn FnOnce() + Send + 'static>;
-type DispatchBatchTask =
-    dyn Fn(String, BoxedBatchTask) -> OperationResult<()> + Send + Sync + 'static;
-
-#[derive(Clone)]
-enum BatchExecution {
-    Inline,
-    Dispatch(Arc<DispatchBatchTask>),
-}
-
-/// Qdrant-runtime hook used by exact Shard sessions.
-///
-/// Production runs bounded reads inline on its reserved Qdrant coordinator.
-/// Tests may dispatch the same owned task to another thread to verify that no
-/// Segment guard or borrowed cursor survives a batch boundary.
-#[derive(Clone)]
-pub struct ExactBatchExecutor {
-    execution: BatchExecution,
-}
-
-impl ExactBatchExecutor {
-    pub fn new(
-        dispatch: impl Fn(String, BoxedBatchTask) -> OperationResult<()> + Send + Sync + 'static,
-    ) -> Self {
-        Self {
-            execution: BatchExecution::Dispatch(Arc::new(dispatch)),
-        }
-    }
-
-    pub(crate) fn run_batch(
-        &self,
-        name: String,
-        task: impl FnOnce() -> OperationResult<BatchReply> + Send + 'static,
-    ) -> OperationResult<BatchReply> {
-        match &self.execution {
-            BatchExecution::Inline => task(),
-            BatchExecution::Dispatch(dispatch) => {
-                let (reply_tx, reply_rx) = sync_channel(1);
-                dispatch(
-                    name,
-                    Box::new(move || {
-                        let _ = reply_tx.send(task());
-                    }),
-                )?;
-                reply_rx.recv().map_err(|_| {
-                    OperationError::service_error_light(
-                        "exact Segment reader task stopped before returning",
-                    )
-                })?
-            }
-        }
-    }
-
-    /// Execute one bounded reader task on the current Qdrant search worker.
-    ///
-    /// The exact coordinator already runs on a reserved Qdrant blocking
-    /// runtime. Running the task inline avoids a second Tokio enqueue and a
-    /// channel wake-up for every batch while preserving the same owned-state
-    /// and transient-read-view boundary.
-    pub fn inline_on_current_worker() -> Self {
-        Self {
-            execution: BatchExecution::Inline,
-        }
-    }
-
-    #[cfg(any(test, feature = "testing"))]
-    pub fn dedicated_threads_for_tests() -> Self {
-        Self::new(|name, task| {
-            std::thread::Builder::new()
-                .name(name)
-                .spawn(task)
-                .map(|_| ())
-                .map_err(|error| {
-                    OperationError::service_error_light(format!(
-                        "failed to start native test thread: {error}"
-                    ))
-                })
-        })
-    }
-}
-
 /// One logical Segment score source backed by short Qdrant-runtime tasks.
-pub(crate) struct SegmentScoreSource {
+pub struct SegmentScoreSource {
     pull: Arc<PullBatch>,
     buffer: VecDeque<ScoredPoint>,
     eof: bool,
     mode: ExactSourceMode,
     previous: Option<ScoredPoint>,
+}
+
+/// Channel-specific Segment initialization and bounded rank advancement.
+///
+/// The Shard merge, authoritative identity handling, EOF and error semantics
+/// are shared by every exact channel.
+pub trait SegmentRankPlan: Clone + Send + Sync + 'static {
+    const CHANNEL: &'static str;
+
+    fn open_segment(
+        &self,
+        source: usize,
+        segment: LockedSegment,
+        stopped: Arc<AtomicBool>,
+    ) -> OperationResult<SegmentScoreSource>;
+}
+
+/// One exact channel rank stream merged across every frozen Segment in a Shard.
+pub struct ExactShardStream<P: SegmentRankPlan> {
+    inner: ExactShardMergeState,
+    _plan: std::marker::PhantomData<P>,
+}
+
+impl<P: SegmentRankPlan> ExactShardStream<P> {
+    pub fn open(
+        segments: Vec<LockedSegment>,
+        plan: P,
+        batch_size: usize,
+        stopped: Arc<AtomicBool>,
+    ) -> OperationResult<Self> {
+        let visible_point_copies = segments
+            .iter()
+            .map(|segment| {
+                segment
+                    .get()
+                    .read()
+                    .available_point_count_without_deferred()
+            })
+            .sum();
+        let sources = segments
+            .into_iter()
+            .enumerate()
+            .map(|(source, segment)| plan.open_segment(source, segment, stopped.clone()))
+            .collect::<OperationResult<Vec<_>>>()?;
+        Ok(Self {
+            inner: ExactShardMergeState::open(
+                sources,
+                visible_point_copies,
+                batch_size,
+                stopped,
+                P::CHANNEL,
+            )?,
+            _plan: std::marker::PhantomData,
+        })
+    }
+
+    pub fn next_batch(&mut self, max_results: usize) -> OperationResult<Vec<ScoredPoint>> {
+        self.inner.next_batch(max_results)
+    }
+
+    pub fn next_result(&mut self) -> OperationResult<Option<ScoredPoint>> {
+        self.inner.next_result()
+    }
+
+    pub fn telemetry(&self) -> ExactShardStreamTelemetry {
+        self.inner.telemetry()
+    }
 }
 
 type PullBatch = dyn Fn(usize) -> OperationResult<BatchReply> + Send + Sync + 'static;
