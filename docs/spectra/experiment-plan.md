@@ -3,6 +3,8 @@
 The active N-channel extension, prior-art matrix, falsifiable claim ladder, and
 full workload plan are maintained in `docs/spectra/n-channel-research-program.md`.
 This file retains the implementation history of the first two-channel kernel.
+It is archived: implementation paths and commands below describe the repository
+at `b26cbf157` and are not runnable from the clean-break source tree.
 
 This branch evaluates exact lazy multi-channel retrieval inside the Qdrant
 execution kernel. It is based on Qdrant `v1.18.2` at commit
@@ -104,7 +106,7 @@ Each run records:
 The primary correctness gate is zero ordered Top-K mismatches. A worst-case query
 may legitimately scan the full corpus; it may not return a different result.
 
-## Current implementation status
+## Historical implementation status
 
 `DynamicRrfState` is implemented next to Qdrant's exhaustive RRF primitive in
 `lib/segment/src/common/reciprocal_rank_fusion.rs`. It accepts one point at a time
@@ -278,7 +280,7 @@ of FiQA document/query pairs. Raw results are in
 `docs/spectra/results/scifact-dense-quantized-certificate-v2.local.json` and
 `docs/spectra/results/fiqa-dense-exact-repeats-v1.local.json`.
 
-Run the current gate with:
+The historical gate at `b26cbf157` used:
 
 ```bash
 cargo test -p segment common::reciprocal_rank_fusion --locked
@@ -290,12 +292,13 @@ cargo run --release -p sparse --example spectra_sparse_baseline --locked
 cargo run --release -p segment --example spectra_hybrid_exact --locked
 ```
 
-The backend request and guarantee boundary is specified in
-`docs/spectra/backend-contract.md`. The root `spectra_exact_server` binary exposes
+The historical backend request and guarantee boundary is recorded in
+`docs/spectra/backend-contract.md`. At `b26cbf157`, the root `spectra_exact_server` binary exposed
 the snapshot-backed single-shard reference kernel over one HTTP request. Spectra's
 production adapter issues one native Qdrant Query request with Dense and Sparse
 prefetch plus weighted RRF; its separate exact adapter verifies the stronger
 full-corpus guarantee and restores authoritative Chunk identities. Sparse Node
 Max should next move into the inverted executor rather than remain a parallel
-scanner. A collection-level exact coordinator follows only after the single-shard
-cost model is stable.
+scanner. Those executors and binaries were removed from the active source tree;
+the current Production V1.1 gate is described in
+`docs/spectra/plan/exact-retrieval-clean-architecture.md`.

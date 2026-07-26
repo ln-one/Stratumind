@@ -5,6 +5,10 @@
 > must not be used by the production Spectra adapter. The frozen production contract is
 > [`../STRATUMIND_API_V1.md`](../STRATUMIND_API_V1.md), which uses one Dense channel and one Sparse
 > channel at `/collections/{collection_name}/points/query/exact-rrf`.
+>
+> The reference server described below was retired by the clean break. Its code
+> and runnable commands exist only in Git history at `b26cbf157`; no compatibility
+> binary remains in the active crate tree.
 
 Spectra owns one logical `ChunkRetrievalBackend` port. A request supplies the
 frozen index generation, one to N channel Query representations, one WRRF
@@ -159,13 +163,13 @@ Spectra then resolves those point IDs through its authoritative retrieval
 catalog. This identity recovery does not alter retrieval order and prevents the
 research snapshot from fabricating production Chunk metadata.
 
-The runnable reference server accepts `channels[]`, validates every channel
+The retired reference server accepted `channels[]`, validated every channel
 before execution, and returns per-channel plus physical-stream telemetry. Dense
 and Sparse channels are freely interleaved; the request shape does not encode a
 fixed two-channel assumption. It uses the same Adaptive Native(4096) Sparse
 default as `NChannelExactIndex`.
 
-Run it with:
+At `b26cbf157`, it was run with:
 
 ```bash
 SPECTRA_DATASET_DIR=/tmp/spectra-scifact-snapshot \
@@ -176,7 +180,7 @@ cargo run --release --bin spectra_exact_server --locked
 `GET /health` reports the loaded snapshot, corpus size, Dense dimension, and
 offline index build time.
 
-With the server running, the reproducible HTTP smoke gate is:
+At that commit, its HTTP smoke gate was:
 
 ```bash
 python tools/spectra/smoke_exact_server.py \

@@ -2,25 +2,19 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-#[cfg(feature = "stratumind-research")]
-use std::time::Instant;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::Result;
 use ordered_float::OrderedFloat;
 
-use super::telemetry::{PostingBlockMaxTelemetry, PostingBlockMaxVariant};
+use super::telemetry::PostingBlockMaxTelemetry;
 use super::{ExactSparseStreamError, PendingPoint};
 use crate::SearchScratchArena;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_batch::score_posting_batch;
-#[cfg(feature = "stratumind-research")]
-use crate::index::posting_batch::{
-    TouchedScoreBuffer, score_posting_range_dense, score_posting_range_touched,
-};
 use crate::index::posting_list_common::PostingListIter;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -67,32 +61,24 @@ impl PartialOrd for PendingBlockPoint {
 
 enum ActiveBatch {
     Heap(BinaryHeap<PendingBlockPoint>),
-    #[cfg(feature = "stratumind-research")]
-    Sorted(Vec<ScoredPointOffset>),
 }
 
 impl ActiveBatch {
     fn len(&self) -> usize {
         match self {
             Self::Heap(points) => points.len(),
-            #[cfg(feature = "stratumind-research")]
-            Self::Sorted(points) => points.len(),
         }
     }
 
     fn pop(&mut self) -> Option<ScoredPointOffset> {
         match self {
             Self::Heap(points) => points.pop().map(|point| point.0),
-            #[cfg(feature = "stratumind-research")]
-            Self::Sorted(points) => points.pop(),
         }
     }
 
     fn capacity(&self) -> usize {
         match self {
             Self::Heap(points) => points.capacity(),
-            #[cfg(feature = "stratumind-research")]
-            Self::Sorted(points) => points.capacity(),
         }
     }
 }
@@ -107,11 +93,6 @@ pub(super) struct PostingBlockMaxKernel {
     query: RemappedSparseVector,
     active_batches: Vec<ActiveBatch>,
     scores: Vec<ScoreType>,
-    #[cfg(feature = "stratumind-research")]
-    touched_scores: TouchedScoreBuffer,
-    variant: PostingBlockMaxVariant,
-    #[cfg(feature = "stratumind-research")]
-    phase_telemetry: bool,
 }
 
 impl PostingBlockMaxKernel {
@@ -119,49 +100,20 @@ impl PostingBlockMaxKernel {
         index: &'a I,
         query: &RemappedSparseVector,
         batch_size: usize,
-        variant: PostingBlockMaxVariant,
         arena: &'a SearchScratchArena,
         hardware_counter: &'a HardwareCounterCell,
         telemetry: &mut PostingBlockMaxTelemetry,
-        phase_telemetry: bool,
     ) -> Result<(Self, BinaryHeap<PendingBatch>)> {
-        #[cfg(not(feature = "stratumind-research"))]
-        let _ = phase_telemetry;
-        #[cfg(feature = "stratumind-research")]
-        let open_started = phase_telemetry.then(Instant::now);
         let postings = open_postings(index, query, arena, hardware_counter)?;
-        #[cfg(feature = "stratumind-research")]
-        if let Some(open_started) = open_started {
-            telemetry.phase.posting_open_ns =
-                saturating_elapsed_ns(open_started.elapsed().as_nanos());
-        }
         telemetry.query_posting_elements = postings
             .iter()
             .map(|posting| posting.iterator.len_to_end())
             .sum();
         telemetry.posting_lists = postings.len();
 
-        #[cfg(feature = "stratumind-research")]
-        let plan_started = phase_telemetry.then(Instant::now);
-        let batches = if variant == PostingBlockMaxVariant::CompressedMetadata {
-            plan_batches_native(&postings, batch_size, telemetry)
-                .unwrap_or_else(|| plan_batches(&postings, batch_size, telemetry))
-        } else {
-            plan_batches(&postings, batch_size, telemetry)
-        };
-        #[cfg(feature = "stratumind-research")]
-        if let Some(plan_started) = plan_started {
-            telemetry.phase.bound_plan_ns =
-                saturating_elapsed_ns(plan_started.elapsed().as_nanos());
-        }
-        #[cfg(feature = "stratumind-research")]
-        let heap_started = phase_telemetry.then(Instant::now);
+        let batches = plan_batches_native(&postings, batch_size, telemetry)
+            .unwrap_or_else(|| plan_batches(&postings, batch_size, telemetry));
         let pending_batches = BinaryHeap::from(batches);
-        #[cfg(feature = "stratumind-research")]
-        if let Some(heap_started) = heap_started {
-            telemetry.phase.bound_heapify_ns =
-                saturating_elapsed_ns(heap_started.elapsed().as_nanos());
-        }
         telemetry.max_pending_batches = pending_batches.len();
         telemetry.pending_batch_capacity = pending_batches.capacity();
 
@@ -170,11 +122,6 @@ impl PostingBlockMaxKernel {
                 query: query.clone(),
                 active_batches: Vec::new(),
                 scores: Vec::new(),
-                #[cfg(feature = "stratumind-research")]
-                touched_scores: TouchedScoreBuffer::default(),
-                variant,
-                #[cfg(feature = "stratumind-research")]
-                phase_telemetry,
             },
             pending_batches,
         ))
@@ -197,111 +144,20 @@ impl PostingBlockMaxKernel {
         let postings = open_postings(index, &self.query, arena, hardware_counter)
             .map_err(|error| ExactSparseStreamError::ReaderFailure(error.to_string()))?;
 
-        #[cfg(feature = "stratumind-research")]
-        let score_started = self.phase_telemetry.then(Instant::now);
-        match self.variant {
-            PostingBlockMaxVariant::V1 => {
-                self.score_v1(&postings, batch, batch_len, telemetry);
-            }
-            PostingBlockMaxVariant::CompressedMetadata => {
-                // P1.3 changes only bound planning. Range scoring remains the
-                // frozen exact V1 path.
-                self.score_v1(&postings, batch, batch_len, telemetry);
-            }
-            #[cfg(feature = "stratumind-research")]
-            PostingBlockMaxVariant::RangeDirectDense
-            | PostingBlockMaxVariant::RangeDirectSorted => {
-                telemetry.posting_elements_visited += score_posting_range_dense(
-                    postings
-                        .iter()
-                        .map(|posting| (&posting.iterator, posting.query_weight)),
-                    batch.start,
-                    batch.end,
-                    &mut self.scores,
-                );
-                telemetry.range_direct_batches += 1;
-                telemetry.score_buffer_slots += batch_len;
-                telemetry.max_score_buffer_slots = telemetry.max_score_buffer_slots.max(batch_len);
-            }
-            #[cfg(feature = "stratumind-research")]
-            PostingBlockMaxVariant::RangeDirectTouched => {
-                telemetry.posting_elements_visited += score_posting_range_touched(
-                    postings
-                        .iter()
-                        .map(|posting| (&posting.iterator, posting.query_weight)),
-                    batch.start,
-                    batch.end,
-                    &mut self.touched_scores,
-                );
-                telemetry.range_direct_batches += 1;
-                let touched = self.touched_scores.touched_len();
-                telemetry.score_buffer_touched += touched;
-                telemetry.max_touched_slots = telemetry.max_touched_slots.max(touched);
-            }
-        }
-        #[cfg(feature = "stratumind-research")]
-        if let Some(score_started) = score_started {
-            telemetry.phase.range_score_ns = telemetry
-                .phase
-                .range_score_ns
-                .saturating_add(saturating_elapsed_ns(score_started.elapsed().as_nanos()));
-        }
-
-        #[cfg(feature = "stratumind-research")]
-        let scan_started = self.phase_telemetry.then(Instant::now);
-        let points = match self.variant {
-            #[cfg(feature = "stratumind-research")]
-            PostingBlockMaxVariant::RangeDirectTouched => collect_scored_points(
-                self.touched_scores.entries(),
-                batch.start,
-                batch.upper_bound,
-                stopped,
-                telemetry,
-            )?,
-            _ => collect_scored_points(
-                self.scores.iter().copied().enumerate(),
-                batch.start,
-                batch.upper_bound,
-                stopped,
-                telemetry,
-            )?,
-        };
-        #[cfg(feature = "stratumind-research")]
-        if let Some(scan_started) = scan_started {
-            telemetry.phase.score_scan_ns = telemetry
-                .phase
-                .score_scan_ns
-                .saturating_add(saturating_elapsed_ns(scan_started.elapsed().as_nanos()));
-        }
-
-        #[cfg(feature = "stratumind-research")]
-        let heap_started = self.phase_telemetry.then(Instant::now);
-        let mut points = match self.variant {
-            #[cfg(feature = "stratumind-research")]
-            PostingBlockMaxVariant::RangeDirectSorted => {
-                let mut points = points;
-                points.sort_unstable_by(|left, right| {
-                    OrderedFloat(left.score)
-                        .cmp(&OrderedFloat(right.score))
-                        .then_with(|| right.idx.cmp(&left.idx))
-                });
-                telemetry.sorted_batches += 1;
-                ActiveBatch::Sorted(points)
-            }
-            _ => ActiveBatch::Heap(BinaryHeap::from(
-                points
-                    .into_iter()
-                    .map(PendingBlockPoint)
-                    .collect::<Vec<_>>(),
-            )),
-        };
-        #[cfg(feature = "stratumind-research")]
-        if let Some(heap_started) = heap_started {
-            telemetry.phase.result_heapify_ns = telemetry
-                .phase
-                .result_heapify_ns
-                .saturating_add(saturating_elapsed_ns(heap_started.elapsed().as_nanos()));
-        }
+        self.score_range(&postings, batch, batch_len, telemetry);
+        let points = collect_scored_points(
+            self.scores.iter().copied().enumerate(),
+            batch.start,
+            batch.upper_bound,
+            stopped,
+            telemetry,
+        )?;
+        let mut points = ActiveBatch::Heap(BinaryHeap::from(
+            points
+                .into_iter()
+                .map(PendingBlockPoint)
+                .collect::<Vec<_>>(),
+        ));
 
         telemetry.score_buffer_capacity = self.scores.capacity();
         let Some(point) = points.pop() else {
@@ -317,7 +173,7 @@ impl PostingBlockMaxKernel {
         Ok(Some((PendingPoint { point, batch_index }, buffered)))
     }
 
-    fn score_v1<T: PostingListIter + Clone>(
+    fn score_range<T: PostingListIter + Clone>(
         &mut self,
         postings: &[WeightedPosting<T>],
         batch: PendingBatch,
@@ -344,8 +200,6 @@ impl PostingBlockMaxKernel {
     pub(super) fn clear(&mut self) {
         self.active_batches.clear();
         self.scores.clear();
-        #[cfg(feature = "stratumind-research")]
-        self.touched_scores.clear();
     }
 }
 
@@ -501,9 +355,4 @@ fn collect_scored_points(
         points.push(ScoredPointOffset { idx: id, score });
     }
     Ok(points)
-}
-
-#[cfg(feature = "stratumind-research")]
-fn saturating_elapsed_ns(nanos: u128) -> u64 {
-    nanos.min(u128::from(u64::MAX)) as u64
 }

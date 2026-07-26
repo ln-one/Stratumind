@@ -12,7 +12,6 @@ edition = "2024"
 workspace = true
 
 [features]
-stratumind-research = []
 testing = ["common/testing"]
 
 [dependencies]
@@ -53,7 +52,3 @@ pprof = { workspace = true }
 [[bench]]
 name = "search"
 harness = false
-
-[[example]]
-name = "stratumind_sparse_native_batch"
-required-features = ["stratumind-research"]

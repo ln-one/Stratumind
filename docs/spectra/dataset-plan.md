@@ -1,5 +1,8 @@
 # Spectra retrieval dataset plan
 
+Status: archived experiment plan. Commands and example paths refer to
+`b26cbf157`, not the active clean-break crate tree.
+
 The test set is not one frozen bag of queries. It is a reproducible generator
 plus adapters for externally licensed real corpora. Correctness, physical cost,
 and retrieval quality are separate gates.

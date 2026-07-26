@@ -23,9 +23,7 @@ mod kernel;
 mod telemetry;
 
 use kernel::{PendingBatch, PostingBlockMaxKernel};
-pub use telemetry::{
-    PostingBlockMaxTelemetry, PostingBlockMaxVariant, SparseExecutionPlan, SparsePhysicalPlan,
-};
+pub use telemetry::PostingBlockMaxTelemetry;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct PendingPoint {
@@ -99,24 +97,6 @@ impl PostingBlockMaxState {
         arena: &SearchScratchArena,
         hardware_counter: &HardwareCounterCell,
     ) -> Result<Self> {
-        Self::new_with_variant(
-            index,
-            query,
-            batch_size,
-            PostingBlockMaxVariant::CompressedMetadata,
-            arena,
-            hardware_counter,
-        )
-    }
-
-    pub fn new_with_variant<I: InvertedIndex>(
-        index: &I,
-        query: RemappedSparseVector,
-        batch_size: usize,
-        variant: PostingBlockMaxVariant,
-        arena: &SearchScratchArena,
-        hardware_counter: &HardwareCounterCell,
-    ) -> Result<Self> {
         assert!(batch_size > 0, "Sparse posting batch must be positive");
         assert!(
             query.indices.len() == query.values.len()
@@ -128,7 +108,6 @@ impl PostingBlockMaxState {
             "Sparse ranking requires sorted finite non-negative Query weights"
         );
         let mut telemetry = PostingBlockMaxTelemetry {
-            plan: variant.physical_plan(),
             cursor_started: true,
             query_terms: query.indices.len(),
             ..Default::default()
@@ -137,11 +116,9 @@ impl PostingBlockMaxState {
             index,
             &query,
             batch_size,
-            variant,
             arena,
             hardware_counter,
             &mut telemetry,
-            false,
         )?;
         Ok(Self {
             kernel,

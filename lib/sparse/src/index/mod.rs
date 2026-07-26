@@ -1,4 +1,3 @@
-pub mod block_max;
 pub mod compressed_posting_list;
 pub mod inverted_index;
 #[cfg(feature = "testing")]

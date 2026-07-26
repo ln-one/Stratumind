@@ -15,23 +15,23 @@ use segment::common::reciprocal_rank_fusion::{
     DynamicRrfAdvance, DynamicRrfExecution, DynamicRrfPolicy, DynamicRrfScheduler,
     DynamicRrfSession, DynamicRrfStopReason, ExactRrfStream,
 };
-use segment::index::exact_dense_stream::DenseExecutionPolicy;
-use segment::index::exact_score_stream::{
+use segment::index::dense_rank_state::DenseExecutionPolicy;
+use segment::index::exact_rank_stream::{
     ExactScoreStream, ExactScoredIdentity, KWayExactScoreStream,
 };
 use segment::types::{ExtendedPointId, Filter, PointIdType, ScoredPoint, VectorNameBuf};
-use shard::exact_dense_stream::{DenseRankPlan, DenseShardTelemetry};
-use shard::exact_score_stream::ExactShardStream;
-use shard::exact_sparse_stream::SparseRankPlan;
+use shard::dense_rank_plan::{DenseRankPlan, DenseShardTelemetry};
+use shard::exact_shard_stream::ExactShardStream;
 use shard::locked_segment::LockedSegment;
+use shard::sparse_rank_plan::SparseRankPlan;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::Collection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 
-pub const DEFAULT_NATIVE_EXACT_BATCH_SIZE: usize = 64;
-pub const DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE: usize = 4_096;
+pub const DEFAULT_EXACT_BATCH_SIZE: usize = 64;
+pub const DEFAULT_SPARSE_POSTING_BATCH_SIZE: usize = 4_096;
 
 #[derive(Clone, Debug)]
 pub struct ExactRrfRequest {
@@ -93,7 +93,7 @@ impl Drop for ExactRrfCancellation {
     }
 }
 
-fn exact_score_stream(
+fn exact_rank_stream(
     mut next: impl FnMut() -> OperationResult<Option<ScoredPoint>> + 'static,
     versions: Rc<RefCell<HashMap<PointIdType, u64>>>,
 ) -> ExactScoreStream<'static> {
@@ -104,7 +104,7 @@ fn exact_score_stream(
                 && *observed != point.version
             {
                 return Some(Err(OperationError::inconsistent_storage(format!(
-                    "native exact RRF observed point {} at conflicting versions {} and {}",
+                    "exact RRF observed point {} at conflicting versions {} and {}",
                     point.id, observed, point.version,
                 ))));
             }
@@ -163,9 +163,7 @@ impl<'a> ExactRrfService<'a> {
         let mut snapshots = Vec::with_capacity(targets.len());
         for target in targets {
             let Some(snapshot) = target.exact_segment_read_set().await? else {
-                log::debug!(
-                    "native exact RRF skipped: selected Shard has no local native snapshot"
-                );
+                log::debug!("exact RRF skipped: selected Shard has no local snapshot");
                 return Ok(None);
             };
             snapshots.push(snapshot);
@@ -191,7 +189,7 @@ impl<'a> ExactRrfService<'a> {
             // coordinator or cursor has started, so fallback cannot deadlock
             // behind a partially occupied blocking pool.
             log::debug!(
-                "native exact RRF skipped: reservation unavailable for {shard_count} Shards, {segment_count} Segments and {required_reader_slots} reader slots",
+                "exact RRF skipped: reservation unavailable for {shard_count} Shards, {segment_count} Segments and {required_reader_slots} reader slots",
             );
             return Ok(None);
         };
@@ -222,14 +220,14 @@ impl<'a> ExactRrfService<'a> {
             match tokio::time::timeout(timeout, &mut task).await {
                 Ok(result) => result,
                 Err(_) => {
-                    return Err(CollectionError::timeout(timeout, "native exact RRF"));
+                    return Err(CollectionError::timeout(timeout, "exact RRF"));
                 }
             }
         } else {
             task.await
         }
         .map_err(|error| {
-            CollectionError::service_error(format!("native exact RRF task failed: {error}"))
+            CollectionError::service_error(format!("exact RRF task failed: {error}"))
         })??;
         cancellation.disarm();
 
@@ -237,19 +235,6 @@ impl<'a> ExactRrfService<'a> {
             shard_count,
             ..result
         }))
-    }
-}
-
-impl Collection {
-    pub async fn exact_rrf(
-        &self,
-        request: ExactRrfRequest,
-        shard_selection: &ShardSelectorInternal,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Option<ExactRrfResult>> {
-        ExactRrfService::new(self)
-            .execute(request, shard_selection, timeout)
-            .await
     }
 }
 
@@ -279,12 +264,12 @@ impl ExactHybridSession {
             stopped,
         } = self;
         let batch_size = if request.batch_size == 0 {
-            DEFAULT_NATIVE_EXACT_BATCH_SIZE
+            DEFAULT_EXACT_BATCH_SIZE
         } else {
             request.batch_size
         };
         let sparse_posting_batch_size = if request.sparse_posting_batch_size == 0 {
-            DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE
+            DEFAULT_SPARSE_POSTING_BATCH_SIZE
         } else {
             request.sparse_posting_batch_size
         };
@@ -316,7 +301,7 @@ impl ExactHybridSession {
             let source_versions = versions.clone();
             let source_physical = sparse_physical.clone();
             let mut stream = stream;
-            sparse_sources.push(exact_score_stream(
+            sparse_sources.push(exact_rank_stream(
                 move || {
                     let result = stream.next_result();
                     source_physical.borrow_mut()[physical_source] = stream.telemetry();
@@ -342,7 +327,7 @@ impl ExactHybridSession {
             };
             let source_versions = versions.clone();
             let source_physical = dense_physical.clone();
-            dense_sources.push(exact_score_stream(
+            dense_sources.push(exact_rank_stream(
                 move || {
                     let result = stream.next_result();
                     source_physical.borrow_mut()[physical_source] = stream.telemetry();
@@ -391,9 +376,7 @@ impl ExactHybridSession {
         } = execution;
         drop(session);
         let observed_versions = Rc::try_unwrap(versions)
-            .map_err(|_| {
-                OperationError::service_error_light("native exact RRF version map leaked")
-            })?
+            .map_err(|_| OperationError::service_error_light("exact RRF version map leaked"))?
             .into_inner();
         let versions = point_ids
             .iter()
@@ -404,7 +387,7 @@ impl ExactHybridSession {
                     .map(|version| (*id, version))
                     .ok_or_else(|| {
                         OperationError::inconsistent_storage(format!(
-                            "native exact RRF result {id} has no visible version"
+                            "exact RRF result {id} has no visible version"
                         ))
                     })
             })

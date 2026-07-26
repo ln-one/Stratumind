@@ -32,7 +32,7 @@ use self::plans::{
 pub const DEFAULT_DENSE_SCALAR_MIN_POINTS: usize = 4_096;
 pub const DEFAULT_DENSE_COMPACT_MAX_POINTS: usize = DEFAULT_COMPACT_CERTIFICATE_MAX_POINTS;
 pub const DEFAULT_DENSE_EXACT_PREFIX_MAX_DIMENSION: usize = 192;
-const NATIVE_DENSE_SCORE_CHUNK_SIZE: usize = 4_096;
+const DENSE_SCORE_CHUNK_SIZE: usize = 4_096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DensePhysicalPlan {
@@ -562,5 +562,5 @@ fn refine_bounds_with(
 }
 
 #[cfg(test)]
-#[path = "exact_dense_stream/tests.rs"]
+#[path = "dense_rank_state/tests.rs"]
 mod tests;

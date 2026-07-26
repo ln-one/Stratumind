@@ -5,12 +5,13 @@ exact polyphonic retrieval: independently ranked channels may share physical
 work while preserving the same deterministic Top-K as exhaustive WRRF
 composition.
 
-The current implementation is a research prototype, not an official Qdrant
-release. The V0 service contract is documented in
-[`docs/STRATUMIND.md`](docs/STRATUMIND.md); the generic composition model and reproducible experiments
-are documented in [`docs/spectra/exact-composition-research.md`](docs/spectra/exact-composition-research.md).
-Historical `spectra_*` paths are retained as experiment provenance and do not
-denote the fork's current project identity.
+The current implementation is a research fork, not an official Qdrant release.
+The Production API V1.1 contract is documented in
+[`docs/STRATUMIND.md`](docs/STRATUMIND.md), and the active retrieval architecture
+in [`docs/spectra/plan/exact-retrieval-clean-architecture.md`](docs/spectra/plan/exact-retrieval-clean-architecture.md).
+Older `spectra_*`, N-channel and composition documents are historical evidence;
+their source is available from Git history at `b26cbf157`, not from the active
+crate tree.
 
 Stratumind remains based on and compatible with the Apache-2.0-licensed Qdrant
 codebase. The upstream README follows unchanged below.

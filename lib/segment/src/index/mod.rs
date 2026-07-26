@@ -1,6 +1,5 @@
-pub mod exact_dense_stream;
-pub mod exact_score_stream;
-pub mod exact_sparse_stream;
+pub mod dense_rank_state;
+pub mod exact_rank_stream;
 pub mod field_index;
 pub mod hnsw_index;
 mod key_encoding;
@@ -15,6 +14,7 @@ pub mod query_optimization;
 pub mod read_only;
 mod sample_estimation;
 pub mod sparse_index;
+pub mod sparse_rank_state;
 mod struct_filter_context;
 pub mod struct_payload_index;
 pub mod vector_index_base;

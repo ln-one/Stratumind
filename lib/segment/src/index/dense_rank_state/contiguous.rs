@@ -47,12 +47,12 @@ impl DenseRankState {
     ) -> OperationResult<Self> {
         if exact_refine_batch == 0 {
             return Err(OperationError::validation_error(
-                "native Dense exact-refine batch must be positive",
+                "exact Dense exact-refine batch must be positive",
             ));
         }
         if point_count > PointOffsetType::MAX as usize + 1 {
             return Err(OperationError::inconsistent_storage(
-                "contiguous native Dense universe exceeds PointOffsetType",
+                "contiguous exact Dense universe exceeds PointOffsetType",
             ));
         }
 
@@ -66,7 +66,7 @@ impl DenseRankState {
             })
         {
             return Err(OperationError::inconsistent_storage(
-                "native Dense Pending bounds do not match the contiguous eligible universe",
+                "exact Dense Pending bounds do not match the contiguous eligible universe",
             ));
         }
         if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_started) {

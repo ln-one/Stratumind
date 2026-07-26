@@ -16,7 +16,7 @@ use quantization::{
     PerVectorScalarMetadata, VectorParameters, per_vector_scalar_row_bytes,
 };
 
-use super::exact_dense_stream::{
+use super::dense_rank_state::{
     DenseExecutionPolicy, DensePhysicalPlan, DenseRankState, PendingBound,
 };
 use crate::common::check_stopped;

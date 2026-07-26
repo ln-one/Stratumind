@@ -97,7 +97,7 @@ pub(super) fn build_compact_certificate_state(
     let (query_codes, query_metadata) = compact_encode(&processed_query);
     let mut bounds = Vec::with_capacity(eligible.len());
     for (ordinal, &id) in eligible.iter().enumerate() {
-        if ordinal.is_multiple_of(NATIVE_DENSE_SCORE_CHUNK_SIZE) {
+        if ordinal.is_multiple_of(DENSE_SCORE_CHUNK_SIZE) {
             check_stopped(stopped)?;
         }
         let (document_codes, document) = compact
@@ -155,8 +155,8 @@ pub(super) fn build_scalar_certificate_state(
     let approximate_scorer = quantized.raw_scorer(query_vector, hardware_counter.fork())?;
     let mut approximate = vec![0.0; eligible.len()];
     for (points, scores) in eligible
-        .chunks(NATIVE_DENSE_SCORE_CHUNK_SIZE)
-        .zip(approximate.chunks_mut(NATIVE_DENSE_SCORE_CHUNK_SIZE))
+        .chunks(DENSE_SCORE_CHUNK_SIZE)
+        .zip(approximate.chunks_mut(DENSE_SCORE_CHUNK_SIZE))
     {
         check_stopped(stopped)?;
         approximate_scorer.score_points(points, scores);

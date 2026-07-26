@@ -15,10 +15,10 @@ use segment::common::operation_error::OperationResult;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::ReadSegmentEntry;
-use segment::index::exact_dense_stream::DenseExecutionPolicy;
+use segment::index::dense_rank_state::DenseExecutionPolicy;
 use segment::types::{Filter, ScoredPoint, SearchParams, VectorNameBuf, WithPayload, WithVector};
 
-use crate::exact_score_stream::{
+use crate::exact_shard_stream::{
     BatchReply, ExactShardStreamTelemetry, ExactSourceMode, SegmentRankPlan, SegmentScoreSource,
 };
 use crate::locked_segment::LockedSegment;
@@ -189,7 +189,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::exact_score_stream::ExactShardStream;
+    use crate::exact_shard_stream::ExactShardStream;
 
     fn make_segment(path: &TempDir, lane: u64) -> (Segment, Vec<(PointIdType, f32)>) {
         let mut segment = build_simple_segment(path.path(), 2, Distance::Dot).unwrap();

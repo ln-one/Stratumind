@@ -1,8 +1,7 @@
 pub mod common;
 pub mod count;
-pub mod exact_dense_stream;
-pub mod exact_score_stream;
-pub mod exact_sparse_stream;
+pub mod dense_rank_plan;
+pub mod exact_shard_stream;
 pub mod facet;
 pub mod files;
 pub mod locked_segment;
@@ -19,6 +18,7 @@ pub mod search;
 pub mod search_result_aggregator;
 pub mod segment_holder;
 pub mod snapshots;
+pub mod sparse_rank_plan;
 pub mod tracker;
 pub mod update;
 pub mod wal;

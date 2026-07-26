@@ -17,7 +17,7 @@ use segment::entry::ReadSegmentEntry;
 use segment::types::{Filter, ScoredPoint, SearchParams, VectorNameBuf, WithPayload, WithVector};
 use sparse::common::sparse_vector::SparseVector;
 
-use crate::exact_score_stream::{
+use crate::exact_shard_stream::{
     BatchReply, ExactShardStreamTelemetry, ExactSourceMode, SegmentRankPlan, SegmentScoreSource,
 };
 use crate::locked_segment::LockedSegment;
@@ -250,7 +250,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::exact_score_stream::ExactShardStream;
+    use crate::exact_shard_stream::ExactShardStream;
 
     const VECTOR_NAME: &str = "sparse";
 
@@ -270,6 +270,7 @@ mod tests {
                 },
             )]),
             payload_storage_type: Default::default(),
+            exact_rank_profile: Default::default(),
         };
         let mut segment = build_segment(path.path(), &config, None, true).unwrap();
         let hardware_counter = HardwareCounterCell::new();
@@ -422,6 +423,7 @@ mod tests {
                 },
             )]),
             payload_storage_type: Default::default(),
+            exact_rank_profile: Default::default(),
         };
         let mut segment = build_segment(segment_dir.path(), &config, None, true).unwrap();
         let mut vectors = NamedVectors::default();
@@ -478,6 +480,7 @@ mod tests {
                     },
                 )]),
                 payload_storage_type: Default::default(),
+                exact_rank_profile: Default::default(),
             };
             let mut segment = build_segment(path.path(), &config, None, true).unwrap();
             let hardware_counter = HardwareCounterCell::new();

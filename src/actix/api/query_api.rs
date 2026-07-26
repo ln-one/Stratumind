@@ -5,7 +5,7 @@ use actix_web_validator::{Json, Path, Query};
 use api::rest::models::InferenceUsage;
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
 use collection::collection::exact_rrf::{
-    DEFAULT_NATIVE_EXACT_BATCH_SIZE, DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE, ExactRrfRequest,
+    DEFAULT_EXACT_BATCH_SIZE, DEFAULT_SPARSE_POSTING_BATCH_SIZE, ExactRrfRequest, ExactRrfService,
 };
 use collection::operations::point_ops::VectorPersisted;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -19,7 +19,7 @@ use segment::common::reciprocal_rank_fusion::{
     DynamicRrfStopReason, ExactRrfStream, infallible_exact_rrf_stream,
 };
 use segment::data_types::vectors::VectorInternal;
-use segment::index::exact_dense_stream::DenseExecutionPolicy;
+use segment::index::dense_rank_state::DenseExecutionPolicy;
 use segment::types::{
     ExtendedPointId, Filter, SearchParams, VectorNameBuf, WithPayloadInterface, WithVector,
 };
@@ -200,7 +200,7 @@ fn normalize_exact_channel_ties(points: &mut [segment::types::ScoredPoint]) {
 
 /// Returns the prefix whose final score group is known to be complete.
 ///
-/// Qdrant's native Top-N is score exact, but an arbitrary equal-score subset
+/// Qdrant's Top-N is score exact, but an arbitrary equal-score subset
 /// may straddle N. One probe point detects that boundary. The incomplete tie
 /// group is withheld until a deeper round closes it or reaches exact EOF.
 fn tie_complete_prefix_len(
@@ -384,12 +384,11 @@ async fn query_points(
 
 /// Stratumind exact hybrid endpoint.
 ///
-/// A safe router uses native resumable Dense/Sparse streams when every selected
+/// The local plan uses resumable Dense/Sparse rank states when every selected
 /// Shard has a readable local replica. Distributed/consistency-constrained
 /// requests retain the exact adaptive-prefix fallback. Both plans implement
 /// the same exhaustive-channel WRRF Top-K contract.
-#[post("/collections/{collection_name}/points/query/exact-rrf")]
-async fn query_points_exact_rrf(
+async fn execute_exact_rrf_request(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<ExactRrfQueryRequest>,
@@ -429,8 +428,8 @@ async fn query_points_exact_rrf(
             limit: request.limit,
             rrf_k,
             weights,
-            batch_size: DEFAULT_NATIVE_EXACT_BATCH_SIZE,
-            sparse_posting_batch_size: DEFAULT_NATIVE_SPARSE_POSTING_BATCH_SIZE,
+            batch_size: DEFAULT_EXACT_BATCH_SIZE,
+            sparse_posting_batch_size: DEFAULT_SPARSE_POSTING_BATCH_SIZE,
             dense_policy: DenseExecutionPolicy::default(),
         };
         let channel_requests = vec![
@@ -467,14 +466,14 @@ async fn query_points_exact_rrf(
             let collection_pass = auth.check_collection_access(
                 &collection.collection_name,
                 AccessRequirements::new(),
-                "query_points_exact_rrf_native",
+                "query_points_exact_rrf_local",
             )?;
             let collection_ref = dispatcher
                 .toc(&auth, &pass)
                 .get_collection(&collection_pass)
                 .await?;
-            if let Some(execution) = collection_ref
-                .exact_rrf(exact_request, &shard_selection, params.timeout())
+            if let Some(execution) = ExactRrfService::new(&collection_ref)
+                .execute(exact_request, &shard_selection, params.timeout())
                 .await?
             {
                 let stop_reason = match execution.stop_reason {
@@ -488,7 +487,7 @@ async fn query_points_exact_rrf(
                     .map(|(rank, &id)| {
                         let version = execution.versions.get(&id).copied().ok_or_else(|| {
                             StorageError::service_error(format!(
-                                "exact_rrf lost the native authoritative version for point {id}"
+                                "exact_rrf lost the authoritative version for point {id}"
                             ))
                         })?;
                         Ok(ExactRrfHit {
@@ -504,10 +503,10 @@ async fn query_points_exact_rrf(
                         scope: "selected-local-shards-frozen-segment-view",
                         ordered_top_k_exact: true,
                         tie_break: "point-identity-ascending",
-                        channel_input: "exact-rank-streams",
+                        channel_input: "native-exact-rank-streams",
                     },
                     execution: ExactRrfExecutionResponse {
-                        plan: "local-dense-sparse-v1",
+                        plan: "native-local-dense-sparse-v1",
                         stop_reason,
                         source_pulls: execution.source_pulls,
                         source_exhausted: execution.source_exhausted,
@@ -570,7 +569,7 @@ async fn query_points_exact_rrf(
                     channel_input: "tie-complete-exact-prefixes",
                 },
                 execution: ExactRrfExecutionResponse {
-                    plan: "replica-exact-prefix-v1",
+                    plan: "adaptive-exact-prefix-v0",
                     stop_reason: "all-sources-exhausted",
                     source_pulls: vec![0, 0],
                     source_exhausted: vec![true, true],
@@ -784,9 +783,9 @@ async fn query_points_exact_rrf(
             },
             execution: ExactRrfExecutionResponse {
                 plan: if exhaustive_fallback {
-                    "replica-exact-prefix-with-exhaustive-fallback-v1"
+                    "adaptive-exact-prefix-with-exhaustive-fallback-v0"
                 } else {
-                    "replica-exact-prefix-v1"
+                    "adaptive-exact-prefix-v0"
                 },
                 stop_reason,
                 source_pulls: execution.source_pulls,
@@ -802,6 +801,26 @@ async fn query_points_exact_rrf(
     .await;
 
     helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+}
+
+#[post("/collections/{collection_name}/points/query/exact-rrf")]
+async fn query_points_exact_rrf(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    request: Json<ExactRrfQueryRequest>,
+    params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
+    auth: ActixAuth,
+) -> impl Responder {
+    execute_exact_rrf_request(
+        dispatcher,
+        collection,
+        request,
+        params,
+        service_config,
+        auth,
+    )
+    .await
 }
 
 #[post("/collections/{collection_name}/points/query/batch")]

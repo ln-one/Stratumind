@@ -250,7 +250,7 @@ impl ExactShardMergeState {
     ) -> OperationResult<Self> {
         if batch_size == 0 {
             return Err(OperationError::validation_error(format!(
-                "native {channel} Shard batch size must be positive"
+                "{channel} Shard batch size must be positive"
             )));
         }
         let mut telemetry = ExactShardStreamTelemetry {

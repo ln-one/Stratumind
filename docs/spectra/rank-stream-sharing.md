@@ -1,5 +1,8 @@
 # Exact rank-stream sharing
 
+Status: archived research design. Referenced modules remain available only from
+Git history at `b26cbf157`.
+
 ## Contract
 
 Dynamic Exact WRRF continues to observe one logical sorted stream per channel.

@@ -39,14 +39,14 @@ fn conflicting_channel_versions_fail_closed() {
         version: 41,
         ..scored(id, 2.0)
     });
-    let mut first_stream = exact_score_stream(move || Ok(first.take()), versions.clone());
+    let mut first_stream = exact_rank_stream(move || Ok(first.take()), versions.clone());
     assert!(first_stream.next().unwrap().is_ok());
 
     let mut second = Some(ScoredPoint {
         version: 42,
         ..scored(id, 1.0)
     });
-    let mut second_stream = exact_score_stream(move || Ok(second.take()), versions);
+    let mut second_stream = exact_rank_stream(move || Ok(second.take()), versions);
     let error = second_stream.next().unwrap().unwrap_err();
     assert!(error.to_string().contains("conflicting versions 41 and 42"));
 }
@@ -98,6 +98,7 @@ fn make_segment(
             },
         )]),
         payload_storage_type: Default::default(),
+        exact_rank_profile: Default::default(),
     };
     let mut segment = build_segment(directory.path(), &config, None, true).unwrap();
     let hardware_counter = HardwareCounterCell::new();

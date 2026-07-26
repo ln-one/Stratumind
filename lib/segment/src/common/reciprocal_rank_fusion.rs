@@ -885,8 +885,6 @@ pub fn exact_rrf_scoring(
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
-    use sparse::common::sparse_vector::RemappedSparseVector;
-    use sparse::index::block_max::{BlockMaxIndex, SparseDocument};
 
     use super::*;
     use crate::types::ScoredPoint;
@@ -1439,58 +1437,23 @@ mod tests {
     }
 
     #[test]
-    fn executor_fuses_block_max_streams_exactly() {
-        let documents = (0..64)
-            .map(|id| SparseDocument {
-                id,
-                vector: RemappedSparseVector {
-                    indices: vec![0, 1, 2],
-                    values: vec![1.0, (id % 7) as f32, (63 - id) as f32],
-                },
-            })
-            .collect();
-        let index = BlockMaxIndex::build(documents, 8).unwrap();
-        let first_query = RemappedSparseVector {
-            indices: vec![0, 1],
-            values: vec![1.0, 2.0],
-        };
-        let second_query = RemappedSparseVector {
-            indices: vec![0, 2],
-            values: vec![1.0, 0.5],
-        };
-        let ranked_ids = |query: RemappedSparseVector| {
-            index
-                .stream(query)
-                .unwrap()
-                .map(|point| ExtendedPointId::from(u64::from(point.idx)))
-                .collect::<Vec<_>>()
-        };
+    fn executor_fuses_exact_rank_streams_exactly() {
         let exhaustive_sources = vec![
-            ranked_ids(first_query.clone()),
-            ranked_ids(second_query.clone()),
+            (0..64).map(ExtendedPointId::from).collect::<Vec<_>>(),
+            (0..64).rev().map(ExtendedPointId::from).collect::<Vec<_>>(),
         ];
         let expected = exhaustive_top_k(&exhaustive_sources, 7, DEFAULT_RRF_K, None);
-        let sources: Vec<ExactRrfStream<'_>> = vec![
-            Box::new(
-                index
-                    .stream(first_query)
-                    .unwrap()
-                    .map(|point| Ok(ExtendedPointId::from(u64::from(point.idx)))),
-            ),
-            Box::new(
-                index
-                    .stream(second_query)
-                    .unwrap()
-                    .map(|point| Ok(ExtendedPointId::from(u64::from(point.idx)))),
-            ),
-        ];
+        let sources: Vec<ExactRrfStream<'_>> = exhaustive_sources
+            .iter()
+            .map(|source| Box::new(source.iter().copied().map(Ok)) as ExactRrfStream<'_>)
+            .collect();
 
         let actual = execute_dynamic_rrf(sources, 7, DEFAULT_RRF_K, None).unwrap();
 
         assert_eq!(actual.point_ids, expected);
-        assert!(
-            actual.source_pulls.iter().sum::<usize>()
-                < exhaustive_sources.iter().map(Vec::len).sum::<usize>()
+        assert_eq!(
+            actual.source_pulls.iter().sum::<usize>(),
+            exhaustive_sources.iter().map(Vec::len).sum::<usize>()
         );
     }
 

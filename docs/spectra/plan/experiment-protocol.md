@@ -1,5 +1,8 @@
 # Spectra N-channel experiment protocol
 
+Status: archived N-channel protocol. Its binaries and examples are available
+only from Git history at `b26cbf157`.
+
 ## Scope and frozen contracts
 
 The reference-exact track must return the same ordered Top-K identities as fully

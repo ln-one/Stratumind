@@ -151,7 +151,7 @@ impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
         }
 
         let state = if profile.is_some() {
-            let (state, native) = DenseRankState::from_contiguous_pending_batched_profiled(
+            let (state, rank_build) = DenseRankState::from_contiguous_pending_batched_profiled(
                 point_count,
                 pending,
                 exact_refine_batch,
@@ -159,14 +159,14 @@ impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
                 point_count,
             )?;
             let profile = profile.as_deref_mut().expect("profile checked above");
-            profile.eligible_validation_ns = native.eligible_validation_ns;
-            profile.bound_validation_ns = native.bound_validation_ns;
-            profile.pending_construction_ns = native.pending_construction_ns;
-            profile.heapify_ns = native.heapify_ns;
-            profile.bound_count = native.bound_count;
-            profile.initial_heap_items = native.initial_heap_items;
-            profile.bound_id_reserved_bytes = native.bound_id_reserved_bytes;
-            profile.pending_reserved_bytes = native.pending_reserved_bytes;
+            profile.eligible_validation_ns = rank_build.eligible_validation_ns;
+            profile.bound_validation_ns = rank_build.bound_validation_ns;
+            profile.pending_construction_ns = rank_build.pending_construction_ns;
+            profile.heapify_ns = rank_build.heapify_ns;
+            profile.bound_count = rank_build.bound_count;
+            profile.initial_heap_items = rank_build.initial_heap_items;
+            profile.bound_id_reserved_bytes = rank_build.bound_id_reserved_bytes;
+            profile.pending_reserved_bytes = rank_build.pending_reserved_bytes;
             profile.total_temporary_reserved_bytes = profile
                 .eligible_reserved_bytes
                 .saturating_add(profile.bounds_reserved_bytes)

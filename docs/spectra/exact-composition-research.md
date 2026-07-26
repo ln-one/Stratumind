@@ -1,6 +1,9 @@
 # Exact V4 composition research
 
-Status: research prototype
+Status: archived research prototype
+
+The implementation paths in this document are preserved only in Git history at
+`b26cbf157`; they are not compatibility entry points in the active crate tree.
 
 Date: 2026-07-21
 

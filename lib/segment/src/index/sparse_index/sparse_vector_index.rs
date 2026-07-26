@@ -11,9 +11,7 @@ use fs_err as fs;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-use sparse::index::posting_block_max::{
-    ExactSparseStreamError, PostingBlockMaxState, PostingBlockMaxVariant,
-};
+use sparse::index::posting_block_max::{ExactSparseStreamError, PostingBlockMaxState};
 use sparse::{SearchScratchArena, SearchScratchPool};
 
 use super::indices_tracker::IndicesTracker;
@@ -238,11 +236,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             ));
         }
         let remapped_query = self.indices_tracker.remap_vector(query.clone());
-        Ok(PostingBlockMaxState::new_with_variant(
+        Ok(PostingBlockMaxState::new(
             &self.inverted_index,
             remapped_query,
             batch_size,
-            PostingBlockMaxVariant::CompressedMetadata,
             arena,
             hardware_counter,
         )?)
