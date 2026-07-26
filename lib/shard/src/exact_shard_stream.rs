@@ -110,10 +110,6 @@ impl<P: SegmentRankPlan> ExactShardStream<P> {
         self.inner.next_batch(max_results)
     }
 
-    pub fn next_result(&mut self) -> OperationResult<Option<ScoredPoint>> {
-        self.inner.next_result()
-    }
-
     pub fn telemetry(&self) -> ExactShardStreamTelemetry {
         self.inner.telemetry()
     }
@@ -282,18 +278,6 @@ impl ExactShardMergeState {
             stream.pull_source(source, 1)?;
         }
         Ok(stream)
-    }
-
-    pub(crate) fn next_result(&mut self) -> OperationResult<Option<ScoredPoint>> {
-        if let Some(error) = &self.terminal_error {
-            return Err(error.clone());
-        }
-        let result = self.next_inner();
-        if let Err(error) = &result {
-            self.pending.clear();
-            self.terminal_error = Some(error.clone());
-        }
-        result
     }
 
     pub(crate) fn next_batch(&mut self, max_results: usize) -> OperationResult<Vec<ScoredPoint>> {

@@ -8,7 +8,7 @@ use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Condition, Distance, FieldCondition, PointIdType};
+use segment::types::{Condition, Distance, FieldCondition, PointIdType, ScoredPoint};
 use tempfile::TempDir;
 
 use super::*;
@@ -65,6 +65,12 @@ fn open_stream(
     )
 }
 
+fn next_result(
+    stream: &mut ExactShardStream<DenseRankPlan>,
+) -> OperationResult<Option<ScoredPoint>> {
+    Ok(stream.next_batch(1)?.pop())
+}
+
 #[test]
 fn shard_stream_merges_exact_segments_exactly_and_resumes() {
     let first_dir = tempfile::tempdir().unwrap();
@@ -104,13 +110,13 @@ fn shard_stream_merges_exact_segments_exactly_and_resumes() {
 
     let mut actual = Vec::new();
     for _ in 0..9 {
-        actual.push(stream.next_result().unwrap().unwrap());
+        actual.push(next_result(&mut stream).unwrap().unwrap());
         assert!(
             first_handle.try_write().is_some(),
             "each completed pull must release the Segment read guard"
         );
     }
-    while let Some(point) = stream.next_result().unwrap() {
+    while let Some(point) = next_result(&mut stream).unwrap() {
         actual.push(point);
     }
 
@@ -142,12 +148,12 @@ fn shard_stream_reports_cancellation_instead_of_eof() {
     .unwrap();
     stopped.store(true, AtomicOrdering::Relaxed);
     assert!(matches!(
-        stream.next_result(),
+        next_result(&mut stream),
         Err(OperationError::Cancelled { .. })
     ));
     stopped.store(false, AtomicOrdering::Relaxed);
     assert!(matches!(
-        stream.next_result(),
+        next_result(&mut stream),
         Err(OperationError::Cancelled { .. })
     ));
 }
@@ -193,7 +199,7 @@ fn conflicting_version_copies_fail_closed_when_encountered() {
         Arc::new(AtomicBool::new(false)),
     )
     .unwrap();
-    let error = std::iter::from_fn(|| stream.next_result().transpose())
+    let error = std::iter::from_fn(|| next_result(&mut stream).transpose())
         .collect::<OperationResult<Vec<_>>>()
         .unwrap_err();
     assert!(error.to_string().contains("emitted point 7 more than once"));
@@ -224,11 +230,11 @@ fn equivalent_physical_copies_are_emitted_once() {
         Arc::new(AtomicBool::new(false)),
     )
     .unwrap();
-    let point = stream.next_result().unwrap().unwrap();
+    let point = next_result(&mut stream).unwrap().unwrap();
     assert_eq!(
         (point.id, point.version, point.score),
         (7_u64.into(), 10, 1.0)
     );
-    assert!(stream.next_result().unwrap().is_none());
+    assert!(next_result(&mut stream).unwrap().is_none());
     assert_eq!(stream.telemetry().duplicates_suppressed, 1);
 }

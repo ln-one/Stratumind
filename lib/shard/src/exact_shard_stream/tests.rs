@@ -14,6 +14,10 @@ fn scored(id: u64, score: f32) -> ScoredPoint {
     }
 }
 
+fn next_result(stream: &mut ExactShardMergeState) -> OperationResult<Option<ScoredPoint>> {
+    Ok(stream.next_batch(1)?.pop())
+}
+
 #[test]
 fn producer_failure_is_sticky_and_never_becomes_eof() {
     let calls = Arc::new(Mutex::new(0usize));
@@ -37,8 +41,8 @@ fn producer_failure_is_sticky_and_never_becomes_eof() {
     let stopped = Arc::new(AtomicBool::new(false));
     let mut stream = ExactShardMergeState::open(vec![source], 0, 8, stopped, "Test").unwrap();
 
-    let first = stream.next_result().unwrap_err();
-    let second = stream.next_result().unwrap_err();
+    let first = next_result(&mut stream).unwrap_err();
+    let second = next_result(&mut stream).unwrap_err();
     assert!(first.to_string().contains("synthetic producer failure"));
     assert_eq!(first.to_string(), second.to_string());
 }

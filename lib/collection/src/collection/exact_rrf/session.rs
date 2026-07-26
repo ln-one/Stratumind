@@ -17,7 +17,7 @@ use segment::types::PointIdType;
 use shard::dense_rank_plan::{DenseRankPlan, DenseShardTelemetry};
 use shard::exact_shard_stream::ExactShardStream;
 use shard::locked_segment::LockedSegment;
-use shard::sparse_rank_plan::SparseRankPlan;
+use shard::sparse_rank_plan::{SparseRankPlan, SparseShardTelemetry};
 
 use super::source::{exact_score_batch_stream, observed_rank_batch_stream};
 use super::{
@@ -64,7 +64,7 @@ impl ExactHybridSession {
         // The Collection-owned update barriers freeze the Shard generation.
         // Channel state is owned; individual batches borrow Segment read views.
         let versions = Rc::new(RefCell::new(HashMap::new()));
-        let sparse_physical = Rc::new(RefCell::new(Vec::<DenseShardTelemetry>::new()));
+        let sparse_physical = Rc::new(RefCell::new(Vec::<SparseShardTelemetry>::new()));
         let mut sparse_sources =
             Vec::<ExactScoreBatchStream<'static>>::with_capacity(snapshots.len());
         let mut exhaustive_fallback_sources = 0;

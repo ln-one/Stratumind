@@ -11,7 +11,7 @@ use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    Condition, FieldCondition, PointIdType, SegmentConfig, SparseVectorDataConfig,
+    Condition, FieldCondition, PointIdType, ScoredPoint, SegmentConfig, SparseVectorDataConfig,
     SparseVectorStorageType, VectorStorageDatatype,
 };
 use tempfile::TempDir;
@@ -91,6 +91,12 @@ fn open_stream(
     ExactShardStream::open(segments, plan, batch_size, stopped)
 }
 
+fn next_result(
+    stream: &mut ExactShardStream<SparseRankPlan>,
+) -> OperationResult<Option<ScoredPoint>> {
+    Ok(stream.next_batch(1)?.pop())
+}
+
 #[test]
 fn shard_stream_merges_exact_segments_exactly_and_resumes() {
     let first_dir = tempfile::tempdir().unwrap();
@@ -125,9 +131,9 @@ fn shard_stream_merges_exact_segments_exactly_and_resumes() {
 
     let mut actual = Vec::new();
     for _ in 0..9 {
-        actual.push(stream.next_result().unwrap().unwrap());
+        actual.push(next_result(&mut stream).unwrap().unwrap());
     }
-    while let Some(point) = stream.next_result().unwrap() {
+    while let Some(point) = next_result(&mut stream).unwrap() {
         actual.push(point);
     }
 
@@ -162,12 +168,12 @@ fn shard_stream_reports_cancellation_instead_of_eof() {
     .unwrap();
     stopped.store(true, AtomicOrdering::Relaxed);
     assert!(matches!(
-        stream.next_result(),
+        next_result(&mut stream),
         Err(OperationError::Cancelled { .. })
     ));
     stopped.store(false, AtomicOrdering::Relaxed);
     assert!(matches!(
-        stream.next_result(),
+        next_result(&mut stream),
         Err(OperationError::Cancelled { .. })
     ));
 }
@@ -220,8 +226,8 @@ fn idf_config_uses_exact_qdrant_fallback() {
 
     assert_eq!(stream.telemetry().exact_sources, 0);
     assert_eq!(stream.telemetry().exhaustive_fallback_sources, 1);
-    assert_eq!(stream.next_result().unwrap().unwrap().id, 42u64.into());
-    assert!(stream.next_result().unwrap().is_none());
+    assert_eq!(next_result(&mut stream).unwrap().unwrap().id, 42u64.into());
+    assert!(next_result(&mut stream).unwrap().is_none());
 }
 
 #[test]
@@ -279,7 +285,7 @@ fn idf_fallback_uses_one_shard_global_query_context() {
         Arc::new(AtomicBool::new(false)),
     )
     .unwrap();
-    let ranking = std::iter::from_fn(|| stream.next_result().transpose())
+    let ranking = std::iter::from_fn(|| next_result(&mut stream).transpose())
         .collect::<OperationResult<Vec<_>>>()
         .unwrap();
 
