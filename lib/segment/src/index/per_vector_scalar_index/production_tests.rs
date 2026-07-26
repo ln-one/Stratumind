@@ -96,6 +96,12 @@ fn persisted_pvs_is_selected_by_production_auto_and_preserves_exact_order() {
     assert!(quantized.per_vector_scalar().is_some());
     assert!(quantized_directory.path().join(DATA_FILE).is_file());
     assert!(quantized_directory.path().join(METADATA_FILE).is_file());
+    assert!(
+        !quantized_directory
+            .path()
+            .join("quantized.compact-certificate.bin")
+            .exists()
+    );
     drop(quantized);
 
     let quantized = QuantizedVectors::load(
@@ -122,7 +128,6 @@ fn persisted_pvs_is_selected_by_production_auto_and_preserves_exact_order() {
         &query,
         DenseExecutionPolicy {
             scalar_min_points: 0,
-            disable_compact_certificate: true,
             ..Default::default()
         },
         &hardware_counter,
@@ -204,7 +209,6 @@ fn invalid_pvs_is_quarantined_and_auto_falls_back_to_scalar() {
         &query,
         DenseExecutionPolicy {
             scalar_min_points: 0,
-            disable_compact_certificate: true,
             ..Default::default()
         },
         &hardware_counter,

@@ -4,35 +4,16 @@ pub(super) fn select_dense_plan(
     vector_storage: &VectorStorageEnum,
     quantized: Option<&QuantizedVectors>,
     eligible: &[PointOffsetType],
-    query: &[f32],
     policy: DenseExecutionPolicy,
 ) -> DensePhysicalPlan {
     let supported_distance = matches!(vector_storage.distance(), Distance::Dot | Distance::Cosine);
     let per_vector_scalar_available = !policy.force_exact_scan
-        && !policy.disable_per_vector_scalar_certificate
         && eligible.len() >= policy.scalar_min_points
         && supported_distance
         && vector_storage.datatype() == VectorStorageDatatype::Float32
         && quantized.is_some_and(|quantized| quantized.per_vector_scalar().is_some());
     if per_vector_scalar_available {
         return DensePhysicalPlan::PerVectorScalarCertificate;
-    }
-    let compact_available = !policy.force_exact_scan
-        && !policy.disable_compact_certificate
-        && eligible.len() >= policy.scalar_min_points
-        && eligible.len() <= policy.compact_max_points
-        && supported_distance
-        && vector_storage.datatype() == VectorStorageDatatype::Float32
-        && quantized.is_some_and(|quantized| {
-            quantized
-                .compact_dense_certificate()
-                .is_some_and(|compact| {
-                    compact.dimension() == query.len()
-                        && eligible.iter().all(|id| compact.row(*id).is_some())
-                })
-        });
-    if compact_available {
-        return DensePhysicalPlan::CompactCertificate;
     }
     let scalar_available = !policy.force_exact_scan
         && eligible.len() >= policy.scalar_min_points
@@ -77,55 +58,6 @@ pub(super) fn build_per_vector_scalar_certificate_state(
             hardware_counter,
             stopped,
         )
-}
-
-#[expect(clippy::too_many_arguments)]
-pub(super) fn build_compact_certificate_state(
-    vector_storage: &VectorStorageEnum,
-    quantized: &QuantizedVectors,
-    eligible: Vec<PointOffsetType>,
-    query: &[f32],
-    stopped: &AtomicBool,
-    exact_refine_batch: usize,
-) -> OperationResult<DenseRankState> {
-    let compact = quantized
-        .compact_dense_certificate()
-        .expect("compact plan availability checked");
-    let processed_query = vector_storage
-        .distance()
-        .preprocess_vector::<VectorElementType>(query.to_vec());
-    let (query_codes, query_metadata) = compact_encode(&processed_query);
-    let mut bounds = Vec::with_capacity(eligible.len());
-    for (ordinal, &id) in eligible.iter().enumerate() {
-        if ordinal.is_multiple_of(DENSE_SCORE_CHUNK_SIZE) {
-            check_stopped(stopped)?;
-        }
-        let (document_codes, document) = compact
-            .row(id)
-            .expect("compact certificate availability checked");
-        let approximate = integer_dot(&query_codes, document_codes) as f64
-            * query_metadata.scale
-            * document.scale;
-        let error = query_metadata.residual_norm * document.original_norm
-            + query_metadata.reconstructed_norm * document.residual_norm;
-        let guard = floating_guard(
-            approximate.abs() + error + query_metadata.original_norm * document.original_norm,
-            query.len(),
-        );
-        bounds.push((
-            id,
-            (approximate - error - guard).next_down(),
-            (approximate + error + guard).next_up(),
-        ));
-    }
-    let point_count = eligible.len();
-    DenseRankState::from_certificate_bounds_batched(
-        eligible,
-        bounds,
-        exact_refine_batch,
-        DensePhysicalPlan::CompactCertificate,
-        point_count,
-    )
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -215,66 +147,5 @@ fn floating_guard(scale: f64, dimension: usize) -> f64 {
         scale * gamma / (1.0 - gamma)
     } else {
         f64::INFINITY
-    }
-}
-
-fn compact_encode(vector: &[f32]) -> (Vec<i8>, CompactDenseVectorMetadata) {
-    const MAX_CODE: f64 = 127.0;
-    let original_norm = vector
-        .iter()
-        .map(|value| f64::from(*value).powi(2))
-        .sum::<f64>()
-        .sqrt();
-    let max_abs = vector
-        .iter()
-        .map(|value| f64::from(*value).abs())
-        .fold(0.0, f64::max);
-    let scale = if max_abs == 0.0 {
-        1.0
-    } else {
-        max_abs / MAX_CODE
-    };
-    let codes: Vec<_> = vector
-        .iter()
-        .map(|value| {
-            (f64::from(*value) / scale)
-                .round()
-                .clamp(-MAX_CODE, MAX_CODE) as i8
-        })
-        .collect();
-    let mut reconstructed_squared = 0.0;
-    let mut residual_squared = 0.0;
-    for (&value, &code) in vector.iter().zip(&codes) {
-        let reconstructed = f64::from(code) * scale;
-        reconstructed_squared += reconstructed * reconstructed;
-        let residual = f64::from(value) - reconstructed;
-        residual_squared += residual * residual;
-    }
-    (
-        codes,
-        CompactDenseVectorMetadata {
-            scale,
-            reconstructed_norm: reconstructed_squared.sqrt(),
-            residual_norm: residual_squared.sqrt().next_up(),
-            original_norm,
-        },
-    )
-}
-
-fn integer_dot(left: &[i8], right: &[i8]) -> i64 {
-    debug_assert_eq!(left.len(), right.len());
-    const MAX_I32_DOT_DIMENSION: usize = i32::MAX as usize / (127 * 127);
-    if left.len() <= MAX_I32_DOT_DIMENSION {
-        i64::from(
-            left.iter()
-                .zip(right)
-                .map(|(&left, &right)| i32::from(left) * i32::from(right))
-                .sum::<i32>(),
-        )
-    } else {
-        left.iter()
-            .zip(right)
-            .map(|(&left, &right)| i64::from(left) * i64::from(right))
-            .sum()
     }
 }
