@@ -460,6 +460,70 @@ async fn query_points_exact_rrf(
         )
         .await?;
 
+        // One local replica is sufficient only for the default consistency
+        // mode. Explicit replica consistency keeps using Qdrant's ordinary
+        // replica resolver below.
+        if params.consistency.is_none() {
+            let collection_pass = auth.check_collection_access(
+                &collection.collection_name,
+                AccessRequirements::new(),
+                "query_points_exact_rrf_native",
+            )?;
+            let collection_ref = dispatcher
+                .toc(&auth, &pass)
+                .get_collection(&collection_pass)
+                .await?;
+            if let Some(execution) = collection_ref
+                .exact_rrf(exact_request, &shard_selection, params.timeout())
+                .await?
+            {
+                let stop_reason = match execution.stop_reason {
+                    DynamicRrfStopReason::TopKFixed => "top-k-fixed",
+                    DynamicRrfStopReason::AllSourcesExhausted => "all-sources-exhausted",
+                };
+                let points = execution
+                    .point_ids
+                    .iter()
+                    .enumerate()
+                    .map(|(rank, &id)| {
+                        let version = execution.versions.get(&id).copied().ok_or_else(|| {
+                            StorageError::service_error(format!(
+                                "exact_rrf lost the native authoritative version for point {id}"
+                            ))
+                        })?;
+                        Ok(ExactRrfHit {
+                            id,
+                            rank: rank + 1,
+                            version,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, StorageError>>()?;
+                return Ok(ExactRrfQueryResponse {
+                    points,
+                    guarantee: ExactRrfGuarantee {
+                        scope: "selected-local-shards-frozen-segment-view",
+                        ordered_top_k_exact: true,
+                        tie_break: "point-identity-ascending",
+                        channel_input: "exact-rank-streams",
+                    },
+                    execution: ExactRrfExecutionResponse {
+                        plan: "local-dense-sparse-v1",
+                        stop_reason,
+                        source_pulls: execution.source_pulls,
+                        source_exhausted: execution.source_exhausted,
+                        certification_checks: execution.certification_checks,
+                        corpus_points_observed: execution.visible_point_copies,
+                        query_rounds: 1,
+                        source_points_materialized: execution.source_points_materialized,
+                        exhaustive_fallback: execution.exhaustive_fallback_sources > 0,
+                    },
+                });
+            }
+        }
+
+        // Replica/remote execution cannot pin the local Segment generation.
+        // It therefore validates the selected request view around the exact
+        // adaptive-prefix plan. The pinned local plan above performs no Count.
         let count_request = CountRequestInternal {
             filter: request.filter,
             exact: true,
@@ -506,7 +570,7 @@ async fn query_points_exact_rrf(
                     channel_input: "tie-complete-exact-prefixes",
                 },
                 execution: ExactRrfExecutionResponse {
-                    plan: "adaptive-exact-prefix-v0",
+                    plan: "replica-exact-prefix-v1",
                     stop_reason: "all-sources-exhausted",
                     source_pulls: vec![0, 0],
                     source_exhausted: vec![true, true],
@@ -517,67 +581,6 @@ async fn query_points_exact_rrf(
                     exhaustive_fallback: false,
                 },
             });
-        }
-
-        // One local replica is sufficient only for the default consistency
-        // mode. Explicit replica consistency keeps using Qdrant's ordinary
-        // replica resolver below.
-        if params.consistency.is_none() {
-            let collection_pass = auth.check_collection_access(
-                &collection.collection_name,
-                AccessRequirements::new(),
-                "query_points_exact_rrf_native",
-            )?;
-            let collection_ref = dispatcher
-                .toc(&auth, &pass)
-                .get_collection(&collection_pass)
-                .await?;
-            if let Some(execution) = collection_ref
-                .exact_rrf(exact_request, &shard_selection, params.timeout())
-                .await?
-            {
-                let stop_reason = match execution.stop_reason {
-                    DynamicRrfStopReason::TopKFixed => "top-k-fixed",
-                    DynamicRrfStopReason::AllSourcesExhausted => "all-sources-exhausted",
-                };
-                let points = execution
-                    .point_ids
-                    .iter()
-                    .enumerate()
-                    .map(|(rank, &id)| {
-                        let version = execution.versions.get(&id).copied().ok_or_else(|| {
-                            StorageError::service_error(format!(
-                                "exact_rrf lost the native authoritative version for point {id}"
-                            ))
-                        })?;
-                        Ok(ExactRrfHit {
-                            id,
-                            rank: rank + 1,
-                            version,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, StorageError>>()?;
-                return Ok(ExactRrfQueryResponse {
-                    points,
-                    guarantee: ExactRrfGuarantee {
-                        scope: "selected-local-shards-frozen-segment-view",
-                        ordered_top_k_exact: true,
-                        tie_break: "point-identity-ascending",
-                        channel_input: "native-exact-rank-streams",
-                    },
-                    execution: ExactRrfExecutionResponse {
-                        plan: "native-local-dense-sparse-v1",
-                        stop_reason,
-                        source_pulls: execution.source_pulls,
-                        source_exhausted: execution.source_exhausted,
-                        certification_checks: execution.certification_checks,
-                        corpus_points_observed: count_before,
-                        query_rounds: 1,
-                        source_points_materialized: execution.source_points_materialized,
-                        exhaustive_fallback: execution.exhaustive_fallback_sources > 0,
-                    },
-                });
-            }
         }
 
         const INITIAL_EXACT_PREFIX: usize = 64;
@@ -781,9 +784,9 @@ async fn query_points_exact_rrf(
             },
             execution: ExactRrfExecutionResponse {
                 plan: if exhaustive_fallback {
-                    "adaptive-exact-prefix-with-exhaustive-fallback-v0"
+                    "replica-exact-prefix-with-exhaustive-fallback-v1"
                 } else {
-                    "adaptive-exact-prefix-v0"
+                    "replica-exact-prefix-v1"
                 },
                 stop_reason,
                 source_pulls: execution.source_pulls,

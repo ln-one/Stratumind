@@ -146,7 +146,7 @@ fn exact_execution_equals_exhaustive_dense_sparse_wrrf() {
         .map(|point| point.id)
         .collect::<Vec<_>>();
 
-    let actual = execute_exact_rrf(
+    let actual = ExactHybridSession::new(
         vec![
             vec![LockedSegment::new(first)],
             vec![LockedSegment::new(second)],
@@ -169,6 +169,7 @@ fn exact_execution_equals_exhaustive_dense_sparse_wrrf() {
         },
         Arc::new(AtomicBool::new(false)),
     )
+    .execute()
     .unwrap();
 
     assert_eq!(actual.point_ids, expected);
@@ -227,7 +228,7 @@ fn reserved_qdrant_runtimes_serve_many_segments_with_one_reusable_reader_slot() 
     let task = reservation
         .coordinator()
         .spawn_blocking(move || {
-            execute_exact_rrf(
+            ExactHybridSession::new(
                 vec![segments],
                 ExactRrfRequest {
                     dense_query: vec![1.0, 0.0],
@@ -247,6 +248,7 @@ fn reserved_qdrant_runtimes_serve_many_segments_with_one_reusable_reader_slot() 
                 },
                 Arc::new(AtomicBool::new(false)),
             )
+            .execute()
         })
         .expect("reserved coordinator slot");
     let result = reader_runtime
@@ -316,7 +318,7 @@ fn overwrite_and_delete_are_resolved_before_channel_ranking() {
         .map(|point| point.id)
         .collect::<Vec<_>>();
 
-    let actual = execute_exact_rrf(
+    let actual = ExactHybridSession::new(
         vec![vec![LockedSegment::new(segment)]],
         ExactRrfRequest {
             dense_query: vec![1.0, 0.0],
@@ -336,6 +338,7 @@ fn overwrite_and_delete_are_resolved_before_channel_ranking() {
         },
         Arc::new(AtomicBool::new(false)),
     )
+    .execute()
     .unwrap();
 
     assert_eq!(actual.point_ids, expected);
