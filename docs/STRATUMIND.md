@@ -11,12 +11,12 @@ evidence; if descriptive implementation text differs from the V1.1 contract, the
 ## Build and run
 
 ```bash
-docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.3
+docker build --build-arg PROFILE=perf . --tag stratumind:api-v1.1.4
 docker run --rm \
   --publish 6333:6333 \
   --publish 6334:6334 \
   --volume stratumind-storage:/qdrant/storage \
-  stratumind:api-v1.1.3
+  stratumind:api-v1.1.4
 ```
 
 The upstream image entrypoint, health endpoints and configuration environment variables remain
@@ -84,18 +84,20 @@ The response returns identities and ranks plus an explicit guarantee and executi
 ## V1.1 correctness boundary
 
 For default-consistency reads whose selected Shards all have a local readable replica, the current
-HTTP plan acquires one frozen Shard snapshot and shares its authoritative point identity/version
-map between both channels. Every channel is merged globally across Segments and Shards before
-dynamic WRRF; it never fuses shard-local RRF results. Remote replicas and explicit consistency
-requests use the older exact adaptive-prefix plan. Router choice may change cost but not ordered
-Top-K.
+HTTP plan pins one Qdrant Segment generation for the complete exact Query. Dense and Sparse each
+merge their exact Segment batches through `ExactShardMergeState`, then merge globally across
+Shards before dynamic WRRF. It never fuses shard-local RRF results. Remote replicas and explicit
+consistency requests use the older exact adaptive-prefix plan. Router choice may change cost but
+not ordered Top-K.
 
-Production V1.1.3 uses `ExactRankSession`. Dense and Sparse each retain an owned, reader-independent
+Production V1.1.4 uses `ExactRankSession`. Dense and Sparse each retain an owned, reader-independent
 ranking state. When fusion requests more results, the session acquires a temporary Qdrant Segment
 read view, advances one bounded batch, releases the guard, and later resumes from the same state.
 There is no resident worker per Segment and no cursor that borrows a Segment across checkpoints.
-The two channels share the frozen authoritative identity/version map and session lifetime, but
-never scores or certificates.
+The two channels share the frozen generation and session lifetime, but never scores or
+certificates. Qdrant Proxy rollback propagates updates into wrapped Segments before replacement;
+failure keeps the Proxy installed and fails closed. This lifecycle invariant removes the former
+per-Query identity/version owner map and per-candidate cross-Segment probes.
 
 Dense uses an exact, metadata-only Router over Segment-owned PVS V1, Qdrant Scalar bounds and
 authoritative exact scan. Compatible immutable Float32 Dot/Cosine Segments persist a per-vector
@@ -156,6 +158,8 @@ matched. Single-query p50 improved by `2.38%` to `21.57%`; with four concurrent 
 Segments, exact success rose from `64.40%` to `100%`, p50 improved `21.78%`, and throughput improved
 `61.61%`. Full evidence is recorded in
 [ExactRankSession Production Promotion V1.1.3](spectra/results/exact-rank-session-production-promotion-v1.1.3.md).
+The Shard-generation and merge promotion is recorded in
+[Exact Shard Merge NFCorpus Gate V1](spectra/results/exact-shard-merge-nfcorpus-gate-v1.md).
 
 The named Sparse vector used here must store document impacts compatible with the caller's frozen
 Sparse Query profile. External non-negative impacts use `modifier: none`. A collection configured
