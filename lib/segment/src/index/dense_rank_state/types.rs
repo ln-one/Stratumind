@@ -33,6 +33,4 @@ pub struct DenseExecutionTelemetry {
     pub quantized_scores: usize,
     pub exact_scores: usize,
     pub points_emitted: usize,
-    pub exact_refine_ns: u128,
-    pub exact_refine_batches: usize,
 }

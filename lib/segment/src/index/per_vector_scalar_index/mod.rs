@@ -1,7 +1,6 @@
 //! Segment integration for frozen Per-Vector Scalar Quantization V1.
 //!
-//! Production owns the V1 storage and exact cursor. Alternative encodings and
-//! historical ablations remain behind the research feature.
+//! Production owns the V1 storage and exact ranking state.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -173,10 +172,5 @@ mod contiguous;
 mod rank_state;
 mod storage;
 
-#[cfg(feature = "stratumind-research")]
-pub use rank_state::PerVectorScalarBuildProfile;
-
 #[cfg(test)]
 mod production_tests;
-#[cfg(all(test, feature = "stratumind-research"))]
-mod tests;

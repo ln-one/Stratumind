@@ -1,55 +1,9 @@
-use std::time::Instant;
-
 use super::storage::validate_storage;
 use super::*;
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct PerVectorScalarBuildProfile {
-    pub total_build_ns: u128,
-    pub validation_ns: u128,
-    pub query_preprocess_ns: u128,
-    pub query_quantization_ns: u128,
-    pub scan_and_bound_ns: u128,
-    pub eligible_validation_ns: u128,
-    pub bound_validation_ns: u128,
-    pub pending_construction_ns: u128,
-    pub heapify_ns: u128,
-    pub scanned_points: usize,
-    pub int8_dot_products: usize,
-    pub encoded_bytes: usize,
-    pub bound_count: usize,
-    pub initial_heap_items: usize,
-    pub eligible_reserved_bytes: usize,
-    pub bounds_reserved_bytes: usize,
-    pub bound_id_reserved_bytes: usize,
-    pub pending_reserved_bytes: usize,
-    pub total_temporary_reserved_bytes: usize,
-    pub kernel: &'static str,
-    pub storage_residency: &'static str,
-}
 
 impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
     pub fn encoded(&self) -> &EncodedVectorsPerVectorScalar<TStorage> {
         &self.encoded
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn rank_state(
-        &self,
-        vector_storage: &VectorStorageEnum,
-        eligible: Vec<PointOffsetType>,
-        raw_query: &[f32],
-        hardware_counter: &HardwareCounterCell,
-        stopped: &AtomicBool,
-    ) -> OperationResult<DenseRankState> {
-        self.rank_state_with_refine_batch(
-            vector_storage,
-            eligible,
-            raw_query,
-            1,
-            hardware_counter,
-            stopped,
-        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -62,54 +16,7 @@ impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
         hardware_counter: &HardwareCounterCell,
         stopped: &AtomicBool,
     ) -> OperationResult<DenseRankState> {
-        self.rank_state_with_refine_batch_impl(
-            vector_storage,
-            eligible,
-            raw_query,
-            exact_refine_batch,
-            hardware_counter,
-            stopped,
-            None,
-        )
-    }
-
-    #[cfg(feature = "stratumind-research")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn rank_state_with_refine_batch_profiled(
-        &self,
-        vector_storage: &VectorStorageEnum,
-        eligible: Vec<PointOffsetType>,
-        raw_query: &[f32],
-        exact_refine_batch: usize,
-        hardware_counter: &HardwareCounterCell,
-        stopped: &AtomicBool,
-    ) -> OperationResult<(DenseRankState, PerVectorScalarBuildProfile)> {
-        let mut profile = PerVectorScalarBuildProfile::default();
-        let state = self.rank_state_with_refine_batch_impl(
-            vector_storage,
-            eligible,
-            raw_query,
-            exact_refine_batch,
-            hardware_counter,
-            stopped,
-            Some(&mut profile),
-        )?;
-        Ok((state, profile))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn rank_state_with_refine_batch_impl(
-        &self,
-        vector_storage: &VectorStorageEnum,
-        mut eligible: Vec<PointOffsetType>,
-        raw_query: &[f32],
-        exact_refine_batch: usize,
-        hardware_counter: &HardwareCounterCell,
-        stopped: &AtomicBool,
-        mut profile: Option<&mut PerVectorScalarBuildProfile>,
-    ) -> OperationResult<DenseRankState> {
-        let total_started = profile.as_ref().map(|_| Instant::now());
-        let phase_started = profile.as_ref().map(|_| Instant::now());
+        let mut eligible = eligible;
         check_stopped(stopped)?;
         validate_storage(vector_storage, self.encoded.metadata().dimension())?;
         if vector_storage.total_vector_count() != self.encoded.metadata().vector_count() {
@@ -134,24 +41,11 @@ impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
                 "PerVectorScalar eligible universe is invalid",
             ));
         }
-        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_started) {
-            profile.validation_ns = started.elapsed().as_nanos();
-            profile.eligible_reserved_bytes = eligible
-                .capacity()
-                .saturating_mul(std::mem::size_of::<PointOffsetType>());
-            profile.kernel = self.encoded.selected_kernel_name();
-            profile.storage_residency = self.encoded.storage_residency();
-        }
 
-        let phase_started = profile.as_ref().map(|_| Instant::now());
         let prepared_query = vector_storage
             .distance()
             .preprocess_vector::<VectorElementType>(raw_query.to_vec());
-        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_started) {
-            profile.query_preprocess_ns = started.elapsed().as_nanos();
-        }
 
-        let phase_started = profile.as_ref().map(|_| Instant::now());
         let encoded_query = self
             .encoded
             .try_encode_query(&prepared_query)
@@ -166,11 +60,7 @@ impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
                     "PerVectorScalar fused floating guard is unsupported for this dimension",
                 )
             })?;
-        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_started) {
-            profile.query_quantization_ns = started.elapsed().as_nanos();
-        }
 
-        let phase_started = profile.as_ref().map(|_| Instant::now());
         let mut bounds = Vec::with_capacity(eligible.len());
         for chunk in eligible.chunks(SCORE_CHUNK_SIZE) {
             check_stopped(stopped)?;
@@ -188,58 +78,15 @@ impl<TStorage: EncodedStorage> PerVectorScalarIndex<TStorage> {
                     ))
                 })?;
         }
-        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_started) {
-            profile.scan_and_bound_ns = started.elapsed().as_nanos();
-            profile.scanned_points = eligible.len();
-            profile.int8_dot_products = eligible.len();
-            profile.encoded_bytes = self
-                .encoded
-                .metadata()
-                .row_bytes()
-                .saturating_mul(eligible.len());
-            profile.bounds_reserved_bytes =
-                bounds
-                    .capacity()
-                    .saturating_mul(std::mem::size_of::<(PointOffsetType, f64, f64)>());
-        }
 
         let point_count = eligible.len();
-        let state = if profile.is_some() {
-            let (state, rank_build) = DenseRankState::from_certificate_bounds_batched_profiled(
-                eligible,
-                bounds,
-                exact_refine_batch,
-                DensePhysicalPlan::PerVectorScalarCertificate,
-                point_count,
-            )?;
-            let profile = profile.as_deref_mut().expect("profile checked above");
-            profile.eligible_validation_ns = rank_build.eligible_validation_ns;
-            profile.bound_validation_ns = rank_build.bound_validation_ns;
-            profile.pending_construction_ns = rank_build.pending_construction_ns;
-            profile.heapify_ns = rank_build.heapify_ns;
-            profile.bound_count = rank_build.bound_count;
-            profile.initial_heap_items = rank_build.initial_heap_items;
-            profile.bound_id_reserved_bytes = rank_build.bound_id_reserved_bytes;
-            profile.pending_reserved_bytes = rank_build.pending_reserved_bytes;
-            profile.total_temporary_reserved_bytes = profile
-                .eligible_reserved_bytes
-                .saturating_add(profile.bounds_reserved_bytes)
-                .saturating_add(profile.bound_id_reserved_bytes)
-                .saturating_add(profile.pending_reserved_bytes);
-            state
-        } else {
-            DenseRankState::from_certificate_bounds_batched(
-                eligible,
-                bounds,
-                exact_refine_batch,
-                DensePhysicalPlan::PerVectorScalarCertificate,
-                point_count,
-            )?
-        };
-        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), total_started) {
-            profile.total_build_ns = started.elapsed().as_nanos();
-        }
-        Ok(state)
+        DenseRankState::from_certificate_bounds_batched(
+            eligible,
+            bounds,
+            exact_refine_batch,
+            DensePhysicalPlan::PerVectorScalarCertificate,
+            point_count,
+        )
     }
 
     pub fn exact_fallback(

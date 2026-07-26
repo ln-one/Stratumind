@@ -52,44 +52,6 @@ pub(super) fn resolve_dot_i8_x4(dimension: usize) -> Option<DotI8x4Fn> {
 }
 
 #[inline]
-pub(super) fn selected_kernel_name(dimension: usize, contiguous: bool) -> &'static str {
-    if dimension > MAX_I32_DIMENSION {
-        return "scalar-i64";
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        if std::arch::is_aarch64_feature_detected!("dotprod") {
-            return if contiguous {
-                "aarch64-sdot-x4"
-            } else {
-                "aarch64-sdot"
-            };
-        }
-        return "aarch64-neon";
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        if std::is_x86_feature_detected!("avx512f")
-            && std::is_x86_feature_detected!("avx512bw")
-            && std::is_x86_feature_detected!("avx512vnni")
-        {
-            return "x86-avx512-vnni";
-        }
-        if std::is_x86_feature_detected!("avx2") {
-            return "x86-avx2";
-        }
-        if std::is_x86_feature_detected!("sse4.1") {
-            return "x86-sse4.1";
-        }
-    }
-
-    #[allow(unreachable_code)]
-    "scalar-i32"
-}
-
-#[inline]
 pub(super) fn dot_i8_scalar(query: &[i8], vector: &[i8]) -> i64 {
     query
         .iter()

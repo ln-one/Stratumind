@@ -21,7 +21,7 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use self::simd::{dot_i8, resolve_dot_i8, resolve_dot_i8_x4, selected_kernel_name};
+use self::simd::{dot_i8, resolve_dot_i8, resolve_dot_i8_x4};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
 use crate::encoded_vectors::{
@@ -156,24 +156,6 @@ pub struct EncodedVectorsPerVectorScalar<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: PerVectorScalarMetadata,
     metadata_path: Option<PathBuf>,
-}
-
-impl<TStorage: EncodedStorage> EncodedVectorsPerVectorScalar<TStorage> {
-    pub fn selected_kernel_name(&self) -> &'static str {
-        let contiguous = self
-            .encoded_vectors
-            .get_contiguous_vector_data(0, 1)
-            .is_some();
-        selected_kernel_name(self.metadata.actual_dimension, contiguous)
-    }
-
-    pub fn storage_residency(&self) -> &'static str {
-        if self.encoded_vectors.is_on_disk() {
-            "mmap"
-        } else {
-            "RAM"
-        }
-    }
 }
 
 mod bounds;

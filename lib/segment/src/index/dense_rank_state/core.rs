@@ -6,7 +6,6 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 use std::sync::atomic::AtomicBool;
-use std::time::Instant;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -30,18 +29,6 @@ use self::plans::{
 };
 
 const DENSE_SCORE_CHUNK_SIZE: usize = 4_096;
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct DenseBuildProfile {
-    pub eligible_validation_ns: u128,
-    pub bound_validation_ns: u128,
-    pub pending_construction_ns: u128,
-    pub heapify_ns: u128,
-    pub bound_count: usize,
-    pub initial_heap_items: usize,
-    pub bound_id_reserved_bytes: usize,
-    pub pending_reserved_bytes: usize,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct PendingBound {
@@ -92,7 +79,6 @@ struct CertificateState {
     /// Query-lifetime canonical cache. Ordered continuation never scores the
     /// same original vector twice.
     exact_scores: HashMap<PointOffsetType, f32>,
-    profile_refinement: bool,
 }
 
 struct ExactScanState {
@@ -139,61 +125,19 @@ impl DenseRankState {
         plan: DensePhysicalPlan,
         quantized_scores: usize,
     ) -> OperationResult<Self> {
-        Self::from_certificate_bounds_batched_impl(
-            eligible,
-            bounds,
-            exact_refine_batch,
-            plan,
-            quantized_scores,
-            None,
-        )
-    }
-
-    pub(crate) fn from_certificate_bounds_batched_profiled(
-        eligible: Vec<PointOffsetType>,
-        bounds: Vec<(PointOffsetType, f64, f64)>,
-        exact_refine_batch: usize,
-        plan: DensePhysicalPlan,
-        quantized_scores: usize,
-    ) -> OperationResult<(Self, DenseBuildProfile)> {
-        let mut profile = DenseBuildProfile::default();
-        let cursor = Self::from_certificate_bounds_batched_impl(
-            eligible,
-            bounds,
-            exact_refine_batch,
-            plan,
-            quantized_scores,
-            Some(&mut profile),
-        )?;
-        Ok((cursor, profile))
-    }
-
-    fn from_certificate_bounds_batched_impl(
-        mut eligible: Vec<PointOffsetType>,
-        bounds: Vec<(PointOffsetType, f64, f64)>,
-        exact_refine_batch: usize,
-        plan: DensePhysicalPlan,
-        quantized_scores: usize,
-        mut profile: Option<&mut DenseBuildProfile>,
-    ) -> OperationResult<Self> {
-        let profile_refinement = profile.is_some();
         if exact_refine_batch == 0 {
             return Err(OperationError::validation_error(
                 "exact Dense exact-refine batch must be positive",
             ));
         }
-        let phase_started = profile.as_ref().map(|_| Instant::now());
+        let mut eligible = eligible;
         eligible.sort_unstable();
         if eligible.windows(2).any(|pair| pair[0] == pair[1]) {
             return Err(OperationError::inconsistent_storage(
                 "exact Dense session received duplicate eligible point offsets",
             ));
         }
-        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_started) {
-            profile.eligible_validation_ns = started.elapsed().as_nanos();
-        }
 
-        let phase_started = profile.as_ref().map(|_| Instant::now());
         let mut bound_ids = bounds.iter().map(|(id, _, _)| *id).collect::<Vec<_>>();
         bound_ids.sort_unstable();
         if bound_ids != eligible
@@ -205,32 +149,12 @@ impl DenseRankState {
                 "exact Dense session bounds do not match its eligible universe",
             ));
         }
-        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_started) {
-            profile.bound_validation_ns = started.elapsed().as_nanos();
-            profile.bound_count = bounds.len();
-            profile.bound_id_reserved_bytes = bound_ids
-                .capacity()
-                .saturating_mul(std::mem::size_of::<PointOffsetType>());
-        }
 
-        let phase_started = profile.as_ref().map(|_| Instant::now());
         let pending: Vec<_> = bounds
             .into_iter()
             .map(|(id, lower, value)| PendingBound { id, lower, value })
             .collect();
-        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_started) {
-            profile.pending_construction_ns = started.elapsed().as_nanos();
-            profile.pending_reserved_bytes = pending
-                .capacity()
-                .saturating_mul(std::mem::size_of::<PendingBound>());
-        }
-
-        let phase_started = profile.as_ref().map(|_| Instant::now());
         let bounds = BinaryHeap::from(pending);
-        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_started) {
-            profile.heapify_ns = started.elapsed().as_nanos();
-            profile.initial_heap_items = bounds.len();
-        }
 
         let eligible_points = eligible.len();
         Ok(Self {
@@ -239,7 +163,6 @@ impl DenseRankState {
                 bounds,
                 exact: BinaryHeap::new(),
                 exact_scores: HashMap::new(),
-                profile_refinement,
             }),
             eligible: EligibleUniverse::explicit(eligible),
             telemetry: DenseExecutionTelemetry {
@@ -260,61 +183,8 @@ impl DenseRankState {
         hardware_counter: &HardwareCounterCell,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
-        Self::new_with_exact_refine_batch_impl(
-            vector_storage,
-            quantized,
-            eligible,
-            query,
-            policy,
-            hardware_counter,
-            stopped,
-            1,
-        )
-    }
-
-    /// Research-only matched baseline. Production callers keep the historical
-    /// single-point refinement behavior through [`Self::new`].
-    #[cfg(feature = "stratumind-research")]
-    #[expect(clippy::too_many_arguments)]
-    pub fn new_with_exact_refine_batch(
-        vector_storage: &VectorStorageEnum,
-        quantized: Option<&QuantizedVectors>,
-        eligible: Vec<PointOffsetType>,
-        query: &[f32],
-        policy: DenseExecutionPolicy,
-        hardware_counter: &HardwareCounterCell,
-        stopped: &AtomicBool,
-        exact_refine_batch: usize,
-    ) -> OperationResult<Self> {
-        Self::new_with_exact_refine_batch_impl(
-            vector_storage,
-            quantized,
-            eligible,
-            query,
-            policy,
-            hardware_counter,
-            stopped,
-            exact_refine_batch,
-        )
-    }
-
-    #[expect(clippy::too_many_arguments)]
-    fn new_with_exact_refine_batch_impl(
-        vector_storage: &VectorStorageEnum,
-        quantized: Option<&QuantizedVectors>,
-        eligible: Vec<PointOffsetType>,
-        query: &[f32],
-        policy: DenseExecutionPolicy,
-        hardware_counter: &HardwareCounterCell,
-        stopped: &AtomicBool,
-        exact_refine_batch: usize,
-    ) -> OperationResult<Self> {
+        const EXACT_REFINE_BATCH: usize = 1;
         check_stopped(stopped)?;
-        if exact_refine_batch == 0 {
-            return Err(OperationError::validation_error(
-                "exact Dense exact-refine batch must be positive",
-            ));
-        }
         if query.is_empty() || query.iter().any(|coordinate| !coordinate.is_finite()) {
             return Err(OperationError::validation_error(
                 "exact Dense stream requires a non-empty finite Query",
@@ -335,7 +205,7 @@ impl DenseRankState {
                 query,
                 hardware_counter,
                 stopped,
-                exact_refine_batch,
+                EXACT_REFINE_BATCH,
             ),
             DensePhysicalPlan::PerVectorScalarCertificate => {
                 build_per_vector_scalar_certificate_state(
@@ -345,7 +215,7 @@ impl DenseRankState {
                     query,
                     hardware_counter,
                     stopped,
-                    exact_refine_batch,
+                    EXACT_REFINE_BATCH,
                 )
             }
             DensePhysicalPlan::ExactScan => build_exact_scan_state(eligible),
@@ -466,14 +336,7 @@ fn refine_bounds_with(
     }
     if !unresolved.is_empty() {
         let mut scores = vec![0.0; unresolved.len()];
-        let started = cursor.profile_refinement.then(Instant::now);
         exact_scorer(&unresolved, &mut scores);
-        if let Some(started) = started {
-            telemetry.exact_refine_ns = telemetry
-                .exact_refine_ns
-                .saturating_add(started.elapsed().as_nanos());
-            telemetry.exact_refine_batches += 1;
-        }
         for (id, score) in unresolved.into_iter().zip(scores) {
             if !score.is_finite() {
                 return Err(OperationError::inconsistent_storage(format!(
