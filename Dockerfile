@@ -236,11 +236,11 @@ ENV TZ=Etc/UTC \
 EXPOSE 6333
 EXPOSE 6334
 
-LABEL org.opencontainers.image.title="Qdrant"
-LABEL org.opencontainers.image.description="Official Qdrant image"
-LABEL org.opencontainers.image.url="https://qdrant.com/"
-LABEL org.opencontainers.image.documentation="https://qdrant.com/docs"
-LABEL org.opencontainers.image.source="https://github.com/qdrant/qdrant"
-LABEL org.opencontainers.image.vendor="Qdrant"
+ARG GIT_COMMIT_ID
+LABEL org.opencontainers.image.title="Stratumind API"
+LABEL org.opencontainers.image.description="Stratumind API runtime for exact-rank retrieval"
+LABEL org.opencontainers.image.source="https://github.com/ln-one/Stratumind-Production"
+LABEL org.opencontainers.image.revision="$GIT_COMMIT_ID"
+LABEL org.opencontainers.image.vendor="ln-one"
 
 CMD ["./entrypoint.sh"]
