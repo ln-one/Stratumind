@@ -23,8 +23,8 @@ env:
 jobs:
   publish:
     name: Publish multi-architecture API image
-    runs-on: [self-hosted, linux, x64]
-    timeout-minutes: 90
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
     permissions:
       attestations: write
       contents: read
